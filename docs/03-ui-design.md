@@ -207,8 +207,10 @@ KOKU Airline
 │
 ├─ My Page
 │   ├─ 회원 정보
+│   ├─ 비밀번호 변경
 │   ├─ 예약 목록
-│   └─ 예약 상세
+│   ├─ 예약 상세
+│   └─ 회원 탈퇴
 │
 └─ Admin
     ├─ Dashboard
@@ -527,9 +529,10 @@ GOOGLE AuthAccount 연결
 ```text
 GOOGLE AuthAccount 확인
  ↓
-기존 Member 인증
+연결된 Member 상태 확인
  ↓
-로그인 완료
+ACTIVE → 로그인 완료
+WITHDRAWN → 로그인 거부
 ```
 
 ---
@@ -677,7 +680,7 @@ ICN                 NRT
 - 출발 Date / Time
 - 도착 Date / Time
 - Aircraft
-- 운항 상태 (구체적인 상태 값은 Domain Policy에서 확정)
+- 운항 상태 (`SCHEDULED`, `CANCELLED`, `DEPARTED`) 
 - 예약 가능 여부
 
 #### Member
@@ -699,6 +702,19 @@ ICN                 NRT
 ```
 
 예약 Action을 Disabled 처리합니다.
+
+#### 예약 불가 Flight 상태
+
+다음 Flight 상태에서는 새로운 Reservation을 생성할 수 없습니다.
+
+- `CANCELLED`
+- `DEPARTED`
+
+해당 상태에서는 Member의 `예약하기` Action과
+Guest의 `로그인 후 예약` Action을 제공하지 않거나 Disabled 처리합니다.
+
+`SCHEDULED` 상태인 경우에도
+Flight 출발 예정 시각까지 2시간 미만이면 예약 Action을 Disabled 처리합니다.
 
 ---
 
@@ -747,6 +763,8 @@ Text, Icon 또는 Pattern 등을 함께 사용합니다.
 
 ### 13.2 Reservation 시작
 
+MVP에서 Seat Hold 시간은 1시간입니다.
+
 사용자가 Seat가 필요한 모든 Passenger의 좌석 선택을 완료한 후 예약을 시작하면
 Backend에서 다음 처리를 수행합니다.
 
@@ -783,6 +801,24 @@ Hold가 만료된 경우 사용자에게 명확하게 안내합니다.
 
 만료된 Reservation에서는 기존 상태로 결제를 계속 진행할 수 없습니다.
 
+Hold 만료 시 Backend에서는 다음 상태 전이를 처리합니다.
+
+```text
+Reservation
+PENDING → CANCELLED
+
+해당 Reservation의 모든 Seat
+HELD → AVAILABLE
+
+현재 처리 중인 PENDING Payment가 존재하는 경우
+PENDING → CANCELLED
+```
+
+기존 `FAILED` Payment는 결제 이력으로 유지합니다.
+
+Hold 만료 이후 해당 Reservation에서는
+새로운 Payment를 생성할 수 없습니다.
+
 ---
 
 ## 14. Passenger 정보 입력
@@ -814,6 +850,17 @@ Passenger의 기본 정보를 입력하면 테스트용 여권 정보는 시스�
 > 본 서비스는 포트폴리오용 가상 항공사 서비스입니다.
 > 실제 탑승객의 개인정보나 실제 여권 정보를 입력하지 마세요.
 > 테스트용 여권번호, 발급국, 만료일은 시스템에서 자동 생성됩니다.
+
+테스트용 여권 만료일이 Flight 출발일 이후인지 검증합니다.
+
+조건을 만족하지 않는 경우 예약을 계속 진행할 수 없으며
+다음과 같이 안내합니다.
+
+```text
+테스트용 여권 유효기간이 Flight 출발일 조건을 만족하지 않습니다.
+
+예약을 계속 진행할 수 없습니다.
+```
 
 ---
 
@@ -851,6 +898,17 @@ Passenger의 연령 구분은 사용자가 직접 선택하지 않습니다.
 
 입력된 생년월일과 Flight 탑승일을 기준으로 시스템에서 계산합니다.
 
+MVP의 연령 구분 기준은 다음과 같습니다.
+
+- `Infant`: 생후 7일 이상 ~ 만 2세 미만
+- `Child`: 만 2세 이상 ~ 만 12세 미만
+- `Adult`: 만 12세 이상
+
+생후 7일 미만의 Passenger는 예약할 수 없습니다.
+
+해당 조건에 해당하는 경우 다음 단계로 진행하지 못하도록 하고
+사용자에게 예약 불가 사유를 안내합니다.
+
 표시 예:
 
 ```text
@@ -869,6 +927,9 @@ Child가 포함된 Reservation에는 최소 1명의 Adult가 포함되어야 합
 
 Child는 같은 Reservation의 Adult 중 최소 1명과
 인접한 Seat를 배정받아야 합니다.
+
+MVP에서 인접한 Seat는 동일 Row에서 좌우로 직접 연결되어 있으며,
+두 Seat 사이에 통로가 존재하지 않는 Seat를 의미합니다.
 
 안내 예:
 
@@ -895,6 +956,9 @@ KIM BABY
 ```
 
 Adult 1명당 최대 1명의 Infant를 연결할 수 있습니다.
+
+Infant는 반드시 같은 Reservation의 Adult와 연결되어야 하며,
+Infant만으로 Reservation을 생성할 수 없습니다.
 
 ---
 
@@ -964,6 +1028,26 @@ Mock Payment
 [Mock 결제하기]
 ```
 
+`예약 진행 취소`를 선택하면 Confirmation UI를 표시합니다.
+
+취소가 완료되면:
+
+```text
+Reservation
+PENDING → CANCELLED
+
+해당 Reservation의 모든 Seat
+HELD → AVAILABLE
+
+현재 처리 중인 PENDING Payment가 존재하는 경우
+PENDING → CANCELLED
+```
+
+기존 `FAILED` Payment는 결제 이력으로 유지합니다.
+
+Payment가 아직 생성되지 않은 상태에서 예약 진행을 취소한 경우
+새로운 Payment를 생성하지 않습니다.
+
 ---
 
 ### 17.3 결제 성공
@@ -1010,12 +1094,13 @@ ICN → NRT
 [예약 진행 취소]
 ```
 
-결제 재시도 시 새로운 결제 시도 이력을 생성합니다.
+결제 재시도 시 새로운 `Payment`를 생성합니다.
 
-구체적인 Payment와 PaymentAttempt의 데이터 모델 및 관계는
-`05-data-api-design.md`에서 정의합니다.
+하나의 `Payment`는 하나의 Mock 결제 시도를 의미하며,
+기존 `FAILED` Payment는 결제 이력으로 유지합니다.
 
-기존 실패한 결제 시도 이력은 유지합니다.
+하나의 Reservation에서는 최초 시도를 포함하여
+최대 3개의 Payment를 생성할 수 있습니다.
 
 ---
 
@@ -1049,13 +1134,34 @@ Reservation → CANCELLED
 My Page
 
 ├─ 내 정보
+├─ 비밀번호 변경
 ├─ 내 예약
 └─ 회원 탈퇴
 ```
 
 ---
 
-### 18.2 Reservation 목록
+### 18.2 비밀번호 변경
+
+LOCAL AuthAccount를 가진 Member는 비밀번호를 변경할 수 있습니다.
+
+새 Password는 회원가입과 동일한 비밀번호 정책을 적용합니다.
+
+- 8자 이상
+- 영문 대문자 최소 1자
+- 영문 소문자 최소 1자
+- 숫자 최소 1자
+- 특수문자 최소 1자
+- 허용 특수문자: `! @ # $ % ^ & *`
+
+Frontend에서도 각 조건의 충족 여부를 안내하고 검증합니다.
+
+구체적인 현재 Password 재인증 여부 및 API 흐름은
+`04-system-design.md`와 `05-data-api-design.md`에서 정의합니다.
+
+---
+
+### 18.3 Reservation 목록
 
 상태별 Filter를 제공할 수 있습니다.
 
@@ -1357,6 +1463,11 @@ Admin Dashboard
 - 수정
 - 비활성화
 
+Route 생성 또는 수정 시 출발 Airport와 도착 Airport는
+현재 사용 가능한 Airport만 선택할 수 있도록 합니다.
+
+비활성화된 Airport는 신규 Route 생성에 사용할 수 없습니다.
+
 ---
 
 ### 24.4 Aircraft / Seat 구성
@@ -1397,14 +1508,57 @@ Flight 상세에는 최소 다음 정보를 표시합니다.
 - Aircraft
 - 출발 시각
 - 도착 시각
-- 운항 상태 (구체적인 상태 값은 Domain Policy에서 확정)
+- 운항 상태 (`SCHEDULED`, `CANCELLED`, `DEPARTED`)
 - 연결된 Reservation 현황
+
+Flight 생성 또는 수정 시 Route와 Aircraft 선택 항목에는
+현재 사용 가능한 데이터만 제공합니다.
+
+- 비활성화된 Route는 새로운 Flight에 사용할 수 없습니다.
+- 비활성화된 Aircraft는 새로운 Flight에 배정할 수 없습니다.
+
+실제 유효성 검증은 Backend에서도 반드시 수행합니다.
 
 ---
 
-### 25.1 Flight 취소
+### 25.1 Flight 수정 제한
 
-출발 전 Flight에는 취소 Action을 제공합니다.
+Reservation이 존재하지 않는 `SCHEDULED` Flight는
+Admin 또는 SuperAdmin이 수정할 수 있습니다.
+
+`PENDING` 또는 `CONFIRMED` Reservation이 하나 이상 존재하는 Flight는
+예약 및 Seat 정합성에 영향을 주는 핵심 정보의 수정 Action을 제공하지 않습니다.
+
+수정 제한 대상:
+
+- 출발 Airport
+- 도착 Airport
+- 출발 예정 시각
+- 도착 예정 시각
+- Aircraft
+- Flight Number
+
+수정이 제한된 경우 다음과 같이 안내합니다.
+
+```text
+연결된 예약이 존재하여
+이 Flight의 핵심 운항 정보는 수정할 수 없습니다.
+
+운항을 중단해야 하는 경우 Flight 취소를 사용해 주세요.
+
+[확인]
+[Flight 취소]
+```
+
+```text
+Reservation 없음 → [수정] 표시
+PENDING/CONFIRMED Reservation 존재 → [수정] 숨김 또는 비활성화
+```
+
+---
+### 25.2 Flight 취소
+
+`SCHEDULED` 상태이며 아직 출발하지 않은 Flight에만 취소 Action을 제공합니다.
 
 ```text
 [Flight 취소]
@@ -1434,23 +1588,40 @@ PENDING Reservation
 
 Flight 취소 후:
 
+#### Flight
+
+```text
+Flight
+SCHEDULED → CANCELLED
+```
+
 #### CONFIRMED Reservation
 
 ```text
-Reservation → CANCELLED
-Payment → REFUNDED
-해당 Reservation의 모든 Seat → AVAILABLE
+Reservation
+CONFIRMED → CANCELLED
+
+성공한 Payment
+SUCCESS → REFUNDED
+
+해당 Reservation의 모든 Seat
+RESERVED → AVAILABLE
 ```
 
 #### PENDING Reservation
 
 ```text
-Reservation → CANCELLED
-진행 중 Payment → CANCELLED
-해당 Reservation의 모든 Seat → AVAILABLE
+Reservation
+PENDING → CANCELLED
+
+현재 처리 중인 PENDING Payment가 존재하는 경우
+PENDING → CANCELLED
+
+해당 Reservation의 모든 Seat
+HELD → AVAILABLE
 ```
 
-기존 `FAILED` PaymentAttempt는 이력으로 유지합니다.
+기존 `FAILED` Payment는 상태를 변경하지 않고 결제 이력으로 유지합니다.
 
 MVP에서는 대체편 제공 또는 자동 재예약을 제공하지 않습니다.
 
@@ -1503,9 +1674,9 @@ Admin에게는 해당 Action을 제공하지 않습니다.
 
 취소 후:
 
-Reservation → CANCELLED
-Payment → REFUNDED
-해당 Reservation의 모든 Seat → AVAILABLE
+Reservation: CONFIRMED → CANCELLED
+성공한 Payment: SUCCESS → REFUNDED
+해당 Reservation의 모든 Seat: RESERVED → AVAILABLE
 
 취소 사유
 [                              ]
@@ -1637,6 +1808,28 @@ AI 추천을 생성하지 못했습니다.
 ```text
 이 기능에 접근할 권한이 없습니다.
 ```
+
+---
+
+### 29.7 지원하지 않는 노선
+
+KOKU Airline 내부 검색,
+외부 실제 항공편 검색 및 AI 항공편 검색은
+한국 ↔ 일본 노선만 지원합니다.
+
+지원하지 않는 노선이 입력된 경우:
+
+```text
+현재 KOKU Airline은
+한국과 일본 사이의 항공편만 지원합니다.
+
+출발지와 목적지를 다시 확인해 주세요.
+
+[검색 조건 수정]
+```
+
+외부 실제 항공편 검색 및 AI 항공편 검색에서는
+해당 Validation이 실패한 경우 외부 Flight API를 호출하지 않습니다.
 
 ---
 
@@ -1880,7 +2073,6 @@ Reservations
 - Access Token / Refresh Token 정책
 - 동시성 제어 구현 방식
 - Transaction Boundary
-- Payment / PaymentAttempt 데이터 모델
 - 개인정보 저장 및 보호 방식
 - Cache 적용 여부 및 TTL
 - 구체적인 Spring Security 내부 구조
