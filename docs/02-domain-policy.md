@@ -37,8 +37,8 @@
 
 - Role: `Guest`, `Member`, `Admin`, `SuperAdmin`
 - 인증 객체: `AuthAccount`
-- Entity: `Airport`, `Route`, `Aircraft`, `Flight`, `Seat`, `Passenger`, `Reservation`, `Payment`, `PaymentAttempt`
-- 상태 및 Enum: `ACTIVE`, `WITHDRAWN`, `PENDING`, `CONFIRMED`, `CANCELLED`, `AVAILABLE`, `HELD`, `RESERVED`, `UNAVAILABLE`, `SUCCESS`, `FAILED`, `REFUNDED`
+- Entity: `Airport`, `Route`, `Aircraft`, `Flight`, `Seat`, `Passenger`, `Reservation`, `Payment`
+- 상태 및 Enum: `ACTIVE`, `WITHDRAWN`, `PENDING`, `CONFIRMED`, `CANCELLED`, `AVAILABLE`, `HELD`, `RESERVED`, `UNAVAILABLE`, `SUCCESS`, `FAILED`, `REFUNDED`, `SCHEDULED`, `DEPARTED`
 
 ---
 
@@ -186,7 +186,6 @@ MVP에서는 다음 두 인증 방식을 지원합니다.
 
 - Email
 - Password
-- Name
 
 세부 회원정보는 데이터 모델 설계 과정에서 확정합니다.
 
@@ -219,10 +218,14 @@ MVP 소셜 로그인 Provider는 Google 하나로 제한합니다.
 Google OAuth 인증 성공 후:
 
 1. Google로부터 인증된 사용자 정보를 전달받습니다.
-2. 기존 Member인지 확인합니다.
-3. 최초 로그인인 경우 필요한 회원 정보를 기반으로 Member를 생성합니다.
-4. 기존 Member인 경우 해당 Member로 인증합니다.
-5. 이후 KOKU Airline 내부 인증 체계를 사용합니다.
+2. 기존 GOOGLE AuthAccount가 존재하는지 확인합니다.
+3. 기존 GOOGLE AuthAccount가 존재하는 경우 연결된 Member의 상태를 확인합니다.
+   - `ACTIVE` 상태이면 해당 Member로 인증합니다.
+   - `WITHDRAWN` 상태이면 인증을 거부합니다.
+4. 기존 GOOGLE AuthAccount가 없는 경우 동일 Email Member 존재 여부를 확인합니다.
+5. 동일 Email Member가 없는 신규 사용자인 경우 Member를 생성하고 GOOGLE AuthAccount를 연결합니다.
+6. 동일 Email Member가 존재하는 경우 4.6.1 동일 Email 계정 연동 정책을 따릅니다.
+7. 이후 KOKU Airline 내부 인증 체계를 사용합니다.
 
 OAuth Client Secret 등의 민감정보는 Repository에 저장하지 않습니다.
 
@@ -463,7 +466,8 @@ MVP에서는 한국 ↔ 일본 국제 노선만 허용합니다.
 - `RESERVED`: 예약 확정
 - `UNAVAILABLE`: 사용 불가
 
-사용자가 예약 과정에서 좌석을 선택하면 해당 좌석은 `HELD` 상태로 전환됩니다.
+사용자가 Seat가 필요한 모든 Passenger의 Seat 선택을 완료하고
+예약 시작에 성공하면 선택한 모든 Seat를 `HELD` 상태로 전환합니다.
 
 `HELD` 상태의 좌석은 다른 사용자가 선택하거나 예약할 수 없습니다.
 
@@ -483,7 +487,8 @@ MVP에서는 한국 ↔ 일본 국제 노선만 허용합니다.
 
 ### 8.5 좌석 임시 점유
 
-사용자가 예약 과정에서 좌석을 선택하면 해당 좌석을 일정 시간 임시 점유합니다.
+사용자가 Seat가 필요한 모든 Passenger의 Seat 선택을 완료하고
+예약 시작에 성공하면 선택한 모든 Seat를 일정 시간 임시 점유합니다.
 
 좌석 Hold 시간은 MVP 기준 **1시간**으로 설정합니다.
 
@@ -526,6 +531,37 @@ KOKU Airline의 항공편은 특정 노선과 운항 정보를 가집니다.
 - 도착 시간
 - 운항 항공기
 - 운항 상태
+
+#### 9.1.1 Flight 운항 상태
+
+MVP에서 Flight의 운항 상태는 다음과 같이 정의합니다.
+
+- `SCHEDULED`: 출발 예정 상태
+- `CANCELLED`: 출발 전에 운항이 취소된 상태
+- `DEPARTED`: 출발 예정 시각이 지나 출발한 것으로 처리되는 상태
+
+##### SCHEDULED
+
+정상적으로 운항 예정인 Flight입니다.
+
+예약 가능 시간 정책을 만족하는 경우 새로운 Reservation을 생성할 수 있습니다.
+
+##### CANCELLED
+
+Admin 또는 SuperAdmin에 의해 출발 전에 운항이 취소된 Flight입니다.
+
+새로운 Reservation을 생성할 수 없습니다.
+
+Flight 취소와 연결된 Reservation 처리는 9.6 Flight 취소 정책을 따릅니다.
+
+##### DEPARTED
+
+출발 예정 시각이 지난 Flight입니다.
+
+새로운 Reservation을 생성하거나 Member가 예약을 취소할 수 없습니다.
+
+MVP에서는 실제 운항 시스템과 연동하지 않으므로
+`DEPARTED` 전환의 구체적인 처리 방식은 시스템 설계에서 정의합니다.
 
 ### 9.2 편명
 
@@ -577,6 +613,27 @@ KOKU Airline 항공편의 신규 예약은
 이미 생성된 `PENDING` Reservation의 Seat Hold는 기존 Hold 정책을 따르며,
 Hold 만료 시각이 항공편 출발 예정 시각을 초과하지 않도록 합니다.
 
+#### 9.5.1 Flight 수정 제한
+
+Reservation이 존재하지 않는 `SCHEDULED` Flight는
+Admin 또는 SuperAdmin이 운영 정보를 수정할 수 있습니다.
+
+`PENDING` 또는 `CONFIRMED` Reservation이 하나 이상 존재하는 Flight는
+예약 및 Seat 정합성에 영향을 줄 수 있는 다음 핵심 정보를 직접 변경하지 않습니다.
+
+- 출발 Airport
+- 도착 Airport
+- 출발 예정 시각
+- 도착 예정 시각
+- Aircraft
+- 편명
+
+예약이 존재하는 Flight의 운항을 더 이상 유지할 수 없는 경우에는
+기존 Flight 정보를 직접 변경하기보다
+9.6 Flight 취소 정책을 적용하는 것을 원칙으로 합니다.
+
+구체적인 수정 가능 Field와 API 제약은 API Contract에서 정의합니다.
+
 ### 9.6 Flight 취소
 
 Admin 또는 SuperAdmin은 운영상 필요한 경우
@@ -584,25 +641,34 @@ Admin 또는 SuperAdmin은 운영상 필요한 경우
 
 Flight 취소 시 취소 사유 입력을 필수로 합니다.
 
+`SCHEDULED` 상태이며 아직 출발하지 않은 Flight만 취소할 수 있습니다.
+
+Flight 취소가 정상적으로 처리되면:
+
+- Flight: `SCHEDULED → CANCELLED`
+
 취소된 Flight와 연결된 Reservation은 더 이상 유효한 예약 상태로 유지하지 않고
 정책에 따라 `CANCELLED` 상태로 전환합니다.
 
 `CONFIRMED` Reservation의 경우:
 
 - Reservation: `CONFIRMED → CANCELLED`
-- Payment: `SUCCESS → REFUNDED`
-- Seat: `RESERVED → AVAILABLE`
+- 성공한 Payment: `SUCCESS → REFUNDED`
+- 해당 Reservation의 모든 Seat: `RESERVED → AVAILABLE`
 
 `PENDING` Reservation의 경우:
 
 - Reservation: `PENDING → CANCELLED`
-- 진행 중인 Payment: `PENDING → CANCELLED`
-- Seat: `HELD → AVAILABLE`
+- 진행 중인 Payment가 존재하는 경우: `PENDING → CANCELLED`
+- 해당 Reservation의 모든 Seat: `HELD → AVAILABLE`
 
-기존 `FAILED` PaymentAttempt는 결제 이력으로 유지합니다.
+기존 `FAILED` Payment는 상태를 변경하지 않고 결제 이력으로 유지합니다.
 
 MVP에서는 Flight 취소로 인한 결제 금액을 전액 Mock 환불하며,
 대체편 제공 및 자동 재예약은 지원하지 않습니다.
+
+Flight 취소 시 처리한 Admin 또는 SuperAdmin,
+대상 Flight, 처리 시각 및 취소 사유를 Audit Log로 기록합니다.
 
 ---
 
@@ -620,50 +686,58 @@ MVP에서는 Flight 취소로 인한 결제 금액을 전액 Mock 환불하며,
 
 ### 10.2 탑승객 정보
 
-예약 시 탑승객별로 다음 기본 정보를 입력합니다.
+예약 시 Passenger별로 다음 테스트용 기본 정보를 입력합니다.
 
-- 여권상의 영문 성
-- 여권상의 영문 이름
+- 테스트용 영문 성 (여권 영문명 형식)
+- 테스트용 영문 이름 (여권 영문명 형식)
 - 생년월일
 - 성별
 - 국적
 
 구체적인 Database Column 및 Validation 규칙은 데이터 모델 설계에서 정의합니다.
 
-### 10.3 여권 정보
+### 10.3 테스트용 여권 정보
 
-KOKU Airline은 한국 ↔ 일본 국제선 예약 서비스를 대상으로 하므로
-예약 대상 탑승객은 예약에 필요한 형식을 충족하는 테스트용 여권 정보를 입력해야 합니다.
+KOKU Airline은 실제 항공권을 발권하지 않는 포트폴리오용 가상 서비스이므로
+실제 여권 정보를 입력받지 않습니다.
 
-예약 진행 과정에서 탑승객별로 다음 여권 정보를 입력합니다.
+Passenger의 기본 정보 입력이 완료되면
+예약 검증에 사용할 테스트용 여권 정보를 시스템에서 자동으로 생성합니다.
 
-다음 여권 정보는 예약이 `CONFIRMED` 상태로 확정되기 전에 모두 입력되어야 합니다.
+자동 생성 항목은 다음과 같습니다.
 
-- 여권번호
-- 여권 발급국
-- 여권 만료일
+- 여권번호: 테스트용 여권번호 자동 생성
+- 여권 발급국: Passenger가 입력한 국적과 동일한 국가로 자동 설정
+- 여권 만료일: 테스트용 여권정보 생성 시점 기준 5년 뒤 날짜로 자동 설정
 
-여권 정보가 누락되거나 형식 또는 유효기간 조건을 만족하지 않는 경우 예약을 완료할 수 없습니다.
+자동 생성된 테스트용 여권 정보는 사용자가 직접 입력하거나 수정하지 않습니다.
 
-여권 만료일은 최소한 항공편 출발일 이후여야 합니다.
+생성된 테스트용 여권 만료일은
+해당 Passenger가 탑승할 Flight의 출발일 이후여야 합니다.
 
-Member와 Passenger는 별개의 도메인으로 관리하며,
-여권 정보는 Passenger에 귀속됩니다.
+여권 만료일이 Flight 출발일보다 이른 경우
+Reservation을 `CONFIRMED` 상태로 확정할 수 없습니다.
 
-본 프로젝트는 실제 항공권을 발권하는 서비스가 아니므로
-여권 사본이나 이미지 등 불필요한 개인정보는 저장하지 않습니다.
+테스트용 여권 정보는 Passenger에 귀속됩니다.
 
-여권번호와 같은 민감도가 높은 개인정보는 Log에 출력하지 않으며,
-저장 시 보호 방식을 시스템 설계 단계에서 별도로 정의합니다.
+Reservation을 `CONFIRMED` 상태로 확정하기 전에
+필요한 테스트용 여권 정보가 모두 생성되어 있어야 합니다.
+
+테스트용 여권번호는 실제 개인정보가 아니더라도 Log에 출력하지 않는 것을 기본으로 합니다.
+
+구체적인 생성 규칙, 저장 위치 및 보호 방식은
+데이터 및 시스템 설계에서 정의합니다.
 
 ### 10.4 테스트용 개인정보 정책
 
 본 프로젝트는 실제 항공권 발권 서비스를 제공하지 않는 포트폴리오용 가상 서비스입니다.
 
-사용자는 실제 여권번호 등 실제 개인정보를 입력하지 않는 것을 원칙으로 합니다.
+사용자는 실제 탑승객의 개인정보 및 실제 여권 정보를 입력하지 않는 것을 원칙으로 합니다.
 
-예약 UI에서는 테스트용 가상 탑승객 및 여권정보 사용을 안내하며,
-필요한 경우 테스트용 데이터를 자동 생성하거나 예시 데이터로 제공합니다.
+예약 UI에서는 테스트용 Passenger 정보 사용을 명확하게 안내합니다.
+
+여권번호, 여권 발급국, 여권 만료일은
+10.3 정책에 따라 시스템에서 테스트용 데이터로 자동 생성합니다.
 
 프로젝트의 기능 검증 목적상 여권 형식과 유효성 검증 로직은 구현하되,
 실제 개인정보 수집을 목적으로 하지 않습니다.
@@ -691,7 +765,8 @@ Child가 포함된 Reservation에는 최소 1명 이상의 Adult가 포함되어
 Child는 같은 Reservation의 Adult 중 최소 1명과
 인접한 Seat를 배정받아야 합니다.
 
-MVP에서 인접한 Seat는 동일 Row에서 좌우로 직접 연결된 Seat를 의미합니다.
+MVP에서 인접한 Seat는 동일 Row에서 좌우로 직접 연결되어 있으며,
+두 Seat 사이에 통로가 존재하지 않는 Seat를 의미합니다.
 
 MVP에서 Infant는 독립된 Seat를 사용하지 않습니다.
 
@@ -711,11 +786,16 @@ Infant만으로 Reservation을 생성할 수 없습니다.
 예약 진행을 시작하려면 최소한 다음 조건을 만족해야 합니다.
 
 - `ACTIVE` 상태의 인증된 Member
-- 유효한 KOKU Airline 항공편
-- 예약 가능한 좌석
+- 유효하고 예약 가능한 `SCHEDULED` KOKU Airline Flight
+- Flight 출발 예정 시각까지 2시간 이상 남아 있음
+- Passenger 정보 입력 완료
+- Passenger의 연령 및 Child / Infant 동반 조건 충족
+- Seat가 필요한 모든 Passenger의 Seat 선택 완료
+- 선택한 모든 Seat가 `AVAILABLE` 상태
 
-좌석을 선택하고 예약을 진행하면 `PENDING` 상태의 예약을 생성하고
-선택한 좌석을 `HELD` 상태로 전환합니다.
+모든 조건을 만족하고 Seat 확보에 성공한 경우
+`PENDING` Reservation을 생성하고
+선택한 모든 Seat를 `AVAILABLE → HELD` 상태로 전환합니다.
 
 #### 예약 확정
 
@@ -740,11 +820,17 @@ Admin과 SuperAdmin은 운영 목적의 예약 현황을 조회할 수 있습니
 
 하나의 Reservation은 한 명 이상의 Passenger를 포함할 수 있습니다.
 
-`PENDING` 예약 생성 직후에는 아직 탑승객 정보가 입력되지 않았을 수 있습니다.
+Reservation 생성 전에 예약에 포함할 Passenger 정보를 입력합니다.
 
-예약을 `CONFIRMED` 상태로 확정하려면 하나 이상의 탑승객 정보가 등록되어 있어야 합니다.
+Passenger 정보 입력은 Seat 선택 및 `PENDING` Reservation 생성 전에 완료되어야 합니다.
 
-한 명의 예약자가 자신을 포함한 여러 탑승객의 항공편을 함께 예약할 수 있습니다.
+다만 Passenger 정보의 실제 저장 시점과
+Reservation과 Passenger의 구체적인 데이터 관계는
+`05-data-api-design.md`에서 정의합니다.
+
+`CONFIRMED` Reservation은 반드시 한 명 이상의 Passenger를 포함해야 합니다.
+
+한 명의 예약자가 자신을 포함한 여러 Passenger의 항공편을 함께 예약할 수 있습니다.
 
 ### 11.4 예약 상태
 
@@ -778,19 +864,31 @@ MVP에서는 취소 사유별로 별도의 예약 상태를 추가하지 않고
 
 필요한 경우 취소 원인은 별도의 정보로 구분합니다.
 
-### 11.5 예약 생성과 좌석
+### 11.5 예약 생성과 Seat 확보
 
-`PENDING` 예약 생성과 선택 좌석의 `AVAILABLE → HELD` 전환은
+Seat가 필요한 모든 Passenger의 Seat 선택이 완료되면
+선택한 모든 Seat가 `AVAILABLE` 상태인지 검증합니다.
+
+선택한 모든 Seat를 확보할 수 있는 경우에만
+`PENDING` Reservation을 생성하고,
+해당 Reservation의 모든 Seat를 `AVAILABLE → HELD` 상태로 전환합니다.
+
+`PENDING` Reservation 생성과 선택한 모든 Seat의 `HELD` 전환은
 하나의 예약 시작 과정으로 처리합니다.
 
-두 작업 중 하나라도 실패하면 예약 시작 전체를 실패 처리하여
-좌석 또는 예약 데이터만 단독으로 남지 않도록 합니다.
+선택한 Seat 중 하나라도 확보에 실패하면
+예약 시작 전체를 실패 처리합니다.
 
-예약이 확정된 경우 해당 좌석은 다른 예약에서 사용할 수 없습니다.
+이 경우:
 
-예약 실패 시 좌석 상태가 잘못 남지 않아야 합니다.
+- `PENDING` Reservation을 정상 생성된 상태로 남기지 않습니다.
+- 일부 Seat만 `HELD` 상태로 남기지 않습니다.
+- 선택한 Seat 중 일부만 확보하는 Partial Success를 허용하지 않습니다.
 
-예약과 좌석 변경은 Transaction 단위로 일관성을 유지해야 합니다.
+즉, 모든 Seat 확보 성공 또는 전체 실패(All-or-Nothing)를 원칙으로 합니다.
+
+구체적인 Transaction 및 동시성 제어 구현 방식은
+시스템 및 데이터 설계에서 정의합니다.
 
 ---
 
@@ -814,7 +912,40 @@ MVP에서는 취소 사유별로 별도의 예약 상태를 추가하지 않고
 
 실제 카드 번호 등의 결제 개인정보를 저장하지 않습니다.
 
-### 12.3 결제 상태
+### 12.3 Payment 모델
+
+MVP에서는 하나의 `Payment`를 하나의 Mock 결제 시도로 정의합니다.
+
+하나의 Reservation은 여러 Payment를 가질 수 있습니다.
+
+`Reservation 1 : N Payment`
+
+사용자가 Mock 결제를 요청할 때마다 새로운 `Payment`를 생성합니다.
+
+결제 재시도 시 기존 Payment를 재사용하지 않고
+새로운 Payment를 생성합니다.
+
+하나의 Reservation에서는 최초 시도를 포함하여
+최대 3개의 Payment를 생성할 수 있습니다.
+
+실패한 Payment는 `FAILED` 상태로 유지하여 결제 시도 이력을 보존합니다.
+
+하나의 Reservation에서는 최대 하나의 Payment만
+`SUCCESS` 상태가 될 수 있습니다.
+
+하나의 Payment가 `SUCCESS` 상태가 되면
+해당 Reservation에서는 새로운 Payment를 생성할 수 없습니다.
+
+성공한 Payment는 Reservation 취소, SuperAdmin 강제 취소 또는 Flight 취소로
+환불 정책이 적용되는 경우 `SUCCESS → REFUNDED` 상태로 전환합니다.
+
+동일한 결제 요청이 중복 전달되더라도
+Payment가 중복 생성되거나 결제 시도 횟수가 중복 증가하지 않아야 합니다.
+
+구체적인 Database 관계와 중복 요청 방지 방식은
+`05-data-api-design.md`와 API Contract에서 정의합니다.
+
+### 12.4 결제 상태
 
 MVP에서 Mock 결제 상태는 다음과 같이 정의합니다.
 
@@ -826,7 +957,8 @@ MVP에서 Mock 결제 상태는 다음과 같이 정의합니다.
 
 #### PENDING
 
-결제 화면에 진입하여 사용자의 최종 결제 여부를 기다리는 상태입니다.
+사용자가 Mock 결제를 요청하여 Payment가 생성되었고,
+아직 결제 성공 또는 실패 결과가 확정되지 않은 상태입니다.
 
 #### SUCCESS
 
@@ -838,85 +970,106 @@ MVP에서 Mock 결제 상태는 다음과 같이 정의합니다.
 
 #### CANCELLED
 
-결제가 완료되기 전에 사용자가 결제 과정을 취소한 상태입니다.
+결제가 완료되기 전에 더 이상 해당 Payment를 진행할 수 없어
+취소된 상태입니다.
+
+다음 경우 발생할 수 있습니다.
+
+- 사용자가 예약 또는 결제 진행을 취소한 경우
+- Seat Hold 시간이 만료된 경우
+- 연결된 Flight가 취소된 경우
 
 #### REFUNDED
 
-결제가 성공한 이후 예약이 정상적으로 취소되어 Mock 결제 금액이 전액 환불된 상태입니다.
+결제가 성공한 이후 환불 정책이 적용되어
+Mock 결제 금액이 전액 환불된 상태입니다.
 
-MVP에서는 부분 환불을 지원하지 않으며 환불은 전액 환불만 지원합니다.
+다음 경우 발생할 수 있습니다.
 
-### 12.4 결제 성공
+- Member가 취소 정책에 따라 Reservation을 정상 취소한 경우
+- SuperAdmin이 Reservation을 강제 취소한 경우
+- 연결된 Flight가 취소된 경우
 
-사용자가 Mock 결제 화면에서 최종적으로 `결제하기`를 선택하면 결제를 처리합니다.
+### 12.5 결제 성공
+
+사용자가 Mock 결제 화면에서 `Mock 결제하기`를 선택하면
+새로운 `PENDING` Payment를 생성하고 Mock 결제를 처리합니다.
 
 결제가 정상적으로 처리되면:
 
 - Payment: `PENDING → SUCCESS`
 - Reservation: `PENDING → CONFIRMED`
-- Seat: `HELD → RESERVED`
+- 해당 Reservation의 모든 Seat: `HELD → RESERVED`
+
+Payment가 `SUCCESS` 상태가 되면 해당 Reservation에서는 추가 Payment를 생성할 수 없습니다.
 
 예약, 결제 및 좌석 상태 변경은 데이터 정합성을 유지해야 합니다.
 
-### 12.5 결제 실패
+### 12.6 결제 실패
 
 Mock 결제 처리 과정에서 예상하지 못한 오류가 발생하면
-해당 결제 시도를 `FAILED` 상태로 처리합니다.
+현재 Payment를 `PENDING → FAILED` 상태로 변경합니다.
 
-MVP에서는 하나의 예약에 대해 Mock 결제를 최대 3회까지 시도할 수 있습니다.
+MVP에서는 하나의 Reservation에 대해
+최초 시도를 포함하여 최대 3개의 Payment를 생성할 수 있습니다.
 
-최초 결제 시도를 포함하여 최대 3회의 결제 시도를 허용합니다.
+Payment가 `FAILED` 상태가 되더라도
+해당 Reservation에서 생성된 Payment 수가 3개 미만이고
+Seat Hold 시간이 남아 있다면 Reservation은 `PENDING` 상태를 유지합니다.
 
-결제에 실패하더라도 결제 시도 횟수가 3회 미만이고
-좌석 Hold 시간이 남아 있다면 예약은 `PENDING` 상태를 유지하며
-사용자는 결제를 다시 시도할 수 있습니다.
+사용자는 새로운 Payment를 생성하여 Mock 결제를 다시 시도할 수 있습니다.
 
-결제 재시도 시 새로운 `PENDING` 상태의 결제 시도를 생성합니다.
+예:
 
-기존 `FAILED` 결제 시도는 상태를 변경하지 않고 결제 이력으로 유지합니다.
+`Payment #1 → FAILED`  
+`Payment #2 → FAILED`  
+`Payment #3 → SUCCESS`
 
-3번째 결제 시도까지 모두 실패한 경우:
+기존 `FAILED` Payment는 상태를 변경하지 않고 결제 이력으로 유지합니다.
+
+세 번째 Payment까지 모두 `FAILED` 상태가 된 경우:
 
 - Reservation: `PENDING → CANCELLED`
-- Seat: `HELD → AVAILABLE`
+- 해당 Reservation의 모든 Seat: `HELD → AVAILABLE`
 
-더 이상 해당 예약에서 결제를 재시도할 수 없습니다.
+더 이상 해당 Reservation에서는 새로운 Payment를 생성할 수 없습니다.
 
-사용자에게 결제가 정상적으로 처리되지 않았음을 안내하고
-필요한 경우 고객센터에 문의하도록 안내합니다.
+Seat Hold 시간이 세 번째 결제 시도 전에 만료된 경우에는
+Seat Hold 만료 정책을 우선 적용합니다.
 
-좌석 Hold 시간이 결제 시도 3회 이전에 만료된 경우에는
-Hold 만료 정책을 우선 적용합니다.
-
-구체적인 Payment와 PaymentAttempt 데이터 구조는 데이터 모델 설계에서 확정합니다.
-
-### 12.6 결제 및 예약 진행 취소
+### 12.7 결제 및 예약 진행 취소
 
 사용자가 결제 완료 전에 예약 진행을 취소하면:
 
 - Reservation: `PENDING → CANCELLED`
-- Seat: `HELD → AVAILABLE`
+- 해당 Reservation의 모든 Seat: `HELD → AVAILABLE`
 
-현재 진행 중인 `PENDING` 결제 시도가 존재하는 경우:
+현재 처리 중인 `PENDING` Payment가 존재하는 경우:
 
 - Payment: `PENDING → CANCELLED`
 
-기존 `FAILED` 결제 시도는 상태를 변경하지 않고 결제 이력으로 유지합니다.
+기존 `FAILED` Payment는 상태를 변경하지 않고 결제 이력으로 유지합니다.
 
-예약, 결제 및 좌석 상태 변경 과정에서 데이터 정합성을 유지해야 합니다.
+Payment가 생성되기 전에 예약 진행을 취소한 경우에는
+새로운 Payment를 생성하지 않습니다.
 
-### 12.7 좌석 Hold 만료
+예약, Payment 및 Seat 상태 변경 과정에서 데이터 정합성을 유지해야 합니다.
 
-좌석 Hold 시간이 만료되었는데 예약이 아직 `PENDING` 상태라면:
+### 12.8 Seat Hold 만료
+
+Seat Hold 시간이 만료되었는데 Reservation이 아직 `PENDING` 상태라면:
 
 - Reservation: `PENDING → CANCELLED`
-- Seat: `HELD → AVAILABLE`
+- 해당 Reservation의 모든 Seat: `HELD → AVAILABLE`
 
-현재 진행 중인 `PENDING` 결제 시도가 존재하는 경우:
+현재 처리 중인 `PENDING` Payment가 존재하는 경우:
 
 - Payment: `PENDING → CANCELLED`
 
-기존 `FAILED` 결제 시도는 상태를 변경하지 않고 결제 이력으로 유지합니다.
+기존 `FAILED` Payment는 상태를 변경하지 않고 결제 이력으로 유지합니다.
+
+Seat Hold 만료 이후에는 해당 Reservation에서
+새로운 Payment를 생성할 수 없습니다.
 
 Hold 만료 처리는 Backend 시간을 기준으로 판단합니다.
 
@@ -930,7 +1083,7 @@ Hold 만료 처리는 Backend 시간을 기준으로 판단합니다.
 `CONFIRMED` 상태가 된 예약의 취소를 대상으로 합니다.
 
 `PENDING` 상태에서 예약 진행을 중단하는 경우는
-12.6 결제 및 예약 진행 취소 정책을 따릅니다.
+12.7 결제 및 예약 진행 취소 정책을 따릅니다.
 
 Member는 자신의 예약만 취소할 수 있습니다.
 
@@ -957,13 +1110,14 @@ MVP에서는 정상 취소 시 Mock 결제 금액을 전액 환불합니다.
 결제가 완료된 `CONFIRMED` 예약이 정상적으로 취소되면:
 
 - Reservation: `CONFIRMED → CANCELLED`
-- 성공한 Mock 결제: `SUCCESS → REFUNDED`
-- Seat: `RESERVED → AVAILABLE`
+- 성공한 Payment: `SUCCESS → REFUNDED`
+- 해당 Reservation의 모든 Seat: `RESERVED → AVAILABLE`
 
 MVP에서는 취소 수수료 및 부분 환불을 구현하지 않고 전액 환불만 지원합니다.
 
-구체적인 Payment 및 PaymentAttempt 데이터 구조와
-환불 상태를 기록하는 위치는 데이터 모델 설계에서 확정합니다.
+환불은 해당 Reservation에서 `SUCCESS` 상태인 Payment에 적용합니다.
+
+기존 `FAILED` Payment는 상태를 변경하지 않고 결제 이력으로 유지합니다.
 
 ### 13.5 취소 수수료
 
@@ -1132,8 +1286,10 @@ SuperAdmin 강제 취소에는 Member에게 적용되는
 강제 취소가 완료되면 다음 상태 전이를 수행합니다.
 
 - Reservation: `CONFIRMED → CANCELLED`
-- Payment: `SUCCESS → REFUNDED`
-- Seat: `RESERVED → AVAILABLE`
+- 성공한 Payment: `SUCCESS → REFUNDED`
+- 해당 Reservation의 모든 Seat: `RESERVED → AVAILABLE`
+
+기존 `FAILED` Payment는 상태를 변경하지 않고 결제 이력으로 유지합니다.
 
 MVP에서는 강제 취소 시 Mock 결제 금액을 전액 환불합니다.
 
@@ -1176,9 +1332,12 @@ Audit Log로 기록합니다.
 
 ### 17.4 항공편
 
-이미 운항 기록 또는 예약 데이터가 존재하는 항공편은 삭제하지 않습니다.
+이미 운항 기록 또는 Reservation 데이터가 존재하는 Flight는 삭제하지 않습니다.
 
-운항이 중단된 경우 삭제 대신 취소 또는 비활성 상태로 관리합니다.
+출발 전에 운항이 취소된 Flight는 삭제하지 않고
+`CANCELLED` 상태로 유지하여 과거 운영 및 예약 이력을 보존합니다.
+
+이미 출발한 Flight 역시 과거 운항 이력 보존을 위해 삭제하지 않습니다.
 
 ### 17.5 Hard Delete
 
@@ -1216,6 +1375,8 @@ SuperAdmin이 정책에 따라 강제 취소하거나,
 연결된 Flight가 취소된 경우 발생합니다.
 
 ### 18.2 결제
+
+다음 상태 전이는 개별 Payment에 적용합니다.
 
 기본 상태 전이:
 
@@ -1259,6 +1420,22 @@ Mock 결제 성공:
 
 `RESERVED → AVAILABLE`
 
+### 18.4 Flight
+
+기본 상태 전이:
+
+`SCHEDULED → CANCELLED`
+
+출발 전 Admin 또는 SuperAdmin이 Flight 취소 정책에 따라
+운항을 취소한 경우 발생합니다.
+
+`SCHEDULED → DEPARTED`
+
+출발 예정 시각이 지난 Flight를 출발한 것으로 처리하는 경우 발생합니다.
+
+MVP에서는 실제 운항 시스템과 연동하지 않으므로
+`DEPARTED` 전환의 구체적인 처리 방식은 시스템 설계에서 정의합니다.
+
 ---
 
 ## 19. 주요 정상 시나리오
@@ -1270,27 +1447,35 @@ Mock 결제 성공:
 3. 출발지, 목적지, 날짜를 입력합니다.
 4. KOKU Airline 항공편을 검색합니다.
 5. 항공편을 선택합니다.
-6. 예약 가능한 좌석을 확인합니다.
-7. 좌석을 선택합니다.
-8. `PENDING` 상태의 예약을 생성합니다.
-9. 선택한 좌석을 `HELD` 상태로 전환하고 1시간 동안 임시 점유합니다.
-10. 탑승객 및 테스트용 여권 정보를 입력합니다.
-11. Mock 결제 화면으로 이동합니다.
-12. `PENDING` 상태의 새로운 결제 시도를 생성합니다.
-13. 사용자가 최종 결제 내용을 확인합니다.
-14. 사용자가 `결제하기` 또는 `취소`를 선택합니다.
-15. 결제하기를 선택하고 정상 처리되면 결제 상태를 `SUCCESS`로 변경합니다.
-16. 예약 상태를 `CONFIRMED`로 변경합니다.
-17. 좌석 상태를 `RESERVED`로 변경합니다.
-18. 사용자가 확정된 예약 내역을 조회합니다.
+6. Passenger 정보를 입력합니다.
+7. 입력된 생년월일과 Flight 탑승일을 기준으로 Adult, Child, Infant를 판단합니다.
+8. 시스템에서 Passenger별 테스트용 여권 정보를 생성합니다.
+9. Seat가 필요한 Passenger의 예약 가능한 좌석을 확인합니다.
+10. Seat가 필요한 모든 Passenger의 좌석을 선택합니다.
+11. 선택한 모든 Seat를 확보할 수 있는지 검증합니다.
+12. 모든 Seat 확보에 성공하면 `PENDING` 상태의 Reservation을 생성합니다.
+13. 선택한 모든 Seat를 `AVAILABLE → HELD` 상태로 전환하고 최대 1시간 동안 임시 점유합니다.
+14. 사용자가 예약 내용을 확인합니다.
+15. Mock 결제 화면으로 이동합니다.
+16. 사용자가 `Mock 결제하기`를 선택합니다.
+17. 새로운 `PENDING` Payment를 생성합니다.
+18. Mock 결제를 처리합니다.
+19. 정상 처리되면 해당 Payment를 `SUCCESS` 상태로 변경합니다.
+20. Reservation을 `CONFIRMED` 상태로 변경합니다.
+21. 해당 Reservation의 모든 Seat를 `HELD → RESERVED`로 변경합니다.
+22. 사용자가 확정된 예약 내역을 조회합니다.
 
 ### 19.2 Google OAuth 로그인 및 예약
 
 1. 사용자가 Google 로그인을 선택합니다.
 2. Google OAuth 인증을 수행합니다.
-3. 최초 사용자인 경우 Member를 생성합니다.
-4. 서비스 인증이 완료됩니다.
-5. 이후 Member와 동일한 예약 흐름을 이용합니다.
+3. 기존 GOOGLE AuthAccount가 존재하는 경우 연결된 Member의 상태를 확인하고,
+   `ACTIVE` 상태인 경우에만 인증합니다.
+4. 기존 GOOGLE AuthAccount가 없으면 동일 Email Member 존재 여부를 확인합니다.
+5. 동일 Email Member가 없는 경우 Member를 생성하고 GOOGLE AuthAccount를 연결합니다.
+6. 동일 Email Member가 존재하는 경우 4.6.1 동일 Email 계정 연동 정책을 따릅니다.
+7. 서비스 인증이 완료됩니다.
+8. 이후 Member와 동일한 예약 흐름을 이용합니다.
 
 ### 19.3 예약 취소
 
@@ -1299,8 +1484,8 @@ Mock 결제 성공:
 3. 시스템이 항공편 출발 예정 시각까지 24시간 이상 남아 있는지 확인합니다.
 4. Member가 예약 취소를 요청합니다.
 5. 예약 상태를 `CANCELLED`로 변경합니다.
-6. Mock 결제 상태를 `SUCCESS → REFUNDED`로 변경합니다.
-7. 예약된 좌석을 `RESERVED → AVAILABLE`로 반환합니다.
+6. 해당 Reservation의 성공한 Payment를 `SUCCESS → REFUNDED`로 변경합니다.
+7. 해당 Reservation의 모든 Seat를 `RESERVED → AVAILABLE`로 반환합니다.
 8. 변경된 예약 및 환불 상태를 사용자에게 제공합니다.
 
 ### 19.4 AI 실제 항공편 검색
@@ -1327,41 +1512,39 @@ Mock 결제 성공:
 
 실패한 사용자에게는 좌석을 다시 선택하도록 안내합니다.
 
-### 20.3 예약 중 좌석 상태 변경
+### 20.3 예약 시작 중 Seat 상태 변경
 
-`PENDING` 예약 생성과 Seat의 `AVAILABLE → HELD` 전환 과정에서
-다른 Transaction에 의해 해당 Seat가 더 이상 `AVAILABLE` 상태가 아닌 경우
-예약 시작 전체를 실패 처리합니다.
+`PENDING` Reservation 생성과 선택한 모든 Seat의
+`AVAILABLE → HELD` 전환 과정에서
+선택한 Seat 중 하나 이상이 다른 Transaction에 의해
+더 이상 `AVAILABLE` 상태가 아닌 경우 예약 시작 전체를 실패 처리합니다.
 
-실패한 사용자에게는 좌석 상태가 변경되었음을 안내하고
-다른 좌석을 선택하도록 합니다.
+일부 Seat만 `HELD` 상태로 확보하는 Partial Success는 허용하지 않습니다.
+
+실패한 사용자에게는 선택한 Seat 중 일부를 확보하지 못했음을 안내하고
+최신 Seat 상태를 다시 조회한 후 좌석을 다시 선택하도록 합니다.
 
 ### 20.4 Mock 결제 실패
 
 Mock 결제 처리 과정에서 예상하지 못한 오류가 발생하면
-해당 결제 시도를 `FAILED` 상태로 처리합니다.
+현재 Payment를 `PENDING → FAILED` 상태로 변경합니다.
 
-결제 시도 횟수가 3회 미만이고 좌석 Hold 시간이 남아 있다면:
+해당 Reservation에 생성된 Payment가 3개 미만이고
+Seat Hold 시간이 남아 있다면:
 
 - Reservation은 `PENDING` 상태를 유지합니다.
-- Seat는 `HELD` 상태를 유지합니다.
-- 사용자는 결제를 다시 시도할 수 있습니다.
+- 해당 Reservation의 모든 Seat는 `HELD` 상태를 유지합니다.
+- 사용자는 새로운 Payment를 생성하여 결제를 다시 시도할 수 있습니다.
 
-결제 재시도는 새로운 결제 시도로 처리합니다.
+세 번째 Payment까지 모두 실패하면:
 
-3번째 결제 시도까지 모두 실패하면:
-
-- 마지막 결제 시도는 `FAILED` 상태로 유지합니다.
-- 이전 `FAILED` 결제 시도 역시 결제 이력으로 유지합니다.
+- 모든 Payment는 `FAILED` 상태로 결제 이력을 유지합니다.
 - Reservation을 `CANCELLED` 상태로 변경합니다.
-- Seat를 `AVAILABLE` 상태로 반환합니다.
-- 추가 결제 시도를 허용하지 않습니다.
+- 해당 Reservation의 모든 Seat를 `AVAILABLE` 상태로 반환합니다.
+- 추가 Payment 생성을 허용하지 않습니다.
 
-사용자에게 결제 실패 사실을 안내하고
-필요한 경우 고객센터에 문의하도록 안내합니다.
-
-결제 시도 횟수와 관계없이 좌석 Hold 시간이 먼저 만료되면
-좌석 Hold 만료 정책을 적용합니다.
+Payment 수와 관계없이 Seat Hold 시간이 먼저 만료되면
+Seat Hold 만료 정책을 적용합니다.
 
 ### 20.5 이미 취소된 예약
 
@@ -1395,7 +1578,6 @@ AI 응답 생성이 실패하더라도 실제 항공편 API 원본 데이터나 
 - [ ] JWT 저장 및 재발급 방식
 - [ ] 여권번호 등 민감정보의 저장 및 보호 방식
 - [ ] 외부 Flight API Cache 적용 여부 및 TTL
-- [ ] Payment와 PaymentAttempt의 데이터 모델 분리 및 예약과 결제 시도의 관계
 
 ---
 
