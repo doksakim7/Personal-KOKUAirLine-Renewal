@@ -243,17 +243,30 @@ MVP에서는 다음 인증 Provider를 지원합니다.
 일반 로그인 비밀번호 Hash와 Google OAuth 식별정보 등 인증에 종속적인 정보는
 Member가 아니라 AuthAccount에서 관리합니다.
 
-다만 다음 정책은 별도로 확정합니다.
+#### 4.6.1 동일 Email 계정 연동
 
-- 동일 Email의 `LOCAL` AuthAccount와 `GOOGLE` AuthAccount가 존재하는 경우
-- 기존 Member가 `GOOGLE` AuthAccount를 추가로 사용하는 경우
-- 동일 Member로 계정 연동을 허용하는 조건
+Google OAuth 인증에 성공한 사용자의 검증된 Email이
+기존 Member의 Email과 동일한 경우 기존 Member와의 계정 연동 여부를 확인합니다.
 
-해당 계정 연동 정책이 확정되기 전 AI Agent는 임의로 계정을 병합하지 않습니다.
+기존 Member에 `LOCAL` AuthAccount만 존재하는 경우
+Email 일치만으로 `GOOGLE` AuthAccount를 자동 연결하지 않습니다.
+
+사용자가 기존 `LOCAL` AuthAccount의 비밀번호로 재인증에 성공한 경우에만
+해당 Member에 `GOOGLE` AuthAccount를 연결합니다.
+
+Email 비교 시 대소문자 및 공백 등 정규화 규칙을 적용합니다.
+
+이미 해당 Google AuthAccount가 다른 Member와 연결되어 있는 경우
+자동으로 계정을 병합하지 않습니다.
+
+`WITHDRAWN` 상태의 Member는 자동으로 재활성화하거나
+새로운 AuthAccount를 연결하지 않습니다.
 
 ### 4.7 권한
 
-기본 Role:
+서비스의 사용자 역할은 `Guest`, `Member`, `Admin`, `SuperAdmin`으로 구분합니다.
+
+인증된 사용자의 Spring Security 권한 코드는 다음과 같이 관리합니다.
 
 - `USER`
 - `ADMIN`
@@ -262,8 +275,10 @@ Member가 아니라 AuthAccount에서 관리합니다.
 권한 관계는 다음과 같습니다.
 
 - `USER`: Member 기능을 사용합니다.
-- `ADMIN`: 항공편 운영 및 예약 현황 조회 등 일반 관리자 기능을 사용합니다.
+- `ADMIN`: 항공편 운영 및 예약 현황 조회 등 Admin 기능을 사용합니다.
 - `SUPERADMIN`: Admin 권한을 포함하며, 고객 예약 강제 취소 및 핵심 운영 데이터 수정 권한을 가집니다.
+
+`Guest`는 인증되지 않은 사용자이므로 별도의 인증 권한 코드를 가지지 않습니다.
 
 구체적인 Spring Security 권한 구조는 시스템 설계 문서에서 정의합니다.
 
@@ -549,6 +564,46 @@ KOKU Airline의 편명은 다음 형식을 사용합니다.
 
 세부 충돌 판단 규칙은 추후 정의합니다.
 
+### 9.5 예약 가능 시간
+
+KOKU Airline 항공편의 신규 예약은
+항공편 출발 예정 시각 기준 **2시간 전까지** 시작할 수 있습니다.
+
+출발 예정 시각까지 2시간 미만이 남은 항공편에 대해서는
+새로운 Reservation을 생성할 수 없습니다.
+
+예약 가능 여부는 Backend 시간을 기준으로 판단합니다.
+
+이미 생성된 `PENDING` Reservation의 Seat Hold는 기존 Hold 정책을 따르며,
+Hold 만료 시각이 항공편 출발 예정 시각을 초과하지 않도록 합니다.
+
+### 9.6 Flight 취소
+
+Admin 또는 SuperAdmin은 운영상 필요한 경우
+출발 전 Flight를 취소할 수 있습니다.
+
+Flight 취소 시 취소 사유 입력을 필수로 합니다.
+
+취소된 Flight와 연결된 Reservation은 더 이상 유효한 예약 상태로 유지하지 않고
+정책에 따라 `CANCELLED` 상태로 전환합니다.
+
+`CONFIRMED` Reservation의 경우:
+
+- Reservation: `CONFIRMED → CANCELLED`
+- Payment: `SUCCESS → REFUNDED`
+- Seat: `RESERVED → AVAILABLE`
+
+`PENDING` Reservation의 경우:
+
+- Reservation: `PENDING → CANCELLED`
+- 진행 중인 Payment: `PENDING → CANCELLED`
+- Seat: `HELD → AVAILABLE`
+
+기존 `FAILED` PaymentAttempt는 결제 이력으로 유지합니다.
+
+MVP에서는 Flight 취소로 인한 결제 금액을 전액 Mock 환불하며,
+대체편 제공 및 자동 재예약은 지원하지 않습니다.
+
 ---
 
 ## 10. 탑승객 정책
@@ -629,6 +684,22 @@ Member와 Passenger는 별개의 도메인으로 관리하며,
 
 연령 구분은 탑승객이 직접 선택하는 값이 아니라, 입력된 생년월일을 기준으로 시스템에서 계산하는 것을 원칙으로 합니다.
 
+### 10.6 Child 및 Infant 동반 정책
+
+Child가 포함된 Reservation에는 최소 1명 이상의 Adult가 포함되어야 합니다.
+
+Child는 같은 Reservation의 Adult 중 최소 1명과
+인접한 Seat를 배정받아야 합니다.
+
+MVP에서 인접한 Seat는 동일 Row에서 좌우로 직접 연결된 Seat를 의미합니다.
+
+MVP에서 Infant는 독립된 Seat를 사용하지 않습니다.
+
+Infant는 반드시 같은 Reservation의 Adult와 연결되어야 하며,
+Adult 1명당 최대 1명의 Infant를 동반할 수 있습니다.
+
+Infant만으로 Reservation을 생성할 수 없습니다.
+
 ---
 
 ## 11. 예약 정책
@@ -700,6 +771,7 @@ Mock 결제가 성공하여 최종 확정된 예약입니다.
 - Mock 결제 최대 시도 횟수인 3회를 모두 실패한 경우
 - 확정된 예약이 정상적으로 취소된 경우
 - SuperAdmin에 의해 강제 취소된 경우
+- Flight 자체가 취소된 경우
 
 MVP에서는 취소 사유별로 별도의 예약 상태를 추가하지 않고
 `CANCELLED` 상태로 통합하여 관리합니다.
@@ -1041,11 +1113,36 @@ SuperAdmin은 Admin의 모든 권한을 포함합니다.
 
 Admin은 운영 목적으로 예약 현황을 조회할 수 있습니다.
 
-Admin은 사용자의 예약을 강제로 취소할 수 없습니다.
+Admin은 개별 사용자의 Reservation을 직접 강제로 취소할 수 없습니다.
 
 SuperAdmin은 운영상 필요한 경우 사용자의 예약을 강제로 취소할 수 있습니다.
 
 강제 취소 시 예약 상태와 좌석 상태의 데이터 정합성을 유지해야 합니다.
+
+### 16.4 SuperAdmin 강제 예약 취소
+
+SuperAdmin은 운영상 필요한 경우 출발 전의
+`CONFIRMED` Reservation을 강제로 취소할 수 있습니다.
+
+SuperAdmin 강제 취소에는 Member에게 적용되는
+출발 24시간 전 취소 제한을 적용하지 않습니다.
+
+강제 취소 시 취소 사유 입력을 필수로 합니다.
+
+강제 취소가 완료되면 다음 상태 전이를 수행합니다.
+
+- Reservation: `CONFIRMED → CANCELLED`
+- Payment: `SUCCESS → REFUNDED`
+- Seat: `RESERVED → AVAILABLE`
+
+MVP에서는 강제 취소 시 Mock 결제 금액을 전액 환불합니다.
+
+이미 `CANCELLED` 상태인 Reservation은 중복 상태 전이를 수행하지 않습니다.
+
+이미 출발한 Flight의 Reservation은 강제 취소할 수 없습니다.
+
+강제 취소 시 SuperAdmin, 대상 Reservation, 처리 시각 및 취소 사유를
+Audit Log로 기록합니다.
 
 ---
 
@@ -1110,11 +1207,13 @@ Mock 결제 성공 시 발생합니다.
 - 사용자가 `PENDING` 상태의 예약 진행을 취소한 경우
 - 좌석 Hold 시간이 만료된 경우
 - Mock 결제 최대 시도 횟수인 3회를 모두 실패한 경우
+- 연결된 Flight가 취소된 경우
 
 `CONFIRMED → CANCELLED`
 
-확정된 예약을 사용자가 정상 취소하거나
-SuperAdmin이 정책에 따라 강제 취소한 경우 발생합니다.
+확정된 예약을 사용자가 정상 취소하거나,
+SuperAdmin이 정책에 따라 강제 취소하거나,
+연결된 Flight가 취소된 경우 발생합니다.
 
 ### 18.2 결제
 
@@ -1134,11 +1233,13 @@ Mock 결제 처리 과정에서 예상하지 못한 오류가 발생한 경우 �
 
 - 결제가 완료되기 전에 사용자가 예약 또는 결제 진행을 취소한 경우
 - 좌석 Hold 시간이 만료되어 더 이상 결제를 진행할 수 없는 경우
+- 연결된 Flight가 취소된 경우
 
 `SUCCESS → REFUNDED`
 
-결제가 완료된 예약이 취소 정책에 따라 정상적으로 취소되고
-전액 환불 처리된 경우 발생합니다.
+결제가 완료된 Reservation이 취소 정책에 따라 정상 취소되거나,
+SuperAdmin에 의해 강제 취소되거나,
+연결된 Flight가 취소되어 전액 환불된 경우 발생합니다.
 
 ### 18.3 좌석
 
@@ -1228,7 +1329,12 @@ Mock 결제 성공:
 
 ### 20.3 예약 중 좌석 상태 변경
 
-사용자가 좌석을 선택한 뒤 다른 Transaction에서 해당 좌석이 먼저 확정된 경우 예약 생성을 실패 처리합니다.
+`PENDING` 예약 생성과 Seat의 `AVAILABLE → HELD` 전환 과정에서
+다른 Transaction에 의해 해당 Seat가 더 이상 `AVAILABLE` 상태가 아닌 경우
+예약 시작 전체를 실패 처리합니다.
+
+실패한 사용자에게는 좌석 상태가 변경되었음을 안내하고
+다른 좌석을 선택하도록 합니다.
 
 ### 20.4 Mock 결제 실패
 
@@ -1285,15 +1391,11 @@ AI 응답 생성이 실패하더라도 실제 항공편 API 원본 데이터나 
 
 다음 항목은 M1 설계 과정에서 추가로 확정합니다.
 
-- [ ] 기존 Member와 동일 Email의 `GOOGLE` AuthAccount 연동 정책
 - [ ] Access Token / Refresh Token 정책
 - [ ] JWT 저장 및 재발급 방식
 - [ ] 여권번호 등 민감정보의 저장 및 보호 방식
-- [ ] SuperAdmin 강제 예약 취소 시 세부 상태 전이 및 감사 로그 정책
 - [ ] 외부 Flight API Cache 적용 여부 및 TTL
-- [ ] 항공편 취소 시 연결된 예약·결제·좌석 처리 정책
 - [ ] Payment와 PaymentAttempt의 데이터 모델 분리 및 예약과 결제 시도의 관계
-- [ ] 다인 예약 시 탑승객별 좌석 배정 및 유아 좌석 정책
 
 ---
 
