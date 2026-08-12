@@ -1,0 +1,1932 @@
+# KOKU Airline Renewal - UI Design
+
+## 1. 문서 목적
+
+본 문서는 KOKU Airline Renewal의 Frontend UI 구조와 주요 사용자 흐름을 정의합니다.
+
+본 문서의 목적은 다음과 같습니다.
+
+- MVP에서 필요한 화면 범위를 정의합니다.
+- Guest, Member, Admin, SuperAdmin별 접근 가능한 화면을 정의합니다.
+- 주요 사용자 시나리오와 화면 이동 흐름을 정의합니다.
+- 예약, 좌석, 결제 등 상태에 따라 UI가 어떻게 변경되는지 정의합니다.
+- 한국어와 일본어 UI를 동일한 기능 범위로 제공하기 위한 기준을 정의합니다.
+- Frontend 구현 과정에서 AI Agent가 화면 구조와 사용자 흐름을 임의로 변경하지 않도록 기준을 제공합니다.
+
+비즈니스 규칙은 `02-domain-policy.md`를 기준으로 하며,
+구체적인 Backend API와 데이터 구조는 `05-data-api-design.md`,
+시스템 및 기술 구조는 `04-system-design.md`에서 정의합니다.
+
+---
+
+### 1.1 용어 표기 원칙
+
+본 문서는 `01-project-plan.md`와 `02-domain-policy.md`의 용어 표기 원칙을 따릅니다.
+
+설명과 일반적인 기능명은 한국어로 작성하며,
+Role, Entity, 상태 및 코드와 직접 연결되는 개념은 영문 Canonical Term을 사용합니다.
+
+주요 Role:
+
+- `Guest`
+- `Member`
+- `Admin`
+- `SuperAdmin`
+
+주요 Entity:
+
+- `Member`
+- `AuthAccount`
+- `Airport`
+- `Route`
+- `Aircraft`
+- `Flight`
+- `Seat`
+- `Passenger`
+- `Reservation`
+- `Payment`
+- `PaymentAttempt`
+
+---
+
+## 2. UI 설계 기본 원칙
+
+### 2.1 사용자 흐름 우선
+
+MVP에서는 화려한 시각적 효과보다
+사용자가 현재 어떤 단계에 있으며 다음에 무엇을 해야 하는지 명확하게 이해할 수 있도록 설계합니다.
+
+특히 다음 흐름을 명확하게 표현합니다.
+
+- 항공편 검색
+- 항공편 선택
+- 탑승객 정보 입력
+- 좌석 선택
+- 예약 내용 확인
+- 결제
+- 예약 확정
+
+---
+
+### 2.2 내부 항공편과 외부 실제 항공편 구분
+
+KOKU Airline 내부 Flight와 외부 Flight API를 통해 조회한 실제 항공편은
+사용자가 혼동하지 않도록 UI에서 명확하게 구분합니다.
+
+#### 내부 KOKU Airline Flight
+
+- KOKU Airline 브랜드 표시
+- 좌석 조회 가능
+- 예약 가능
+- Mock 결제 가능
+
+#### 외부 실제 항공편
+
+- `실제 항공편 조회`임을 명시
+- 실제 항공사 정보 표시
+- 조회 및 비교만 가능
+- KOKU Airline 예약 버튼을 제공하지 않음
+- 실제 발권 또는 외부 항공사 예약 기능을 제공하지 않음
+
+---
+
+### 2.3 상태를 명확하게 표시
+
+Reservation, Payment, Seat 등의 상태는 사용자가 이해할 수 있는 자연어로 표시합니다.
+
+예:
+
+| 대상 | 내부 상태 | 한국어 표시 | 일본어 표시 |
+|---|---|---|---|
+| Reservation | `PENDING` | 예약 진행 중 | 予約手続き中 |
+| Reservation | `CONFIRMED` | 예약 확정 | 予約確定 |
+| Reservation | `CANCELLED` | 예약 취소 | 予約キャンセル |
+| Payment | `PENDING` | 결제 진행 중 | 支払い処理中 |
+| Payment | `SUCCESS` | 결제 완료 | 支払い完了 |
+| Payment | `FAILED` | 결제 실패 | 支払い失敗 |
+| Payment | `CANCELLED` | 결제 취소 | 支払いキャンセル |
+| Payment | `REFUNDED` | 환불 완료 | 払い戻し完了 |
+| Seat | `AVAILABLE` | 선택 가능 | 選択可能 |
+| Seat | `HELD` | 임시 확보 | 一時確保 |
+| Seat | `RESERVED` | 예약됨 | 予約済み |
+| Seat | `UNAVAILABLE` | 선택 불가 | 選択不可 |
+
+Frontend에서는 Backend 상태 값을 직접 사용자에게 노출하지 않고
+Locale에 맞는 사용자용 문자열로 변환하여 표시합니다.
+
+---
+
+## 3. 다국어 UI 정책
+
+### 3.1 지원 언어
+
+MVP에서는 다음 두 언어를 필수 지원합니다.
+
+- 한국어 (`ko`)
+- 일본어 (`ja`)
+
+두 언어 중 하나를 보조 언어로 취급하지 않으며,
+주요 사용자 기능은 두 언어에서 동일하게 제공해야 합니다.
+
+---
+
+### 3.2 언어 선택
+
+Global Header에서 사용자가 현재 언어를 확인하고 변경할 수 있도록 합니다.
+
+예:
+
+`한국어 | 日本語`
+
+언어 변경 시 현재 인증 상태와 서비스 상태는 유지합니다.
+
+가능한 경우 현재 Page를 유지한 상태에서 표시 문자열만 변경합니다.
+
+---
+
+### 3.3 초기 Locale 선택
+
+초기 Locale은 다음 우선순위로 결정하는 것을 기본안으로 합니다.
+
+1. 사용자가 이전에 직접 선택한 Locale
+2. Browser Locale
+3. 기본 Locale `ko`
+
+사용자가 직접 선택한 Locale은 Frontend에서 저장하여
+다음 방문에서도 유지할 수 있도록 합니다.
+
+구체적인 저장 방식은 `04-system-design.md`에서 확정합니다.
+
+---
+
+### 3.4 문자열 관리
+
+사용자에게 표시되는 문자열은 Component에 직접 Hard Coding하지 않습니다.
+
+예:
+
+```text
+src/
+ └─ locales/
+     ├─ ko/
+     └─ ja/
+```
+
+구체적인 i18n Library 및 디렉터리 구조는 Frontend 초기 구성에서 확정합니다.
+
+---
+
+## 4. 전체 Information Architecture
+
+MVP 사용자 화면은 크게 다음 영역으로 구분합니다.
+
+```text
+KOKU Airline
+│
+├─ Home
+│
+├─ KOKU 항공편 검색
+│   ├─ 검색 결과
+│   └─ Flight 상세
+│
+├─ 실제 항공편 검색
+│   └─ 실제 항공편 검색 결과
+│
+├─ AI 항공편 검색
+│
+├─ 인증
+│   ├─ 로그인
+│   ├─ 회원가입
+│   └─ Google OAuth
+│
+├─ 예약
+│   ├─ Passenger 정보
+│   ├─ Seat 선택
+│   ├─ 예약 확인
+│   ├─ Mock 결제
+│   └─ 예약 완료
+│
+├─ My Page
+│   ├─ 회원 정보
+│   ├─ 예약 목록
+│   └─ 예약 상세
+│
+└─ Admin
+    ├─ Dashboard
+    ├─ Airport
+    ├─ Route
+    ├─ Aircraft / Seat 구성
+    ├─ Flight / 운항 일정
+    └─ Reservation
+```
+
+---
+
+## 5. Global Navigation
+
+### 5.1 Guest Header
+
+```text
+[KOKU Airline]
+
+항공편 검색
+실제 항공편
+AI 항공편 검색
+
+                    [한국어 / 日本語]
+                    [로그인]
+                    [회원가입]
+```
+
+Guest가 AI 항공편 검색을 선택하면 로그인 필요 안내를 제공합니다.
+
+---
+
+### 5.2 Member Header
+
+```text
+[KOKU Airline]
+
+항공편 검색
+실제 항공편
+AI 항공편 검색
+
+                    [한국어 / 日本語]
+                    [내 예약]
+                    [My Page]
+                    [로그아웃]
+```
+
+---
+
+### 5.3 Admin / SuperAdmin Header
+
+일반 사용자 화면과 관리자 화면은 Navigation을 분리합니다.
+
+```text
+[관리자]
+
+Dashboard
+Airport
+Route
+Aircraft
+Flight
+Reservation
+
+                    [일반 서비스]
+                    [한국어 / 日本語]
+                    [로그아웃]
+```
+
+SuperAdmin에게만 허용된 기능은 권한에 따라 추가 Action을 표시합니다.
+
+---
+
+## 6. Role별 접근 화면
+
+| 화면 | Guest | Member | Admin | SuperAdmin |
+|---|---:|---:|---:|---:|
+| Home | O | O | O | O |
+| KOKU Flight 검색 | O | O | O | O |
+| Flight 상세 조회 | O | O | O | O |
+| 외부 실제 항공편 조회 | O | O | O | O |
+| AI 항공편 검색 | X | O | - | - |
+| Seat 선택 | X | O | - | - |
+| 예약 생성 | X | O | - | - |
+| Mock 결제 | X | O | - | - |
+| 자신의 예약 조회 | X | O | - | - |
+| 관리자 Dashboard | X | X | O | O |
+| Master Data 조회 | X | X | O | O |
+| Master Data 변경 | X | X | X | O |
+| Flight 관리 | X | X | O | O |
+| 예약 현황 조회 | X | X | O | O |
+| 개별 Reservation 강제 취소 | X | X | X | O |
+
+`Admin`과 `SuperAdmin`의 일반 사용자 서비스 이용 가능 여부는 인증 및 계정 설계에 따라 구현할 수 있으나,
+관리자 업무 화면의 권한 기준은 위 표를 따릅니다.
+
+---
+
+## 7. 주요 사용자 흐름
+
+### 7.1 Guest 항공편 조회
+
+```text
+Home
+ ↓
+검색 조건 입력
+ ↓
+KOKU Flight 검색 결과
+ ↓
+Flight 상세
+```
+
+Guest는 Flight를 조회할 수 있지만 예약을 시작할 수 없습니다.
+
+Guest가 `예약하기`를 선택하면 다음 흐름으로 이동합니다.
+
+```text
+Flight 상세
+ ↓
+로그인 필요 안내
+ ↓
+로그인
+ ↓
+인증 성공
+ ↓
+선택한 Flight 정보를 유지
+ ↓
+Passenger 정보 입력
+```
+
+로그인 전 사용자가 선택한 Flight 정보는 유지하고,
+인증 성공 후 Passenger 정보 입력 단계로 이동합니다.
+
+---
+
+### 7.2 Member 예약 흐름
+
+```text
+Home
+ ↓
+Flight 검색
+ ↓
+검색 결과
+ ↓
+Flight 상세
+ ↓
+Passenger 정보 입력
+ ↓
+Seat 선택
+ ↓
+PENDING Reservation 생성
+선택한 모든 Seat AVAILABLE → HELD
+ ↓
+예약 내용 확인
+ ↓
+Mock 결제
+ ↓
+결제 성공
+ ↓
+Reservation CONFIRMED
+선택한 모든 Seat HELD → RESERVED
+ ↓
+예약 완료
+ ↓
+Reservation 상세
+```
+
+---
+
+### 7.3 외부 실제 항공편 조회
+
+```text
+Home
+ ↓
+실제 항공편 검색
+ ↓
+검색 조건 입력
+ ↓
+외부 Flight API 조회
+ ↓
+실제 항공편 검색 결과
+```
+
+검색 결과에서는 가능한 경우 다음 정보를 표시합니다.
+
+- 실제 항공사
+- 편명
+- 출발 / 도착 Airport
+- 출발 / 도착 시각
+- 가격 정보
+- 경유 여부
+- 외부 실제 항공편 정보라는 안내
+
+외부 실제 항공편에는 KOKU Airline의 `예약하기` 버튼을 제공하지 않습니다.
+
+---
+
+### 7.4 AI 항공편 검색
+
+```text
+Member 로그인
+ ↓
+AI 항공편 검색
+ ↓
+자연어 조건 입력
+ ↓
+AI 검색 조건 구조화
+ ↓
+Application 입력 조건 검증
+ ↓
+외부 Flight API 조회
+ ↓
+Application 필터링 / 정렬
+ ↓
+AI 추천 결과 및 설명
+```
+
+AI 화면에는 다음과 같은 안내를 제공합니다.
+
+> AI 검색 결과는 실제 항공편 데이터를 기반으로 제공되며,
+> KOKU Airline에서 해당 항공편을 직접 예약할 수 없습니다.
+
+AI가 생성한 추천 설명과 외부 Flight API가 제공한 실제 항공편 데이터는
+사용자가 구분할 수 있도록 UI 영역을 분리합니다.
+
+---
+
+## 8. 인증 UI
+
+### 8.1 로그인 화면
+
+#### 입력 항목
+
+- Email
+- Password
+
+#### Action
+
+- 로그인
+- Google로 로그인
+- 회원가입으로 이동
+
+#### Validation
+
+- 필수값 확인
+- Email 형식 확인
+
+인증 실패 시 계정 존재 여부 등 불필요한 상세 정보를 노출하지 않습니다.
+
+예:
+
+```text
+이메일 또는 비밀번호를 확인해 주세요.
+```
+
+---
+
+### 8.2 회원가입 화면
+
+#### 입력 항목
+
+- Email
+- Password
+- Password 확인
+- Name
+
+#### Password 조건
+
+다음 조건을 화면에서 안내합니다.
+
+- 8자 이상
+- 영문 대문자 최소 1자
+- 영문 소문자 최소 1자
+- 숫자 최소 1자
+- 특수문자 최소 1자
+- 허용 특수문자: `! @ # $ % ^ & *`
+
+가능하면 사용자가 Password를 입력하는 동안 각 조건의 충족 여부를 표시합니다.
+
+```text
+✓ 8자 이상
+✓ 영문 대문자
+✓ 영문 소문자
+✕ 숫자
+✓ 특수문자(!, @, #, $, %, ^, &, * 만 가능)
+```
+
+---
+
+### 8.3 Google OAuth 로그인
+
+기본 흐름:
+
+```text
+Google 로그인
+ ↓
+Google OAuth 인증
+ ↓
+AuthAccount 확인
+```
+
+#### 신규 사용자
+
+```text
+GOOGLE AuthAccount 없음
++
+동일 Email Member 없음
+ ↓
+Member 생성
+ ↓
+GOOGLE AuthAccount 연결
+ ↓
+로그인 완료
+```
+
+#### 기존 GOOGLE 사용자
+
+```text
+GOOGLE AuthAccount 확인
+ ↓
+기존 Member 인증
+ ↓
+로그인 완료
+```
+
+---
+
+### 8.4 동일 Email의 LOCAL 계정이 존재하는 경우
+
+Google OAuth에서 확인된 Email과 기존 `LOCAL` Member의 Email이 동일하더라도
+Email 일치만으로 계정을 자동 연결하지 않습니다.
+
+```text
+Google OAuth 성공
+ ↓
+동일 Email LOCAL 계정 발견
+ ↓
+기존 계정 확인 안내
+ ↓
+LOCAL Password 재입력
+ ↓
+재인증 성공
+ ↓
+GOOGLE AuthAccount 연결
+ ↓
+로그인 완료
+```
+
+안내 예:
+
+> 동일한 이메일로 가입된 KOKU Airline 계정이 있습니다.
+> 계정 보호를 위해 기존 비밀번호를 확인해 주세요.
+
+재인증에 실패하면 계정을 연결하지 않습니다.
+
+`WITHDRAWN` 상태의 Member는 자동으로 재활성화하거나
+새로운 AuthAccount를 연결하지 않습니다.
+
+---
+
+## 9. Home
+
+Home은 서비스의 주요 Entry Point로 사용합니다.
+
+### 9.1 KOKU Flight 검색
+
+주요 입력 항목:
+
+```text
+출발지
+도착지
+출발일
+
+[항공편 검색]
+```
+
+MVP에서는 한국 ↔ 일본 노선만 입력할 수 있습니다.
+
+---
+
+### 9.2 주요 서비스 안내
+
+Home에서 내부 KOKU Airline 서비스와 외부 조회 서비스를
+사용자가 쉽게 구분할 수 있도록 합니다.
+
+```text
+[KOKU Airline 항공편]
+
+KOKU Airline의 가상 항공편입니다.
+좌석을 선택하고 Mock 결제를 통해 예약할 수 있습니다.
+
+
+[실제 항공편 조회]
+
+외부 데이터를 이용하여 실제 한국 ↔ 일본 항공편을 검색합니다.
+조회만 가능하며 KOKU Airline에서 예약할 수 없습니다.
+
+
+[AI 항공편 추천]
+
+자연어로 원하는 조건을 입력하여
+실제 항공편을 검색하고 추천받을 수 있습니다.
+```
+
+AI 기능은 Guest에게 노출할 수 있지만,
+실제 사용 시 로그인을 요구합니다.
+
+---
+
+## 10. KOKU Flight 검색
+
+### 10.1 검색 조건
+
+- 출발 Airport
+- 도착 Airport
+- 출발 Date
+
+출발 Airport와 도착 Airport는 동일할 수 없습니다.
+
+다음 조합만 허용합니다.
+
+- 한국 → 일본
+- 일본 → 한국
+
+---
+
+### 10.2 Flight 검색 결과
+
+각 Flight는 Card 형태로 표시할 수 있습니다.
+
+```text
+--------------------------------
+KOKU Airline
+
+KO101
+
+ICN                 NRT
+09:30      →        11:50
+
+2026.09.10
+
+예약 가능
+
+                [상세보기]
+--------------------------------
+```
+
+출발 예정 시각까지 2시간 미만이 남은 Flight는
+새로운 Reservation을 생성할 수 없습니다.
+
+검색 결과에서는 다음과 같이 표시합니다.
+
+```text
+예약 마감
+```
+
+상세 조회는 가능하지만 예약 Action은 비활성화합니다.
+
+---
+
+## 11. Flight 상세
+
+표시 정보:
+
+- 편명
+- 출발 Airport
+- 도착 Airport
+- 출발 Date / Time
+- 도착 Date / Time
+- Aircraft
+- 운항 상태
+- 예약 가능 여부
+
+#### Member
+
+```text
+[예약하기]
+```
+
+#### Guest
+
+```text
+[로그인 후 예약]
+```
+
+#### 예약 마감 Flight
+
+```text
+[예약 마감]
+```
+
+예약 Action을 Disabled 처리합니다.
+
+---
+
+## 12. 예약 Step UI
+
+예약 과정에서는 사용자가 현재 어느 단계인지 명확하게 확인할 수 있도록 합니다.
+
+```text
+1. 탑승객 정보
+ ↓
+2. 좌석 선택
+ ↓
+3. 예약 확인
+ ↓
+4. 결제
+ ↓
+5. 완료
+```
+
+Desktop 예:
+
+```text
+[1 탑승객] ─ [2 좌석] ─ [3 확인] ─ [4 결제] ─ [5 완료]
+```
+
+Mobile에서는 현재 Step을 중심으로 단순하게 표현할 수 있습니다.
+
+---
+
+## 13. Seat 선택
+
+### 13.1 Seat 상태
+
+최소 다음 상태를 시각적으로 구분합니다.
+
+- 선택 가능
+- 현재 사용자가 선택
+- 다른 Reservation에서 `HELD`
+- `RESERVED`
+- `UNAVAILABLE`
+
+상태는 색상만으로 구분하지 않고
+Text, Icon 또는 Pattern 등을 함께 사용합니다.
+
+---
+
+### 13.2 Reservation 시작
+
+사용자가 Seat가 필요한 모든 Passenger의 좌석 선택을 완료한 후 예약을 시작하면
+Backend에서 다음 처리를 수행합니다.
+
+```text
+Reservation → PENDING
+선택한 모든 Seat → HELD
+```
+
+Backend 처리가 성공한 이후 Hold Countdown을 표시합니다.
+
+```text
+좌석이 임시 확보되었습니다.
+
+남은 시간
+00:59:42
+```
+
+Countdown은 사용자 안내 목적이며
+실제 Hold 만료 여부는 Backend 시간을 기준으로 판단합니다.
+
+---
+
+### 13.3 Hold 만료
+
+Hold가 만료된 경우 사용자에게 명확하게 안내합니다.
+
+```text
+좌석 임시 확보 시간이 만료되었습니다.
+
+선택한 좌석이 다시 예약 가능한 상태로 반환되었습니다.
+
+[좌석 다시 선택]
+```
+
+만료된 Reservation에서는 기존 상태로 결제를 계속 진행할 수 없습니다.
+
+---
+
+## 14. Passenger 정보 입력
+
+Reservation은 한 명 이상의 Passenger를 포함할 수 있습니다.
+
+Passenger별로 다음 정보를 입력합니다.
+
+#### 기본 정보
+
+- 여권상의 영문 성 (직접 입력)
+- 여권상의 영문 이름 (직접 입력)
+- 생년월일 (달력에서 선택)
+- 성별 (목록에서 선택)
+- 국적 (목록에서 선택)
+
+#### 테스트용 여권 정보
+
+Passenger의 기본 정보를 입력하면 테스트용 여권 정보는 시스템에서 자동으로 생성합니다.
+
+- 여권번호: 테스트용 번호 자동 생성
+- 여권 발급국: 입력한 국적과 동일한 국가로 자동 설정
+- 여권 만료일: 생성 시점 기준 5년 뒤 날짜로 자동 설정
+
+자동 생성된 테스트용 여권 정보는 사용자가 직접 입력하거나 수정하지 않는 것을 기본으로 합니다.
+
+화면에는 다음 안내를 표시합니다.
+
+> 본 서비스는 포트폴리오용 가상 항공사 서비스입니다.
+> 실제 여권 정보를 입력하지 않습니다.
+> 테스트용 여권 정보는 시스템에서 자동으로 생성됩니다.
+
+---
+
+### 14.1 Passenger 추가 및 삭제
+
+하나의 Reservation에는 여러 Passenger가 포함될 수 있으므로
+사용자는 Passenger 입력 화면에서 탑승객을 추가하거나 삭제할 수 있습니다.
+
+예:
+
+```text
+Passenger 1
+[탑승객 정보 입력]
+
+Passenger 2
+[탑승객 정보 입력]
+
+[+ Passenger 추가]
+```
+
+Reservation 진행을 위해 최소 1명의 Passenger가 필요하므로
+마지막 남은 Passenger는 삭제할 수 없습니다.
+
+Infant와 연결된 Adult를 삭제하려는 경우
+해당 Infant의 동반 Adult를 먼저 변경하거나 Infant를 삭제해야 합니다.
+
+Passenger 정보 입력이 완료되면 입력된 생년월일을 기준으로
+Adult, Child, Infant를 판단하고 다음 Seat 선택 단계로 이동합니다.
+
+---
+
+## 15. Adult / Child / Infant UI
+
+Passenger의 연령 구분은 사용자가 직접 선택하지 않습니다.
+
+입력된 생년월일과 Flight 탑승일을 기준으로 시스템에서 계산합니다.
+
+표시 예:
+
+```text
+KIM JIHUN
+Adult
+
+KIM MINSU
+Child
+```
+
+---
+
+### 15.1 Child
+
+Child가 포함된 Reservation에는 최소 1명의 Adult가 포함되어야 합니다.
+
+Child는 같은 Reservation의 Adult 중 최소 1명과
+인접한 Seat를 배정받아야 합니다.
+
+안내 예:
+
+```text
+소아 탑승객은 같은 예약의 성인과 인접한 좌석을 선택해야 합니다.
+```
+
+조건을 만족하지 않는 경우 다음 단계로 진행하지 못하도록 합니다.
+
+---
+
+### 15.2 Infant
+
+Infant는 별도의 Seat를 사용하지 않습니다.
+
+Passenger 입력 화면에서 Infant를 동반할 Adult를 지정합니다.
+
+```text
+Infant
+KIM BABY
+
+동반 Adult
+[ KIM JIHUN ▼ ]
+```
+
+Adult 1명당 최대 1명의 Infant를 연결할 수 있습니다.
+
+---
+
+## 16. 예약 확인
+
+Mock 결제로 이동하기 전에 Reservation 전체 내용을 확인합니다.
+
+표시 정보:
+
+- Flight
+- 출발 / 도착 Airport
+- Date / Time
+- Passenger
+- Seat
+- Infant 동반 정보
+- Mock 결제 금액
+- Hold 남은 시간
+
+예:
+
+```text
+예약 내용 확인
+
+KO101
+ICN → NRT
+
+Passenger 1
+KIM JIHUN
+Seat 12A
+
+Passenger 2
+KIM MINSU (Child)
+Seat 12B
+
+Hold 남은 시간
+00:42:31
+
+[예약 진행 취소]
+[결제로 이동]
+```
+
+Reservation이 `PENDING` 상태로 생성된 이후 Passenger 또는 Seat를 변경하려면
+현재 예약 진행을 취소하고 다시 예약을 시작합니다.
+
+---
+
+## 17. Mock 결제
+
+### 17.1 결제 안내
+
+실제 금융 거래가 발생하지 않는다는 것을 명확하게 표시합니다.
+
+```text
+Mock Payment
+
+본 프로젝트에서는 실제 금융 거래가 발생하지 않습니다.
+```
+
+실제 카드번호 등 금융 개인정보를 입력받는 UI는 구현하지 않습니다.
+
+---
+
+### 17.2 결제 Action
+
+```text
+[예약 진행 취소]
+[Mock 결제하기]
+```
+
+---
+
+### 17.3 결제 성공
+
+결제 성공 후:
+
+```text
+Payment
+PENDING → SUCCESS
+
+Reservation
+PENDING → CONFIRMED
+
+선택한 모든 Seat
+HELD → RESERVED
+```
+
+사용자 화면:
+
+```text
+예약이 완료되었습니다.
+
+KO101
+ICN → NRT
+2026.09.10
+
+[예약 상세 보기]
+[홈으로]
+```
+
+---
+
+### 17.4 결제 실패 및 재시도
+
+결제가 실패했지만 재시도가 가능한 경우:
+
+```text
+결제를 완료하지 못했습니다.
+
+결제 시도 1 / 3
+좌석 Hold 00:25:14
+
+[다시 결제]
+[예약 진행 취소]
+```
+
+결제 재시도 시 새로운 결제 시도 이력을 생성합니다.
+
+구체적인 Payment와 PaymentAttempt의 데이터 모델 및 관계는
+`05-data-api-design.md`에서 정의합니다.
+
+기존 실패한 결제 시도 이력은 유지합니다.
+
+---
+
+### 17.5 결제 3회 실패
+
+```text
+결제 가능 횟수를 모두 사용했습니다.
+
+Reservation이 취소되었으며
+선택한 Seat가 반환되었습니다.
+
+[항공편 다시 검색]
+```
+
+상태 변화:
+
+```text
+Reservation → CANCELLED
+선택한 모든 Seat → AVAILABLE
+```
+
+마지막 및 이전의 실패한 결제 시도는 결제 이력으로 유지합니다.
+
+---
+
+## 18. My Page
+
+### 18.1 기본 구조
+
+```text
+My Page
+
+├─ 내 정보
+├─ 내 예약
+└─ 회원 탈퇴
+```
+
+---
+
+### 18.2 Reservation 목록
+
+상태별 Filter를 제공할 수 있습니다.
+
+```text
+[전체]
+[예약 진행 중]
+[예약 확정]
+[예약 취소]
+```
+
+Reservation Card 예:
+
+```text
+KO101
+
+ICN → NRT
+2026.09.10
+
+예약 확정
+
+[상세보기]
+```
+
+---
+
+## 19. Reservation 상세
+
+표시 정보:
+
+- Reservation 식별정보
+- Reservation 상태
+- Flight
+- Passenger
+- Seat
+- Payment 상태
+- 예약 생성 시각
+- 취소 가능 여부
+
+`PENDING`인 경우 Hold 남은 시간을 표시합니다.
+
+`CANCELLED`인 경우 가능하면 취소 사유를 사용자에게 표시합니다.
+
+결제가 완료된 `CONFIRMED` Reservation이 Flight 취소로 인해 취소된 경우 예:
+
+```text
+Flight 취소로 인해 예약이 취소되었습니다.
+
+Mock 결제 금액은 전액 환불 처리되었습니다.
+```
+
+`PENDING` Reservation이며 Seat Hold 시간이 남아 있는 경우
+Hold 남은 시간을 표시하고 예약 진행을 계속하거나 취소할 수 있습니다.
+
+```text
+좌석 임시 확보 남은 시간
+00:32:15
+
+[예약 진행 취소]
+[예약 계속하기]
+```
+
+`예약 계속하기`를 선택하면 해당 Reservation의 예약 확인 단계로 이동합니다.
+
+사용자는 예약 내용을 다시 확인한 후 Mock 결제를 진행할 수 있습니다.
+
+Seat Hold 시간이 만료된 Reservation은 Backend 정책에 따라
+`CANCELLED` 상태로 처리되며 기존 예약 진행을 계속할 수 없습니다.
+
+---
+
+## 20. Member 예약 취소
+
+`CONFIRMED` Reservation이며
+Flight 출발 예정 시각까지 24시간 이상 남아 있는 경우
+예약 취소 Action을 제공합니다.
+
+```text
+[예약 취소]
+```
+
+선택 시 Confirmation Modal:
+
+```text
+예약을 취소하시겠습니까?
+
+예약 취소 시 Mock 결제 금액이 전액 환불되며
+선택한 좌석은 다시 예약 가능한 상태로 변경됩니다.
+
+[돌아가기]
+[예약 취소]
+```
+
+상태 변화:
+
+```text
+Reservation
+CONFIRMED → CANCELLED
+
+Payment
+SUCCESS → REFUNDED
+
+Seat
+RESERVED → AVAILABLE
+```
+
+출발 예정 시각까지 24시간 미만인 경우:
+
+```text
+출발 24시간 이내에는 예약을 취소할 수 없습니다.
+```
+
+예약 취소 Action을 제공하지 않거나 Disabled 처리합니다.
+
+---
+
+## 21. 회원 탈퇴
+
+회원 탈퇴 화면에서는 탈퇴 조건과 결과를 명확히 안내합니다.
+
+다음 Reservation이 존재하는 Member는 탈퇴할 수 없습니다.
+
+- `PENDING`
+- 아직 탑승하지 않은 `CONFIRMED`
+
+탈퇴할 수 없는 경우:
+
+```text
+회원 탈퇴를 진행할 수 없습니다.
+
+현재 진행 중이거나 향후 탑승 예정인 예약이 있습니다.
+예약을 먼저 확인해 주세요.
+
+[내 예약 보기]
+```
+
+탈퇴 가능한 경우:
+
+```text
+회원 탈퇴 후 로그인할 수 없습니다.
+
+기존 예약 및 결제 이력은
+서비스 데이터 정합성을 위해 유지됩니다.
+
+[취소]
+[회원 탈퇴]
+```
+
+---
+
+## 22. 실제 항공편 조회 UI
+
+내부 KOKU Flight와 외부 실제 항공편은 사용자가 혼동하지 않도록 명확하게 구분합니다.
+
+예:
+
+```text
+[KOKU 항공편] [실제 항공편 조회]
+```
+
+실제 항공편 Card 예:
+
+```text
+--------------------------------
+
+실제 항공편
+
+Airline
+Flight Number
+
+ICN → NRT
+09:20 → 11:40
+
+가격
+경유 여부
+
+외부 항공편 정보
+
+[상세 정보]
+
+--------------------------------
+```
+
+KOKU Airline의 예약 CTA는 표시하지 않습니다.
+
+---
+
+## 23. AI 항공편 검색 UI
+
+### 23.1 검색 입력
+
+```text
+어떤 항공편을 찾고 계신가요?
+
+┌──────────────────────────────┐
+│ 9월 초 인천에서 도쿄 가는    │
+│ 오전 항공편 찾아줘            │
+└──────────────────────────────┘
+
+[AI로 검색]
+```
+
+---
+
+### 23.2 Guest 접근
+
+Guest가 AI 항공편 검색에 접근하면:
+
+```text
+AI 항공편 검색은
+로그인한 Member에게 제공됩니다.
+
+[로그인]
+[회원가입]
+```
+
+---
+
+### 23.3 AI 검색 결과
+
+```text
+AI 추천
+
+검색 조건
+- ICN → Tokyo
+- 오전 출발
+- 가격 우선
+
+추천 1
+
+실제 Flight 정보
+...
+
+추천 이유
+오전 출발 조건을 만족하고
+조회된 항공편 중 가격이 낮은 편입니다.
+```
+
+다음 두 영역은 UI에서 명확하게 구분합니다.
+
+- 외부 Flight API 실제 데이터
+- AI가 생성한 추천 설명
+
+AI 설명을 실제 항공편 데이터처럼 표시하지 않습니다.
+
+---
+
+## 24. Admin UI
+
+### 24.1 Admin Dashboard
+
+MVP에서는 복잡한 통계 Dashboard보다
+주요 운영 화면으로 이동하기 위한 Navigation 중심으로 구성합니다.
+
+```text
+Admin Dashboard
+
+[Airport]
+[Route]
+[Aircraft]
+[Flight]
+[Reservation]
+```
+
+---
+
+### 24.2 Airport 관리
+
+#### Admin
+
+- 목록 조회
+- 상세 조회
+
+#### SuperAdmin
+
+- 목록 조회
+- 상세 조회
+- 생성
+- 수정
+- 비활성화
+
+권한이 없는 Action은 가능하면 UI에서 숨기는 것을 기본으로 합니다.
+
+다만 실제 권한 검증은 반드시 Backend에서도 수행합니다.
+
+---
+
+### 24.3 Route 관리
+
+#### Admin
+
+- 목록 조회
+- 상세 조회
+
+#### SuperAdmin
+
+- 목록 조회
+- 상세 조회
+- 생성
+- 수정
+- 비활성화
+
+---
+
+### 24.4 Aircraft / Seat 구성
+
+#### Admin
+
+- Aircraft 목록 조회
+- Aircraft 상세 조회
+- Seat 구성 조회
+
+#### SuperAdmin
+
+- Aircraft 생성
+- Aircraft 수정
+- Aircraft 비활성화
+- Seat 구성 관리
+
+---
+
+## 25. Flight 관리
+
+Admin과 SuperAdmin은 Flight 및 운항 일정을 관리할 수 있습니다.
+
+주요 흐름:
+
+```text
+Flight 목록
+ ↓
+Flight 상세
+ ↓
+Flight 생성 / 수정
+```
+
+Flight 상세에는 최소 다음 정보를 표시합니다.
+
+- Flight Number
+- Route
+- Aircraft
+- 출발 시각
+- 도착 시각
+- 운항 상태
+- 연결된 Reservation 현황
+
+---
+
+### 25.1 Flight 취소
+
+출발 전 Flight에는 취소 Action을 제공합니다.
+
+```text
+[Flight 취소]
+```
+
+선택 시 위험 Action Confirmation UI를 표시합니다.
+
+```text
+Flight를 취소하시겠습니까?
+
+연결된 Reservation이 모두 취소됩니다.
+
+CONFIRMED Reservation
+→ Mock 전액 환불
+
+PENDING Reservation
+→ 예약 진행 취소 및 Seat 반환
+
+취소 사유
+[                              ]
+
+[돌아가기]
+[Flight 취소]
+```
+
+취소 사유는 필수 입력입니다.
+
+Flight 취소 후:
+
+#### CONFIRMED Reservation
+
+```text
+Reservation → CANCELLED
+Payment → REFUNDED
+해당 Reservation의 모든 Seat → AVAILABLE
+```
+
+#### PENDING Reservation
+
+```text
+Reservation → CANCELLED
+진행 중 Payment → CANCELLED
+해당 Reservation의 모든 Seat → AVAILABLE
+```
+
+기존 `FAILED` PaymentAttempt는 이력으로 유지합니다.
+
+MVP에서는 대체편 제공 또는 자동 재예약을 제공하지 않습니다.
+
+---
+
+## 26. Reservation 관리자 화면
+
+Admin과 SuperAdmin은 Reservation 현황을 조회할 수 있습니다.
+
+검색 및 Filter 예:
+
+- Reservation 상태
+- Flight Number
+- 출발 Date
+- Member
+- Reservation 식별정보
+
+목록 예:
+
+```text
+Reservation   Member     Flight     State
+------------------------------------------------
+R00001        user1      KO101      CONFIRMED
+R00002        user2      KO101      CANCELLED
+```
+
+Reservation을 선택하면 상세 화면으로 이동합니다.
+
+---
+
+## 27. SuperAdmin 강제 예약 취소
+
+SuperAdmin의 Reservation 상세 화면에서만 강제 취소 Action을 제공합니다.
+
+Admin에게는 해당 Action을 제공하지 않습니다.
+
+강제 취소 가능 조건:
+
+- Reservation이 `CONFIRMED`
+- Flight가 아직 출발하지 않음
+
+```text
+[강제 취소]
+```
+
+선택 시:
+
+```text
+이 Reservation을 강제로 취소하시겠습니까?
+
+취소 후:
+
+Reservation → CANCELLED
+Payment → REFUNDED
+해당 Reservation의 모든 Seat → AVAILABLE
+
+취소 사유
+[                              ]
+
+[돌아가기]
+[강제 취소]
+```
+
+취소 사유는 필수입니다.
+
+Member에게 적용되는 출발 24시간 전 취소 제한은
+SuperAdmin 강제 취소에는 적용하지 않습니다.
+
+강제 취소 완료 후 처리 결과를 화면에 표시합니다.
+
+---
+
+## 28. Loading / Empty / Error State
+
+모든 주요 조회 화면은 최소 다음 상태를 고려합니다.
+
+### 28.1 Loading
+
+예:
+
+```text
+항공편을 조회하고 있습니다...
+```
+
+Loading Spinner 또는 Skeleton UI 등을 사용할 수 있습니다.
+
+---
+
+### 28.2 Empty
+
+예:
+
+```text
+조건에 맞는 항공편이 없습니다.
+
+검색 조건을 변경해 주세요.
+```
+
+---
+
+### 28.3 Error
+
+예:
+
+```text
+항공편 정보를 불러오지 못했습니다.
+
+잠시 후 다시 시도해 주세요.
+
+[다시 시도]
+```
+
+---
+
+## 29. 주요 예외 UI
+
+### 29.1 Seat 경쟁 실패
+
+```text
+선택한 좌석을 다른 사용자가 먼저 선택했습니다.
+
+다른 좌석을 선택해 주세요.
+
+[좌석 다시 선택]
+```
+
+---
+
+### 29.2 Seat Hold 만료
+
+```text
+좌석 임시 확보 시간이 만료되었습니다.
+
+[좌석 다시 선택]
+```
+
+---
+
+### 29.3 외부 Flight API 장애
+
+```text
+현재 실제 항공편 정보를 불러올 수 없습니다.
+
+KOKU Airline 내부 항공편 예약 서비스는
+정상적으로 이용할 수 있습니다.
+
+[다시 시도]
+```
+
+---
+
+### 29.4 AI 응답 실패
+
+```text
+AI 추천을 생성하지 못했습니다.
+
+일반 실제 항공편 검색을 이용하거나
+다시 시도해 주세요.
+
+[다시 시도]
+[일반 검색으로 이동]
+```
+
+---
+
+### 29.5 인증 필요
+
+```text
+로그인이 필요한 서비스입니다.
+
+[로그인]
+```
+
+---
+
+### 29.6 권한 없음
+
+```text
+이 기능에 접근할 권한이 없습니다.
+```
+
+---
+
+## 30. Responsive UI
+
+Frontend는 Desktop과 Mobile 환경을 모두 고려합니다.
+
+MVP에서는 별도의 Mobile App을 개발하지 않고
+React Web UI를 Responsive하게 구현하는 것을 기본으로 합니다.
+
+### Desktop
+
+- Header Navigation
+- 넓은 검색 결과 Layout
+- 필요한 경우 2 Column Layout
+- 예약 과정에서 요약 정보 Side Panel 사용 가능
+
+### Mobile
+
+- Vertical Layout
+- 주요 CTA를 명확하게 표시
+- 예약 Step Navigation 단순화
+- Seat Map의 Scroll 또는 확대 UI 고려
+- 긴 Form의 가독성을 고려
+- Modal 대신 Bottom Sheet를 사용할 수 있음
+
+구체적인 Breakpoint는 Frontend 구현 단계에서 결정합니다.
+
+---
+
+## 31. 접근성 기본 원칙
+
+MVP에서도 최소한 다음 사항을 고려합니다.
+
+- Form Input에는 연결된 Label을 제공합니다.
+- Error Message를 해당 Input과 연결합니다.
+- Keyboard를 통한 주요 기능 접근을 고려합니다.
+- 상태를 색상만으로 표현하지 않습니다.
+- Button과 Link의 역할을 구분합니다.
+- Disabled 상태를 명확하게 표현합니다.
+- Focus 상태를 확인할 수 있도록 합니다.
+- 한국어와 일본어 환경에서 Text가 잘리지 않도록 합니다.
+
+---
+
+## 32. Low-Fidelity Wireframe
+
+### 32.1 Home
+
+```text
++------------------------------------------------------+
+| KOKU Airline      항공편  실제항공편  AI     KO | JA |
++------------------------------------------------------+
+
+          한국과 일본을 연결하는 KOKU Airline
+
++------------------------------------------------------+
+| 출발지          | 도착지          | 출발일           |
+| ICN             | NRT             | 2026-09-10       |
++------------------------------------------------------+
+
+                    [항공편 검색]
+
+--------------------------------------------------------
+
+[KOKU Airline 항공편]
+
+좌석을 선택하고 직접 예약할 수 있습니다.
+
+
+[실제 항공편 조회]
+
+실제 한국 ↔ 일본 항공편을 검색합니다.
+
+
+[AI 항공편 추천]
+
+자연어로 원하는 항공편을 검색합니다.
+```
+
+---
+
+### 32.2 Flight 검색 결과
+
+```text
++------------------------------------------------------+
+| ICN → NRT                            2026-09-10      |
++------------------------------------------------------+
+
+KO101
+
+09:30 ICN ---------------------- 11:50 NRT
+
+예약 가능
+
+                                      [상세보기]
+
+--------------------------------------------------------
+
+KO205
+
+14:00 ICN ---------------------- 16:20 NRT
+
+예약 마감
+
+                                      [상세보기]
+```
+
+---
+
+### 32.3 Seat 선택
+
+```text
+KO101
+ICN → NRT
+
+
+                FRONT
+
+          A   B       C   D
+
+1         □   □       ■   □
+2         □   X       □   □
+3         □   □       □   □
+
+
+□ 선택 가능
+■ 현재 선택
+X 선택 불가
+
+
+Passenger
+
+Adult  KIM JIHUN  → 1A
+Child  KIM MINSU  → 1B
+
+
+                              [좌석 선택 완료]
+```
+
+---
+
+### 32.4 Mock 결제
+
+```text
++---------------------------------------+
+| Mock Payment                          |
++---------------------------------------+
+
+KO101
+ICN → NRT
+
+Passenger 2명
+Seat 1A / 1B
+
+남은 Hold 시간
+00:31:52
+
+본 화면에서는 실제 금융 거래가 발생하지 않습니다.
+
+결제 시도
+1 / 3
+
+
+[예약 진행 취소]       [Mock 결제하기]
+```
+
+---
+
+### 32.5 Reservation 상세
+
+```text
+Reservation
+
+예약 확정
+
+KO101
+ICN → NRT
+2026-09-10 09:30
+
+
+Passenger
+
+KIM JIHUN
+Seat 1A
+
+KIM MINSU
+Seat 1B
+
+
+Payment
+결제 완료
+
+출발까지 24시간 이상 남았습니다.
+
+
+                              [예약 취소]
+```
+
+---
+
+### 32.6 Admin Flight 상세
+
+```text
+Flight Detail
+
+KO101
+ICN → NRT
+
+Departure
+2026-09-10 09:30
+
+Arrival
+2026-09-10 11:50
+
+Aircraft
+KOKU-A01
+
+Status
+운항 예정
+
+Reservations
+24
+
+
+[수정]
+
+[Flight 취소]
+```
+
+---
+
+## 33. UI에서 직접 결정하지 않는 사항
+
+다음 사항은 UI Design에서 임의로 결정하지 않습니다.
+
+- API Request / Response 구조
+- Database Column
+- Entity 관계
+- JWT 저장 방식
+- Access Token / Refresh Token 정책
+- 동시성 제어 구현 방식
+- Transaction Boundary
+- Payment / PaymentAttempt 데이터 모델
+- 개인정보 저장 및 보호 방식
+- Cache 적용 여부 및 TTL
+- 구체적인 Spring Security 내부 구조
+
+해당 사항은 `04-system-design.md` 또는
+`05-data-api-design.md`에서 정의합니다.
+
+---
+
+## 34. UI Design 완료 기준
+
+다음 조건을 충족하면 MVP UI 설계가 완료된 것으로 판단합니다.
+
+- [ ] Guest 주요 화면이 정의되어 있습니다.
+- [ ] Member 주요 화면이 정의되어 있습니다.
+- [ ] Admin 및 SuperAdmin 주요 화면이 정의되어 있습니다.
+- [ ] KOKU Flight 검색 흐름이 정의되어 있습니다.
+- [ ] 로그인 및 회원가입 흐름이 정의되어 있습니다.
+- [ ] Google OAuth 및 동일 Email 계정 연동 흐름이 정의되어 있습니다.
+- [ ] Seat 선택 및 Hold 흐름이 정의되어 있습니다.
+- [ ] Passenger 입력 흐름이 정의되어 있습니다.
+- [ ] Child 및 Infant UI 규칙이 정의되어 있습니다.
+- [ ] Mock 결제 성공 / 실패 / 재시도 흐름이 정의되어 있습니다.
+- [ ] Reservation 조회 및 취소 흐름이 정의되어 있습니다.
+- [ ] Flight 취소 UI가 정의되어 있습니다.
+- [ ] SuperAdmin 강제 취소 UI가 정의되어 있습니다.
+- [ ] 내부 KOKU Flight와 외부 실제 항공편 UI가 명확하게 구분되어 있습니다.
+- [ ] AI 항공편 검색 흐름이 정의되어 있습니다.
+- [ ] Loading / Empty / Error 상태가 정의되어 있습니다.
+- [ ] 한국어 / 일본어 UI 정책이 정의되어 있습니다.
+- [ ] 주요 Low-Fidelity Wireframe이 정의되어 있습니다.
+
+---
+
+## 35. UI Design 변경 원칙
+
+본 문서는 `01-project-plan.md`와 `02-domain-policy.md`의 범위와 정책을 기반으로 합니다.
+
+UI 설계 또는 Frontend 구현 과정에서 새로운 비즈니스 규칙이 필요한 경우
+Frontend 또는 AI Agent가 임의로 정책을 추가하지 않습니다.
+
+다음과 같은 변경이 필요한 경우 `02-domain-policy.md`를 먼저 검토합니다.
+
+- 새로운 Reservation 상태가 필요한 경우
+- Seat 상태 또는 Hold 정책을 변경해야 하는 경우
+- 새로운 Role 또는 권한이 필요한 경우
+- 결제 흐름을 변경해야 하는 경우
+- Passenger 및 연령 정책을 변경해야 하는 경우
+- Flight 취소 정책을 변경해야 하는 경우
+- 내부 KOKU Flight와 외부 실제 항공편의 경계를 변경해야 하는 경우
+
+Domain Policy 변경이 필요한 경우
+Human의 검토 및 승인 후 관련 설계 문서의 일관성을 함께 수정합니다.
