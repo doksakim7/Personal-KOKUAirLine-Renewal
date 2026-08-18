@@ -46,7 +46,9 @@ Figma Make는 다음 우선순위에 따라 문서를 해석합니다.
 - 내부 `Flight`는 예약 가능
 - 외부 실제 항공편은 조회/비교만 가능
 - 실제 금융 결제는 없으며 `Mock Payment`만 제공
-- 한국어/일본어를 모두 지원하는 Desktop Web MVP
+- 한국어/일본어를 모두 지원하는 Desktop / Mobile Responsive Web MVP
+- Customer UI는 Desktop과 Mobile에서 동일한 주요 기능 범위를 제공
+- Admin / SuperAdmin 관리 UI는 Desktop Web 사용성을 우선
 
 ---
 
@@ -54,16 +56,44 @@ Figma Make는 다음 우선순위에 따라 문서를 해석합니다.
 
 ### 4.1 지원 플랫폼
 
-MVP는 **Desktop Web 전용**입니다.
+MVP는 Web 기반 Responsive UI를 지원합니다.
 
-다음 조건을 반드시 따릅니다.
+Customer UI는 Desktop Web과 Mobile Web을 모두 지원하며,
+화면 크기에 따라 Layout과 Component 배치를 적절하게 재구성합니다.
 
-- Desktop Web만 지원
-- 기본 기준 Width: `1440px`
-- Mobile 전용 UI 생성 금지
-- Tablet 전용 UI 생성 금지
-- Responsive UI 구현을 MVP 필수 요구사항으로 두지 않음
-- Hamburger Menu, Bottom Navigation, Mobile Sheet 등 Mobile 전용 패턴 사용 금지
+기본 디자인 기준 Width:
+
+- Desktop: `1440px`
+- Mobile: `390px`
+
+Guest와 Member가 사용하는 주요 Customer UI는
+Desktop과 Mobile에서 동일한 주요 기능과 사용자 흐름을 제공합니다.
+
+Mobile이라는 이유로 주요 기능, 상태 또는 사용자 흐름을
+임의로 제거하거나 단순화하지 않습니다.
+
+Mobile에서는 필요에 따라 다음 Responsive Pattern을 사용할 수 있습니다.
+
+- Hamburger / Menu Navigation
+- 1 Column Layout
+- Vertical Form Stack
+- Full-width CTA
+- Mobile에 적합한 Dialog / Sheet 표현
+- Seat Map 탐색을 위한 Horizontal Scroll
+
+단, 위 Pattern은 기존 기능을 변경하기 위한 것이 아니라
+좁은 화면에 적합하게 동일 기능을 재배치하기 위한 용도로만 사용합니다.
+
+Admin 및 SuperAdmin 관리 화면은
+MVP에서 Desktop Web 사용성을 우선합니다.
+
+Admin / SuperAdmin의 Mobile 전용 최적화와
+Mobile Wireframe 생성은 MVP 필수 범위에 포함하지 않습니다.
+
+Tablet 전용 Wireframe 또한 MVP 필수 범위에 포함하지 않습니다.
+
+Responsive 구현 과정에서 중간 Width가 심각하게 깨지지 않도록 고려하되,
+구체적인 CSS Breakpoint는 Frontend 구현 단계에서 확정합니다.
 
 ### 4.2 MVP에서 우선 생성할 수 있는 주요 화면
 
@@ -87,6 +117,28 @@ MVP는 **Desktop Web 전용**입니다.
 - Admin Dashboard
 - Admin / SuperAdmin 관리 화면
 
+위 화면 중 Guest와 Member가 사용하는 주요 Customer UI는
+Desktop 및 Mobile Wireframe을 모두 생성합니다.
+
+Mobile Wireframe은 Desktop 화면을 단순 축소하지 않고,
+`03-ui-design.md`의 Responsive 정책에 따라
+동일한 기능과 정보를 Mobile Layout으로 재배치합니다.
+
+우선적인 Mobile Wireframe 대상은 다음과 같습니다.
+
+- Home
+- KOKU Flight 검색 결과
+- 왕복 Flight 검색
+- Passenger 정보 입력
+- Seat 선택
+- 예약 확인
+- Mock 결제
+- Reservation 상세
+- My Page
+
+Admin / SuperAdmin 관리 화면의 Mobile Wireframe은
+MVP 필수 생성 범위가 아닙니다.
+
 ---
 
 ## 5. 언어 정책
@@ -103,6 +155,10 @@ MVP는 다음 두 언어를 모두 지원해야 합니다.
 - 단, Header에 `한국어 | 日本語` 또는 동등한 언어 전환 UI를 반드시 포함합니다.
 - 일본어로 전환되어도 레이아웃이 무너지지 않도록 충분한 여백을 둡니다.
 - 한/일 두 언어 모두 동일한 기능 범위를 제공해야 합니다.
+- Date Picker 등 날짜 관련 UI Component의
+  월, 요일 및 날짜 표기도 현재 Locale(`ko`, `ja`)에 맞게 표현합니다.
+- 일본어 전환 시 Date Picker의 날짜 관련 문자열을
+  한국어 상태로 고정해서 표현하지 않습니다.
 
 ---
 
@@ -158,7 +214,7 @@ Figma Make는 화면 라벨과 설명을 생성할 때 다음 원칙을 따릅�
 
 ### 7.3 레이아웃 방향
 
-가능하면 다음 패턴을 우선 사용합니다.
+Desktop에서는 가능하면 다음 패턴을 우선 사용합니다.
 
 - 상단 Global Header
 - 중앙 정렬된 메인 콘텐츠
@@ -166,6 +222,19 @@ Figma Make는 화면 라벨과 설명을 생성할 때 다음 원칙을 따릅�
 - 필요 시 2 Column Layout
 - 예약 과정에서는 요약 정보 Side Panel 허용
 - 적절한 간격과 섹션 구분 사용
+
+Mobile에서는 동일한 정보와 기능을 다음 방향으로 재배치합니다.
+
+- 주요 콘텐츠는 1 Column Layout 우선
+- Desktop Horizontal Form은 Vertical Stack으로 전환 가능
+- 2 Column Layout은 1 Column으로 전환 가능
+- Side Panel 정보는 본문 Section 또는 Summary Card로 이동 가능
+- 주요 CTA는 충분한 Touch Area를 확보
+- 긴 Form은 Field 단위로 세로 배치
+- 주요 Action이 좁은 화면 밖으로 밀리지 않도록 구성
+
+Desktop과 Mobile 간 전환으로
+기능 또는 주요 정보를 삭제하지 않습니다.
 
 ### 7.4 Brand Logo
 
@@ -186,6 +255,13 @@ Logo를 지나치게 복잡한 Illustration 형태로 만들지 않습니다.
 
 첨부된 확정 Logo 시안을 이후 UI 생성의 기본 Brand Symbol 기준으로 사용합니다.
 Figma Make는 Symbol의 핵심 구조를 임의로 재해석하거나 다른 형태로 변경하지 않습니다.
+
+### 7.5 Responsive / Accessibility 기본 원칙
+
+- Mobile의 Button, Link, Form Control은 Touch로 조작하기 충분한 크기와 간격을 확보합니다.
+- 상태는 색상만으로 구분하지 않습니다.
+- 한국어 / 일본어 전환 시 Text가 잘리거나 주요 CTA가 가려지지 않도록 합니다.
+- Desktop과 Mobile 모두에서 주요 Form Label과 Error Message의 관계가 명확하게 보이도록 합니다.
 
 ---
 
@@ -381,6 +457,30 @@ Figma Make는 왕복 Flight 선택 단계에서
 결제 성공 후에만 Reservation은 CONFIRMED,
 선택한 Seat는 RESERVED 상태가 됩니다.
 
+### 10.3 Responsive Reservation Step
+
+Desktop에서는 다음과 같이 전체 Step을 가로로 표시할 수 있습니다.
+
+```text
+[1 탑승객] ─ [2 좌석] ─ [3 확인] ─ [4 결제] ─ [5 완료]
+```
+
+Mobile에서는 좁은 화면에서 다음과 같이 간결한 Step Indicator를 사용할 수 있습니다.
+
+```text
+2 / 5 좌석 선택
+
+● ─ ● ─ ○ ─ ○ ─ ○
+```
+
+Mobile에서도 전체 단계 수와 현재 진행 단계를
+사용자가 확인할 수 있어야 합니다.
+
+ROUND_TRIP의 Seat 단계에서는
+현재 선택 중인 Flight가 출국편인지 귀국편인지 함께 표시합니다.
+
+
+
 ---
 
 ## 11. Seat / Hold UX 규칙
@@ -427,6 +527,26 @@ Seat는 최소 다음 상태를 표현해야 합니다.
 왕복 Reservation 시작 전체 실패로 표현합니다.
 
 Flight 단위 Partial Success UI를 생성하지 않습니다.
+
+### 11.4 Mobile Seat UX
+
+Mobile Seat Map에서도 실제 Row / Column 구조와
+Seat 간 인접 관계를 유지합니다.
+
+좁은 화면에서 Seat Map 전체가 들어가지 않는 경우
+Horizontal Scroll 등 적절한 탐색 방식을 사용할 수 있습니다.
+
+다음 정보는 Mobile에서도 확인할 수 있어야 합니다.
+
+- 현재 Flight
+- Passenger
+- Seat 상태 범례
+- 현재 선택 Seat
+- 선택 완료 Action
+- ROUND_TRIP인 경우 출국 / 귀국 Flight 구분
+
+화면 크기에 맞추기 위해 Seat 배치 관계를
+임의로 변경해서는 안 됩니다.
 
 ---
 
@@ -775,6 +895,40 @@ KOKU Airline Logo는 §7.4 Brand Logo 정책을 따릅니다.
 Header에서는 깃발 내부에 Wing을 통합한 단순한 Emblem과
 KOKU Airline Wordmark 조합을 기본 방향으로 합니다.
 
+#### Mobile Header
+
+Mobile Customer UI에서는 다음 형태를 기본 방향으로 사용할 수 있습니다.
+
+```text
+[KOKU Airline]                 [KO | JA] [Menu]
+```
+
+Guest Menu:
+
+```text
+항공편 검색
+실제 항공편
+AI 항공편 검색
+로그인
+회원가입
+```
+
+Member Menu:
+
+```text
+항공편 검색
+실제 항공편
+AI 항공편 검색
+내 예약
+My Page
+로그아웃
+```
+
+Mobile Menu에서도 현재 Page의 Active State와
+Role별 접근 정책은 Desktop과 동일하게 유지합니다.
+
+언어 전환 UI는 Mobile에서도 쉽게 접근 가능해야 합니다.
+
 ### 17.2 Hero / 메인 검색 영역
 
 다음 요소를 포함합니다.
@@ -833,14 +987,29 @@ Home의 AI 서비스 CTA Label은 다음 문구를 사용합니다.
 
 `AI 항공편 추천 받기`
 
-### 17.4 Desktop 표현
+### 17.4 Responsive 표현
 
-* Desktop Web 전용으로 설계합니다.
-* 기준 Width는 `1440px`입니다.
-* 폭이 넓은 Hero 영역을 사용할 수 있습니다.
-* 검색 Form은 Desktop에 적합한 가로형 또는 Card형 Layout을 사용합니다.
-* 주요 서비스 영역은 Card 또는 Section 단위로 구분합니다.
-* Mobile 또는 Tablet UI를 생성하지 않습니다.
+#### Desktop
+
+- 기준 Width는 `1440px`입니다.
+- 폭이 넓은 Hero 영역을 사용할 수 있습니다.
+- 검색 Form은 가로형 또는 Card형 Layout을 사용할 수 있습니다.
+- 주요 서비스 영역은 Card 또는 Section 단위로 구분합니다.
+- 필요하면 2 Column Layout 및 Summary Side Panel을 사용할 수 있습니다.
+
+#### Mobile
+
+- 기준 Width는 `390px`입니다.
+- Desktop 화면을 단순히 축소하지 않습니다.
+- Header는 Logo, Locale, Menu 중심으로 간결하게 구성할 수 있습니다.
+- 검색 Form은 Vertical Stack을 기본으로 합니다.
+- 주요 서비스 Card는 1 Column으로 배치합니다.
+- 주요 CTA는 Mobile Width에 맞게 충분한 조작 영역을 확보합니다.
+- Desktop의 Side Panel 정보는 본문 Summary 영역으로 이동할 수 있습니다.
+
+Desktop과 Mobile은 동일한 기능 및 사용자 흐름을 유지합니다.
+
+Tablet 전용 화면은 MVP 필수 생성 범위가 아닙니다.
 
 ---
 
@@ -1344,9 +1513,12 @@ Figma Make는 다음을 해서는 안 됩니다.
 * Seat 상태 임의 추가 또는 변경
 * Passenger와 Seat 선택 순서 변경
 * Seat Hold 시간을 임의 변경
-* Mobile UI 생성
-* Tablet UI 생성
-* Responsive UI를 MVP 필수사항으로 적용
+* Desktop에서 제공하는 주요 Customer 기능을 Mobile에서 임의로 제거
+* Mobile을 별도의 기능 축소 버전으로 생성
+* Desktop Layout을 재배치 없이 단순 축소하여 Mobile UI로 사용
+* Mobile Seat Map에서 실제 Row / Column 또는 Seat 인접 관계를 임의 변경
+* Admin / SuperAdmin Mobile UI를 MVP 필수 범위로 임의 확대
+* Tablet 전용 UI를 MVP 필수 범위로 임의 확대
 * 실제 여권정보 입력 UI 생성
 * Guest에게 인증 없이 AI 항공편 검색 기능 제공
 * `Admin`에게 `SuperAdmin` 전용 기능 제공
@@ -1369,8 +1541,10 @@ Figma Make는 다음을 해서는 안 됩니다.
 Home 생성 프롬프트에는 최소 다음 내용을 포함합니다.
 
 * `03-ui-design.md`와 `figma-make-guidelines.md`를 기준으로 생성
-* Desktop Web 전용
-* 기준 Width `1440px`
+* Customer UI는 Desktop / Mobile Responsive Web 기준
+* Desktop 기준 Width `1440px`
+* Mobile 기준 Width `390px`
+* Desktop과 Mobile에서 동일한 주요 기능 및 사용자 흐름 유지
 * Guest Header 기준
 * 한국어 기본 UI
 * `한국어 | 日本語` 언어 전환 제공
@@ -1384,7 +1558,9 @@ Home 생성 프롬프트에는 최소 다음 내용을 포함합니다.
 * 왕복 선택 시에만 도착일 표시
 * `항공편 검색` Navigation에 Active underline 표현
 * AI CTA는 `AI 항공편 추천 받기`
-* KOKU Airline Logo는 깃발 + Wing 기반의 Minimal Emblem 방향
+* KOKU Airline Logo는 깃발 내부에 Wing을 통합한 Minimal Emblem 방향
+* Mobile Home은 Desktop Home을 단순 축소하지 않고
+  1 Column Layout과 Mobile Navigation을 기준으로 재배치
 
 Home 확정 이후 다음 화면을 생성할 때는 현재 디자인 스타일을 유지하도록 요청합니다.
 
@@ -1403,4 +1579,6 @@ Figma Make는 UI와 Prototype을 생성하는 도구이며 프로젝트의 비�
 * 사용자 흐름의 순서를 변경하지 않습니다.
 * 내부 KOKU Flight와 외부 실제 항공편을 명확히 구분합니다.
 * AI 추천 설명과 실제 Flight 데이터를 명확히 구분합니다.
-* MVP는 Desktop Web 기준으로 완성합니다.
+* Customer UI는 Desktop / Mobile Responsive Web 기준으로 완성합니다.
+* Admin / SuperAdmin 관리 UI는 Desktop Web 사용성을 우선합니다.
+* Desktop과 Mobile에서 동일한 주요 Customer 기능과 사용자 흐름을 유지합니다.
