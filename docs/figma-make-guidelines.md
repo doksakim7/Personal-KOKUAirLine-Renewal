@@ -281,7 +281,18 @@ Figma Make는 내부 `KOKU Flight`와 외부 실제 항공편을 **절대로 같
 - 예약 가능
 - Seat 선택 가능
 - Mock Payment 가능
-- `예약하기` CTA 가능
+- Flight 선택 완료 후 예약 절차 시작 CTA 제공 가능
+
+Flight 선택 Action과 예약 절차 시작 Action은 구분합니다.
+
+- `ONE_WAY`: `[항공편 선택]`
+- `ROUND_TRIP` 출국: `[출국편 선택]`
+- `ROUND_TRIP` 귀국: `[귀국편 선택]`
+
+필요한 Flight 선택이 모두 완료된 이후:
+
+- Guest: `[로그인 후 예약]`
+- Member: `[예약하기]`
 
 #### 외부 실제 항공편
 
@@ -330,8 +341,15 @@ AI 검색은 **실제 항공편 데이터를 기반으로 조건을 해석하고
 - 개인 예약 조회 불가
 - AI 항공편 검색은 진입 가능하더라도 실제 사용 전 로그인 요구
 
-Guest가 KOKU Flight 조회 후 예약을 시작하려는 경우
-로그인 필요 UI를 표시합니다.
+Guest는 KOKU Flight를 먼저 선택한 후 Reservation을 시작할 수 있습니다.
+
+필요한 Flight 선택이 완료되면 다음 Action을 제공합니다.
+
+```text
+[로그인 후 예약]
+```
+
+Guest가 해당 Action을 선택하면 로그인 UI로 이동합니다.
 
 로그인 성공 후에는 로그인 이전의 검색 및 Flight 선택 상태를 유지합니다.
 
@@ -389,7 +407,10 @@ Figma Make는 편도와 왕복 Reservation의 Happy Path를 구분하여 이해�
 Home
 → Flight 검색
 → 검색 결과
-→ Flight 상세
+→ Flight 검색 결과 또는 Flight 상세
+→ [항공편 선택]
+→ 선택한 Flight Summary
+→ Reservation 시작
 → Passenger 정보 입력
 → Seat 선택
 → PENDING Reservation 생성 + 선택한 모든 Seat HELD
@@ -401,6 +422,23 @@ Home
 → Reservation 상세
 ```
 
+예약 절차 시작 Action은 인증 상태에 따라 구분합니다.
+
+Guest:
+
+```text
+[로그인 후 예약]
+```
+
+Member:
+
+```text
+[예약하기]
+```
+
+Figma Make는 ONE_WAY Flight 선택과 Reservation 시작을
+하나의 CTA로 합치지 않습니다.
+
 ### 10.2 왕복 예약
 
 ```text
@@ -410,7 +448,8 @@ Home
 → 출국 Flight 선택
 → 귀국 Flight 검색 결과
 → 귀국 Flight 선택
-→ 왕복 여정 확인
+→ 선택한 왕복 여정 Summary
+→ Reservation 시작
 → Passenger 정보 입력
 → 출국 Flight Seat 선택
 → 귀국 Flight Seat 선택
@@ -435,6 +474,8 @@ Home
 - Seat는 각 Flight별로 선택
 - 출국 / 귀국 Seat 전체 확보에 성공한 경우에만 Reservation 시작
 - 왕복 전체 여정을 대상으로 하나의 Mock Payment 흐름 제공
+- 출국 Flight와 귀국 Flight를 모두 선택한 이후 예약 절차 시작 Action 제공
+- Flight 선택 Action과 예약 절차 시작 Action을 별도로 표현
 
 왕복 검색 중 Flight 상세 화면의 CTA는 현재 선택 단계에 따라 구분합니다.
 
@@ -456,10 +497,57 @@ Home
 Figma Make는 왕복 Flight 선택 단계에서
 일반적인 `[예약하기]` CTA로 임의 변경하지 않습니다.
 
+출국 Flight와 귀국 Flight 선택이 모두 완료된 이후에는
+왕복 여정 Summary와 함께 인증 상태에 따른 예약 절차 시작 Action을 제공합니다.
+
+Guest:
+
+```text
+[로그인 후 예약]
+```
+
+Member:
+
+```text
+[예약하기]
+```
+
 편도와 왕복 모두 Passenger 정보 입력이 Seat 선택보다 먼저입니다.
 
 결제 성공 후에만 Reservation은 CONFIRMED,
 선택한 Seat는 RESERVED 상태가 됩니다.
+
+#### Flight 상세의 선택 CTA
+
+Flight 상세에서도 Flight 선택과 Reservation 시작을 구분합니다.
+
+`ONE_WAY`:
+
+```text
+[항공편 선택]
+```
+
+`ROUND_TRIP` 출국 Flight:
+
+```text
+[출국편 선택]
+```
+
+`ROUND_TRIP` 귀국 Flight:
+
+```text
+[귀국편 선택]
+```
+
+Flight 선택 이전에는
+`[예약하기]` 또는 `[로그인 후 예약]`을
+Reservation 시작 CTA로 직접 제공하지 않습니다.
+
+필요한 Flight 선택이 완료된 이후
+선택된 여정 Summary에서 다음 Action을 제공합니다.
+
+- Guest: `[로그인 후 예약]`
+- Member: `[예약하기]`
 
 ### 10.3 Responsive Reservation Step
 

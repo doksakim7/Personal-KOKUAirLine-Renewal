@@ -445,29 +445,39 @@ Reservation을 시작할 수 없습니다.
 Guest가 왕복 여정에서 예약을 시작하면 로그인 후
 선택한 출국 Flight와 귀국 Flight 정보를 모두 유지합니다.
 
-편도 검색에서도 Guest는 Flight를 조회할 수 있지만
+편도 검색에서도 Guest는 Flight를 조회하고 선택할 수 있지만
 Reservation을 시작할 수 없습니다.
 
-Guest가 편도 Flight의 `예약하기`를 선택하면 다음 흐름으로 이동합니다.
+Guest의 편도 예약 시작 흐름은 다음과 같습니다.
 
 ```text
-Flight 상세
+Flight 검색 결과 또는 Flight 상세
  ↓
-로그인 필요 안내
+[항공편 선택]
+ ↓
+선택한 Flight Summary
+ ↓
+[로그인 후 예약]
  ↓
 로그인
  ↓
 인증 성공
  ↓
-선택한 Flight 정보를 유지
+선택한 Flight 정보 유지
  ↓
 Passenger 정보 입력
 ```
 
+Flight 선택 Action과 예약 절차 시작 Action은 구분합니다.
+
+Guest는 Flight를 선택한 이후에만
+`[로그인 후 예약]` Action을 사용할 수 있습니다.
+
+로그인 성공 후에는 선택한 Flight를 다시 검색하거나 선택하지 않고
+Passenger 정보 입력 단계로 이동합니다.
+
 편도에서는 로그인 전 사용자가 선택한 Flight 정보를 유지하고,
 왕복에서는 선택한 출국 Flight와 귀국 Flight 정보를 모두 유지합니다.
-
-인증 성공 후 Passenger 정보 입력 단계로 이동합니다.
 
 ---
 
@@ -482,7 +492,13 @@ Flight 검색
 ↓
 검색 결과
 ↓
-Flight 상세
+Flight 검색 결과 또는 Flight 상세
+↓
+[항공편 선택]
+↓
+선택한 Flight Summary
+↓
+[예약하기]
 ↓
 Passenger 정보 입력
 ↓
@@ -505,6 +521,11 @@ Reservation CONFIRMED
 Reservation 상세
 ```
 
+Flight 선택과 Reservation 시작은 별도의 Action으로 구분합니다.
+
+Member는 편도 Flight를 선택한 이후
+`[예약하기]`를 선택하여 Passenger 정보 입력 단계로 이동합니다.
+
 #### 왕복 예약
 
 ```text
@@ -520,7 +541,9 @@ Home
 ↓
 귀국 Flight 선택
 ↓
-왕복 여정 확인
+선택한 왕복 여정 Summary
+↓
+[예약하기]
 ↓
 Passenger 정보 입력
 ↓
@@ -544,6 +567,14 @@ Mock 결제
 ↓
 Reservation 상세
 ```
+
+왕복 Reservation에서도 Flight 선택 완료와 Reservation 시작을 구분합니다.
+
+출국 Flight와 귀국 Flight를 모두 선택한 이후
+선택한 왕복 여정 Summary를 표시하고,
+Member는 `[예약하기]` Action을 통해 Passenger 정보 입력 단계로 이동합니다.
+
+Guest에게는 같은 위치에 `[로그인 후 예약]` Action을 제공합니다.
 
 왕복 예약에서는 동일한 Passenger 구성을
 출국 Flight와 귀국 Flight에 공통으로 적용합니다.
@@ -887,6 +918,49 @@ ICN                 NRT
 
 상세 조회는 가능하지만 예약 Action은 비활성화합니다.
 
+#### 편도 Flight 선택
+
+`ONE_WAY` 검색 결과에서는 예약 가능한 Flight에 대해
+다음 Action을 제공할 수 있습니다.
+
+```text
+[상세보기]
+[항공편 선택]
+```
+
+`[항공편 선택]`은 Reservation을 즉시 시작하는 Action이 아닙니다.
+
+Flight를 선택하면 선택한 Flight Summary를 표시합니다.
+
+예:
+
+```text
+선택한 항공편
+
+KO103
+ICN → NGO
+2026-08-26
+09:30 → 11:50
+```
+
+Flight 선택 완료 후 인증 상태에 따라
+예약 절차 시작 Action을 제공합니다.
+
+Guest:
+
+```text
+[로그인 후 예약]
+```
+
+Member:
+
+```text
+[예약하기]
+```
+
+예약 불가 Flight에는 [항공편 선택] Action을 제공하지 않거나
+Disabled 처리합니다.
+
 #### 왕복 검색 결과
 
 왕복 검색에서는 출국 Flight와 귀국 Flight 선택 단계를 구분합니다.
@@ -913,6 +987,27 @@ NRT → ICN
 귀국 Flight 선택 화면에서는
 현재 선택한 출국 Flight의 요약 정보를 함께 표시합니다.
 
+귀국 Flight까지 선택하면
+출국 Flight와 귀국 Flight를 함께 포함한 왕복 여정 Summary를 표시합니다.
+
+Flight 선택 완료 후 인증 상태에 따라
+예약 절차 시작 Action을 제공합니다.
+
+Guest:
+
+```text
+[로그인 후 예약]
+```
+
+Member:
+
+```text
+[예약하기]
+```
+
+출국 Flight 또는 귀국 Flight 중 하나라도 선택되지 않은 상태에서는
+예약 절차 시작 Action을 활성화하지 않습니다.
+
 ---
 
 ## 11. Flight 상세
@@ -928,17 +1023,32 @@ NRT → ICN
 - 운항 상태 (`SCHEDULED`, `CANCELLED`, `DEPARTED`) 
 - 예약 가능 여부
 
-#### Member
+#### ONE_WAY Flight 선택
+
+예약 가능한 편도 Flight 상세에서는 인증 상태와 관계없이
+먼저 Flight 선택 Action을 제공합니다.
+
+```text
+[항공편 선택]
+```
+
+Flight 선택 이후 예약 절차 시작 Action은
+선택된 Flight Summary 영역에서 인증 상태에 따라 구분합니다.
+
+Guest:
+
+```text
+[로그인 후 예약]
+```
+
+Member:
 
 ```text
 [예약하기]
 ```
 
-#### Guest
-
-```text
-[로그인 후 예약]
-```
+Flight 상세에서 Flight 선택 이전에
+`[예약하기]` 또는 `[로그인 후 예약]`을 직접 예약 절차 시작 Action으로 제공하지 않습니다.
 
 #### 예약 마감 Flight
 
@@ -946,7 +1056,7 @@ NRT → ICN
 [예약 마감]
 ```
 
-예약 Action을 Disabled 처리합니다.
+Flight 선택 Action을 Disabled 처리합니다.
 
 #### 예약 불가 Flight 상태
 
@@ -955,11 +1065,12 @@ NRT → ICN
 - `CANCELLED`
 - `DEPARTED`
 
-해당 상태에서는 Member의 `예약하기` Action과
-Guest의 `로그인 후 예약` Action을 제공하지 않거나 Disabled 처리합니다.
+해당 상태에서는 `[항공편 선택]`, `[출국편 선택]`, `[귀국편 선택]` 등
+Flight 선택 Action을 제공하지 않거나 Disabled 처리합니다.
 
 `SCHEDULED` 상태인 경우에도
-Flight 출발 예정 시각까지 2시간 미만이면 예약 Action을 Disabled 처리합니다.
+Flight 출발 예정 시각까지 2시간 미만이면
+Flight 선택 Action을 Disabled 처리합니다.
 
 #### 왕복 검색 중 Flight 선택
 
