@@ -226,6 +226,9 @@ KOKU Airline
 
 ## 5. Global Navigation
 
+현재 Page에 해당하는 Navigation은 Primary Color underline 등으로
+Active State를 명확하게 표시합니다.
+
 ### 5.1 Guest Header
 
 ```text
@@ -282,6 +285,18 @@ Reservation
 
 SuperAdmin에게만 허용된 기능은 권한에 따라 추가 Action을 표시합니다.
 
+### 5.4 Brand Logo
+
+KOKU Airline의 Brand Symbol은 깃발과 Wing을 결합한
+간결한 항공 Emblem 형태를 기본 방향으로 합니다.
+
+- 깃발을 주요 Motif로 사용
+- Wing 요소를 결합
+- Skull, Bones 등 직접적인 해적 상징은 사용하지 않음
+- 작은 Header 영역에서도 식별 가능한 단순한 형태
+- KOKU Airline Wordmark와 함께 사용 가능
+- Primary Blue 계열과 어울리는 Flat / Minimal 스타일
+
 ---
 
 ## 6. Role별 접근 화면
@@ -323,9 +338,36 @@ KOKU Flight 검색 결과
 Flight 상세
 ```
 
-Guest는 Flight를 조회할 수 있지만 예약을 시작할 수 없습니다.
+편도 검색의 기본 흐름은 위와 같습니다.
 
-Guest가 `예약하기`를 선택하면 다음 흐름으로 이동합니다.
+왕복 검색에서는 출국편과 귀국편을 순서대로 선택합니다.
+
+```text
+Home
+↓
+왕복 검색 조건 입력
+↓
+출국 Flight 검색 결과
+↓
+출국 Flight 선택
+↓
+귀국 Flight 검색 결과
+↓
+귀국 Flight 선택
+↓
+왕복 여정 확인
+```
+
+Guest는 출국편과 귀국편을 조회하고 선택할 수 있지만
+Reservation을 시작할 수 없습니다.
+
+Guest가 왕복 여정에서 예약을 시작하면 로그인 후
+선택한 출국 Flight와 귀국 Flight 정보를 모두 유지합니다.
+
+편도 검색에서도 Guest는 Flight를 조회할 수 있지만
+Reservation을 시작할 수 없습니다.
+
+Guest가 편도 Flight의 `예약하기`를 선택하면 다음 흐름으로 이동합니다.
 
 ```text
 Flight 상세
@@ -341,42 +383,95 @@ Flight 상세
 Passenger 정보 입력
 ```
 
-로그인 전 사용자가 선택한 Flight 정보는 유지하고,
+편도에서는 로그인 전 사용자가 선택한 Flight 정보를 유지하고,
+왕복에서는 선택한 출국 Flight와 귀국 Flight 정보를 모두 유지합니다.
+
 인증 성공 후 Passenger 정보 입력 단계로 이동합니다.
 
 ---
 
 ### 7.2 Member 예약 흐름
 
+#### 편도 예약
+
 ```text
 Home
- ↓
+↓
 Flight 검색
- ↓
+↓
 검색 결과
- ↓
+↓
 Flight 상세
- ↓
+↓
 Passenger 정보 입력
- ↓
+↓
 Seat 선택
- ↓
+↓
 PENDING Reservation 생성
 선택한 모든 Seat AVAILABLE → HELD
- ↓
+↓
 예약 내용 확인
- ↓
+↓
 Mock 결제
- ↓
+↓
 결제 성공
- ↓
+↓
 Reservation CONFIRMED
 선택한 모든 Seat HELD → RESERVED
- ↓
+↓
 예약 완료
- ↓
+↓
 Reservation 상세
 ```
+
+#### 왕복 예약
+
+```text
+Home
+↓
+왕복 검색
+↓
+출국 Flight 검색 결과
+↓
+출국 Flight 선택
+↓
+귀국 Flight 검색 결과
+↓
+귀국 Flight 선택
+↓
+왕복 여정 확인
+↓
+Passenger 정보 입력
+↓
+출국 Flight Seat 선택
+↓
+귀국 Flight Seat 선택
+↓
+왕복 Reservation 생성
+출국 / 귀국 선택 Seat → HELD
+↓
+예약 내용 확인
+↓
+Mock 결제
+↓
+결제 성공
+↓
+왕복 Reservation CONFIRMED
+출국 / 귀국 선택 Seat → RESERVED
+↓
+예약 완료
+↓
+Reservation 상세
+```
+
+왕복 예약에서는 동일한 Passenger 구성을
+출국 Flight와 귀국 Flight에 공통으로 적용합니다.
+
+Seat는 Flight별로 독립적으로 선택합니다.
+
+따라서 왕복 예약의 Seat 선택 단계에서는
+출국 Flight Seat 선택과 귀국 Flight Seat 선택을
+명확하게 구분하여 표시합니다.
 
 ---
 
@@ -575,19 +670,44 @@ GOOGLE AuthAccount 연결
 
 Home은 서비스의 주요 Entry Point로 사용합니다.
 
+Home Hero의 기본 보조 문구는 다음과 같이 합니다.
+
+`가상 항공편 예약과 실제 항공편 조회를 한 번에`
+
 ### 9.1 KOKU Flight 검색
 
 주요 입력 항목:
 
-```text
-출발지
-도착지
-출발일
+- 여행 유형
+  - 편도
+  - 왕복
+- 출발지
+- 도착지
+- 출발일
+- 도착일 (왕복 선택 시)
 
 [항공편 검색]
-```
+
+기본 여행 유형은 `편도`로 합니다.
+
+`편도`를 선택한 경우 도착일을 입력하지 않습니다.
+
+`왕복`을 선택한 경우 출발일과 도착일을 모두 입력하며,
+도착일은 출발일보다 이후여야 합니다.
 
 MVP에서는 한국 ↔ 일본 노선만 입력할 수 있습니다.
+
+왕복 검색에서는 출국 Flight와 귀국 Flight를 각각 선택합니다.
+
+귀국 Flight의 출발 Airport와 도착 Airport는
+출국 Flight의 출발 Airport와 도착 Airport의 역방향이어야 합니다.
+
+예:
+
+```text
+출국: ICN → NRT
+귀국: NRT → ICN
+```
 
 ---
 
@@ -609,7 +729,7 @@ KOKU Airline의 가상 항공편입니다.
 조회만 가능하며 KOKU Airline에서 예약할 수 없습니다.
 
 
-[AI 항공편 추천]
+[AI 항공편 추천 받기]
 
 자연어로 원하는 조건을 입력하여
 실제 항공편을 검색하고 추천받을 수 있습니다.
@@ -624,9 +744,11 @@ AI 기능은 Guest에게 노출할 수 있지만,
 
 ### 10.1 검색 조건
 
+- 여행 유형 (`ONE_WAY`, `ROUND_TRIP`)
 - 출발 Airport
 - 도착 Airport
 - 출발 Date
+- 도착 Date (`ROUND_TRIP`인 경우)
 
 출발 Airport와 도착 Airport는 동일할 수 없습니다.
 
@@ -634,6 +756,21 @@ AI 기능은 Guest에게 노출할 수 있지만,
 
 - 한국 → 일본
 - 일본 → 한국
+
+`ONE_WAY`에서는 도착 Date를 사용하지 않습니다.
+
+`ROUND_TRIP`에서는 도착 Date가 필수이며,
+도착 Date는 출발 Date보다 이후여야 합니다.
+
+왕복 검색에서는 귀국 Route가 출국 Route의 역방향이어야 합니다.
+
+예:
+
+- 출국: ICN → NRT
+- 귀국: NRT → ICN
+
+왕복 검색 결과에서는 먼저 출국 Flight를 선택한 후
+해당 Route의 역방향 귀국 Flight를 선택합니다.
 
 ---
 
@@ -668,6 +805,32 @@ ICN                 NRT
 ```
 
 상세 조회는 가능하지만 예약 Action은 비활성화합니다.
+
+#### 왕복 검색 결과
+
+왕복 검색에서는 출국 Flight와 귀국 Flight 선택 단계를 구분합니다.
+
+```text
+1. 출국편 선택
+ICN → NRT
+2026-09-10
+
+[Flight 목록]
+
+↓ 출국편 선택
+
+2. 귀국편 선택
+NRT → ICN
+2026-09-15
+
+[Flight 목록]
+```
+
+출국 Flight를 선택하기 전에는
+귀국 Flight 선택 단계로 진행하지 않습니다.
+
+귀국 Flight 선택 화면에서는
+현재 선택한 출국 Flight의 요약 정보를 함께 표시합니다.
 
 ---
 
@@ -717,6 +880,26 @@ Guest의 `로그인 후 예약` Action을 제공하지 않거나 Disabled 처리
 `SCHEDULED` 상태인 경우에도
 Flight 출발 예정 시각까지 2시간 미만이면 예약 Action을 Disabled 처리합니다.
 
+#### 왕복 검색 중 Flight 선택
+
+왕복 검색에서 Flight 상세에 진입한 경우
+현재 선택 단계에 따라 Action Label을 구분할 수 있습니다.
+
+출국 Flight:
+
+```text
+[출국편 선택]
+```
+
+귀국 Flight:
+
+```text
+[귀국편 선택]
+```
+
+출국 Flight를 이미 선택한 상태에서 귀국 Flight를 조회하는 경우
+선택된 출국 Flight의 요약 정보를 함께 표시합니다.
+
 ---
 
 ## 12. 예약 Step UI
@@ -740,6 +923,20 @@ Desktop 예:
 ```text
 [1 탑승객] ─ [2 좌석] ─ [3 확인] ─ [4 결제] ─ [5 완료]
 ```
+
+왕복 Reservation에서도 기본 Step은 동일하게 유지합니다.
+
+```text
+[1 탑승객] ─ [2 좌석] ─ [3 확인] ─ [4 결제] ─ [5 완료]
+```
+
+왕복의 Seat 선택 단계에서는 내부적으로 다음 순서를 제공합니다.
+
+1. 출국 Flight Seat 선택
+2. 귀국 Flight Seat 선택
+
+사용자가 현재 어느 Flight의 Seat를 선택하고 있는지
+명확하게 표시합니다.
 
 ---
 
@@ -818,6 +1015,59 @@ PENDING → CANCELLED
 Hold 만료 이후 해당 Reservation에서는
 새로운 Payment를 생성할 수 없습니다.
 
+### 13.4 왕복 Seat 선택
+
+왕복 Reservation에서는 출국 Flight와 귀국 Flight의 Seat를
+각각 선택해야 합니다.
+
+기본 흐름:
+
+```text
+출국 Flight Seat 선택
+↓
+귀국 Flight Seat 선택
+↓
+전체 Seat 선택 확인
+↓
+Reservation 시작
+```
+
+화면에는 현재 선택 중인 Flight를 명확하게 표시합니다.
+
+예:
+
+```text
+출국편 ICN → NRT
+
+또는
+
+귀국편 NRT → ICN
+```
+
+Passenger별 Seat 배정은 각 Flight마다 별도로 관리합니다.
+
+예:
+
+```text
+출국편
+KIM JIHUN → 12A
+
+귀국편
+KIM JIHUN → 8C
+```
+
+Infant는 출국편과 귀국편 모두 별도의 Seat를 사용하지 않습니다.
+
+왕복 Reservation 시작 시에는 출국 Flight와 귀국 Flight에서
+선택한 모든 Seat를 하나의 예약 시작 과정으로 처리합니다.
+
+선택한 모든 Seat 확보에 성공한 경우에만
+왕복 Reservation을 `PENDING` 상태로 시작합니다.
+
+출국 또는 귀국 Flight의 Seat 중 하나라도 확보하지 못한 경우
+왕복 Reservation 시작 전체를 실패 처리하며,
+일부 Seat만 `HELD` 상태로 남기는 UI를 제공하지 않습니다.
+
 ---
 
 ## 14. Passenger 정보 입력
@@ -850,7 +1100,10 @@ Passenger의 기본 정보를 입력하면 테스트용 여권 정보는 시스�
 > 실제 탑승객의 개인정보나 실제 여권 정보를 입력하지 마세요.
 > 테스트용 여권번호, 발급국, 만료일은 시스템에서 자동 생성됩니다.
 
-테스트용 여권 만료일이 Flight 출발일 이후인지 검증합니다.
+테스트용 여권 만료일은 예약에 포함된 모든 Flight의 탑승일 이후인지 검증합니다.
+
+편도에서는 출국 Flight의 탑승일을 기준으로 하며,
+왕복에서는 출국 Flight와 귀국 Flight 모두의 탑승일 조건을 만족해야 합니다.
 
 조건을 만족하지 않는 경우 예약을 계속 진행할 수 없으며
 다음과 같이 안내합니다.
@@ -895,7 +1148,11 @@ Adult, Child, Infant를 판단하고 다음 Seat 선택 단계로 이동합니�
 
 Passenger의 연령 구분은 사용자가 직접 선택하지 않습니다.
 
-입력된 생년월일과 Flight 탑승일을 기준으로 시스템에서 계산합니다.
+왕복 Reservation에서는 각 Flight의 탑승일을 기준으로
+Passenger의 연령 구분을 Flight별로 계산합니다.
+
+따라서 출국 Flight와 귀국 Flight에서 연령 구분이 달라질 수 있으며,
+Seat 및 동반 Adult 관련 Validation은 각 Flight의 연령 구분을 기준으로 적용합니다.
 
 MVP의 연령 구분 기준은 다음과 같습니다.
 
@@ -967,7 +1224,9 @@ Mock 결제로 이동하기 전에 Reservation 전체 내용을 확인합니다.
 
 표시 정보:
 
-- Flight
+- 여행 유형
+- 출국 Flight
+- 귀국 Flight (왕복인 경우)
 - 출발 / 도착 Airport
 - Date / Time
 - Passenger
@@ -1002,6 +1261,18 @@ Hold 남은 시간
 Reservation이 `PENDING` 상태로 생성된 이후 Passenger 또는 Seat를 변경하려면
 현재 예약 진행을 취소하고 다시 예약을 시작합니다.
 
+왕복 Reservation에서는 출국 Flight와 귀국 Flight 정보를
+별도 Section으로 구분하여 표시합니다.
+
+각 Flight별로 다음 정보를 확인할 수 있어야 합니다.
+
+- Route
+- Date / Time
+- Passenger
+- Seat
+
+Mock 결제 금액은 왕복 전체 예약의 금액을 기준으로 표시합니다.
+
 ---
 
 ## 17. Mock 결제
@@ -1017,6 +1288,18 @@ Mock Payment
 ```
 
 실제 카드번호 등 금융 개인정보를 입력받는 UI는 구현하지 않습니다.
+
+왕복 Reservation에서도 Mock Payment는 전체 왕복 여정을 대상으로
+한 번 진행합니다.
+
+결제 화면에는 다음 정보를 요약하여 표시합니다.
+
+- 출국 Flight
+- 귀국 Flight
+- Passenger
+- 출국 Seat
+- 귀국 Seat
+- 전체 Mock 결제 금액
 
 ---
 
@@ -1064,6 +1347,8 @@ PENDING → CONFIRMED
 HELD → RESERVED
 ```
 
+아래 예시는 편도 Reservation 기준입니다.
+
 사용자 화면:
 
 ```text
@@ -1075,6 +1360,16 @@ ICN → NRT
 
 [예약 상세 보기]
 [홈으로]
+```
+
+왕복 Reservation의 예약 완료 화면에서는
+출국 Flight와 귀국 Flight를 함께 요약하여 표시합니다.
+
+예:
+
+```text
+출국: KO101 / ICN → NRT / 2026-09-10
+귀국: KO102 / NRT → ICN / 2026-09-15
 ```
 
 ---
@@ -1171,13 +1466,31 @@ Frontend에서도 각 조건의 충족 여부를 안내하고 검증합니다.
 [예약 취소]
 ```
 
-Reservation Card 예:
+편도 Reservation Card 예:
 
 ```text
 KO101
 
 ICN → NRT
 2026.09.10
+
+예약 확정
+
+[상세보기]
+```
+
+왕복 Reservation Card에서는 출국 / 귀국 Route와 Date를 함께 표시합니다.
+
+예:
+
+```text
+왕복
+
+ICN → NRT
+2026.09.10
+
+NRT → ICN
+2026.09.15
 
 예약 확정
 
@@ -1229,6 +1542,17 @@ Hold 남은 시간을 표시하고 예약 진행을 계속하거나 취소할 �
 Seat Hold 시간이 만료된 Reservation은 Backend 정책에 따라
 `CANCELLED` 상태로 처리되며 기존 예약 진행을 계속할 수 없습니다.
 
+왕복 Reservation인 경우 다음 정보를 구분하여 표시합니다.
+
+- 여행 유형: 왕복
+- 출국 Flight
+- 출국 Passenger / Seat
+- 귀국 Flight
+- 귀국 Passenger / Seat
+- 전체 Payment 상태
+
+출국편과 귀국편은 각각 별도 Section으로 표시합니다.
+
 ---
 
 ## 20. Member 예약 취소
@@ -1274,6 +1598,13 @@ RESERVED → AVAILABLE
 
 예약 취소 Action을 제공하지 않거나 Disabled 처리합니다.
 
+왕복 Reservation의 취소 가능 기준,
+출국 후 귀국 Flight만 남은 경우의 처리,
+부분 취소 허용 여부 및 환불 범위는
+`02-domain-policy.md`의 왕복 취소 정책을 따릅니다.
+
+해당 정책이 확정된 이후 본 UI 문서에 동기화합니다.
+
 ---
 
 ## 21. 회원 탈퇴
@@ -1283,7 +1614,7 @@ RESERVED → AVAILABLE
 다음 Reservation이 존재하는 Member는 탈퇴할 수 없습니다.
 
 - `PENDING`
-- 아직 탑승하지 않은 `CONFIRMED`
+- 예약에 포함된 Flight 중 아직 출발하지 않은 Flight가 하나 이상 존재하는 `CONFIRMED`
 
 탈퇴할 수 없는 경우:
 
@@ -1557,6 +1888,8 @@ PENDING/CONFIRMED Reservation 존재 → [수정] 숨김 또는 비활성화
 ---
 ### 25.2 Flight 취소
 
+아래의 기본 Flight 취소 흐름은 편도 Reservation을 기준으로 합니다.
+
 `SCHEDULED` 상태이며 아직 출발하지 않은 Flight에만 취소 Action을 제공합니다.
 
 ```text
@@ -1624,6 +1957,13 @@ HELD → AVAILABLE
 
 MVP에서는 대체편 제공 또는 자동 재예약을 제공하지 않습니다.
 
+왕복 Reservation에 포함된 출국 또는 귀국 Flight 중 하나가 취소되는 경우의
+Reservation 전체 취소 여부, 나머지 Flight 처리 및 환불 범위는
+`02-domain-policy.md`의 왕복 Flight 취소 정책을 따릅니다.
+
+UI에서는 해당 Domain Policy를 기준으로
+왕복 여정 전체에 미치는 영향을 사용자에게 명확하게 안내합니다.
+
 ---
 
 ## 26. Reservation 관리자 화면
@@ -1646,6 +1986,12 @@ Reservation   Member     Flight     State
 R00001        user1      KO101      CONFIRMED
 R00002        user2      KO101      CANCELLED
 ```
+
+왕복 Reservation은 출국 Flight Number 또는 귀국 Flight Number로도
+검색할 수 있어야 합니다.
+
+왕복 Reservation 목록에서는 필요 시
+출국 / 귀국 Flight를 함께 식별할 수 있도록 표시합니다.
 
 Reservation을 선택하면 상세 화면으로 이동합니다.
 
@@ -1690,6 +2036,12 @@ Member에게 적용되는 출발 24시간 전 취소 제한은
 SuperAdmin 강제 취소에는 적용하지 않습니다.
 
 강제 취소 완료 후 처리 결과를 화면에 표시합니다.
+
+왕복 Reservation에서 일부 Flight가 이미 출발한 경우의
+SuperAdmin 강제 취소 가능 여부와 환불 범위는
+`02-domain-policy.md`의 왕복 강제 취소 정책을 따릅니다.
+
+해당 정책이 확정된 이후 본 UI 문서에 동기화합니다.
 
 ---
 
@@ -1886,34 +2238,30 @@ MVP에서도 최소한 다음 사항을 고려합니다.
 ### 32.1 Home
 
 ```text
-+------------------------------------------------------+
-| KOKU Airline      항공편  실제항공편  AI     KO | JA |
-+------------------------------------------------------+
+[KOKU Airline]    항공편  실제항공편  AI    KO | JA
 
           한국과 일본을 연결하는 KOKU Airline
+        가상 항공편 예약과 실제 항공편 조회를 한 번에
 
-+------------------------------------------------------+
-| 출발지          | 도착지          | 출발일           |
-| ICN             | NRT             | 2026-09-10       |
-+------------------------------------------------------+
+[편도] [왕복 - 선택]
 
-                    [항공편 검색]
+출발지       도착지       출발일       도착일
+ICN          NRT          2026-09-10   2026-09-15
 
---------------------------------------------------------
+※ 편도 선택 시 도착일 Input은 표시하지 않습니다.
+
+                         [항공편 검색]
 
 [KOKU Airline 항공편]
-
 좌석을 선택하고 직접 예약할 수 있습니다.
 
-
 [실제 항공편 조회]
-
 실제 한국 ↔ 일본 항공편을 검색합니다.
 
-
 [AI 항공편 추천]
-
 자연어로 원하는 항공편을 검색합니다.
+
+[AI 항공편 추천 받기]
 ```
 
 ---
@@ -1946,7 +2294,36 @@ KO205
 
 ---
 
-### 32.3 Seat 선택
+### 32.3 왕복 Flight 검색 결과
+
+```text
+[1 출국편] ─ [2 귀국편]
+
+출국편
+ICN → NRT
+2026-09-10
+
+KO101
+09:30 → 11:50
+[선택]
+
+--------------------------------
+
+선택한 출국편
+KO101 / ICN → NRT / 09:30
+
+귀국편
+NRT → ICN
+2026-09-15
+
+KO102
+17:00 → 19:30
+[선택]
+```
+
+---
+
+### 32.4 Seat 선택 (편도 예시)
 
 ```text
 KO101
@@ -1978,7 +2355,7 @@ Child  KIM MINSU  → 1B
 
 ---
 
-### 32.4 Mock 결제
+### 32.5 Mock 결제 (편도 예시)
 
 ```text
 +---------------------------------------+
@@ -2005,7 +2382,7 @@ Seat 1A / 1B
 
 ---
 
-### 32.5 Reservation 상세
+### 32.6 Reservation 상세 (편도 예시)
 
 ```text
 Reservation
@@ -2037,7 +2414,7 @@ Payment
 
 ---
 
-### 32.6 Admin Flight 상세
+### 32.7 Admin Flight 상세
 
 ```text
 Flight Detail
@@ -2096,6 +2473,10 @@ Reservations
 - [ ] Member 주요 화면이 정의되어 있습니다.
 - [ ] Admin 및 SuperAdmin 주요 화면이 정의되어 있습니다.
 - [ ] KOKU Flight 검색 흐름이 정의되어 있습니다.
+- [ ] 편도 / 왕복 검색 흐름이 정의되어 있습니다.
+- [ ] 왕복 출국 / 귀국 Flight 선택 흐름이 정의되어 있습니다.
+- [ ] 왕복 Seat 선택 및 예약 확인 UI가 정의되어 있습니다.
+- [ ] 왕복 결제 / 취소 / Flight 취소 정책이 Domain Policy와 동기화되어 있습니다.
 - [ ] 로그인 및 회원가입 흐름이 정의되어 있습니다.
 - [ ] Google OAuth 및 동일 Email 계정 연동 흐름이 정의되어 있습니다.
 - [ ] Seat 선택 및 Hold 흐름이 정의되어 있습니다.
@@ -2129,6 +2510,7 @@ Frontend 또는 AI Agent가 임의로 정책을 추가하지 않습니다.
 - Passenger 및 연령 정책을 변경해야 하는 경우
 - Flight 취소 정책을 변경해야 하는 경우
 - 내부 KOKU Flight와 외부 실제 항공편의 경계를 변경해야 하는 경우
+- 편도 / 왕복 여행 유형 또는 왕복 예약 정책을 변경해야 하는 경우
 
 Domain Policy 변경이 필요한 경우
 Human의 검토 및 승인 후 관련 설계 문서의 일관성을 함께 수정합니다.
