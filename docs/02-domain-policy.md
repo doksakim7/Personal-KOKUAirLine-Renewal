@@ -38,7 +38,16 @@
 - Role: `Guest`, `Member`, `Admin`, `SuperAdmin`
 - 인증 객체: `AuthAccount`
 - Entity: `Airport`, `Route`, `Aircraft`, `Flight`, `Seat`, `Passenger`, `Reservation`, `Payment`
-- 상태 및 Enum: `ACTIVE`, `WITHDRAWN`, `PENDING`, `CONFIRMED`, `CANCELLED`, `AVAILABLE`, `HELD`, `RESERVED`, `UNAVAILABLE`, `SUCCESS`, `FAILED`, `REFUNDED`, `SCHEDULED`, `DEPARTED`
+- 상태 및 Enum: `ACTIVE`, `WITHDRAWN`, `PENDING`, `CONFIRMED`, `CANCELLED`,
+  `AVAILABLE`, `HELD`, `RESERVED`, `UNAVAILABLE`,
+  `SUCCESS`, `FAILED`, `REFUNDED`,
+  `SCHEDULED`, `DEPARTED`,
+  `ONE_WAY`, `ROUND_TRIP`
+
+여행 유형은 `TripType`으로 구분하며 다음 값을 사용합니다.
+
+- `ONE_WAY`: 편도
+- `ROUND_TRIP`: 왕복
 
 ---
 
@@ -317,11 +326,12 @@ MVP에서 회원 상태는 다음과 같이 정의합니다.
 회원 탈퇴를 진행하려면 먼저 다음 예약이 존재하지 않아야 합니다.
 
 - `PENDING` 예약
-- 아직 탑승하지 않은 `CONFIRMED` 예약
+- 예약에 포함된 Flight 중 아직 출발하지 않은 Flight가 하나 이상 존재하는 `CONFIRMED` 예약
 
 취소 가능한 예약은 Member가 먼저 취소한 후 탈퇴할 수 있습니다.
 
-구체적인 탈퇴 가능 여부 판단 기준은 예약 상태와 항공편 출발 시각을 기준으로 합니다.
+구체적인 탈퇴 가능 여부 판단 기준은 Reservation 상태와
+Reservation에 포함된 Flight 중 아직 출발하지 않은 Flight의 존재 여부를 기준으로 합니다.
 
 ---
 
@@ -408,6 +418,30 @@ MVP에서는 한국 ↔ 일본 국제 노선만 허용합니다.
 과거 항공편 및 예약에서 사용된 노선은 물리적으로 삭제하지 않습니다.
 
 비활성화된 노선에는 새로운 항공편 또는 운항 일정을 생성할 수 없습니다.
+
+### 6.6 왕복 Route 정책
+
+`ROUND_TRIP`에서는 출국 Route와 귀국 Route를 함께 사용합니다.
+
+귀국 Route는 출국 Route의 정확한 역방향이어야 합니다.
+
+예:
+
+```text
+출국: ICN → NRT
+귀국: NRT → ICN
+```
+
+다음과 같이 출국 Route와 무관한 귀국 Route는
+`ROUND_TRIP`으로 허용하지 않습니다.
+
+```text
+출국: ICN → NRT
+귀국: KIX → ICN
+```
+
+이와 같은 형태는 다구간(Multi-city) 여행에 해당하며
+MVP 범위에 포함하지 않습니다.
 
 ---
 
@@ -514,6 +548,24 @@ MVP에서 결제 시도는 최초 시도를 포함하여 최대 3회까지 허�
 Hold 만료 및 좌석 반환은 Backend를 기준으로 처리하며,
 Frontend의 남은 시간 표시는 사용자 안내 목적으로 사용합니다.
 
+`ROUND_TRIP` Reservation에서는 출국 Flight와 귀국 Flight에서
+선택한 모든 Seat를 하나의 Reservation 시작 단위로 처리합니다.
+
+출국 및 귀국 Flight에서 선택한 모든 Seat를 확보할 수 있는 경우에만
+Reservation을 `PENDING` 상태로 시작합니다.
+
+두 Flight 중 하나의 Seat라도 확보하지 못한 경우
+Reservation 시작 전체를 실패 처리합니다.
+
+이 경우:
+
+- `PENDING` Reservation을 정상 생성된 상태로 남기지 않습니다.
+- 출국 또는 귀국 Flight의 일부 Seat만 `HELD` 상태로 남기지 않습니다.
+- Flight 단위 또는 Seat 단위 Partial Success를 허용하지 않습니다.
+
+즉, 왕복 Reservation에서도 전체 Seat 확보 성공 또는 전체 실패
+(All-or-Nothing)를 원칙으로 합니다.
+
 ---
 
 ## 9. 항공편 및 운항 일정 정책
@@ -613,6 +665,19 @@ KOKU Airline 항공편의 신규 예약은
 이미 생성된 `PENDING` Reservation의 Seat Hold는 기존 Hold 정책을 따르며,
 Hold 만료 시각이 항공편 출발 예정 시각을 초과하지 않도록 합니다.
 
+`ROUND_TRIP` Reservation을 새로 시작하려면
+출국 Flight와 귀국 Flight 모두 예약 가능 조건을 만족해야 합니다.
+
+두 Flight 중 하나라도 다음 조건을 만족하지 않으면
+왕복 Reservation을 시작할 수 없습니다.
+
+- `SCHEDULED` 상태가 아님
+- 해당 Flight 출발 예정 시각까지 2시간 미만 남음
+
+왕복 Reservation의 Seat Hold 만료 시각은
+예약에 포함된 Flight 중 가장 먼저 출발하는 Flight의
+출발 예정 시각을 초과할 수 없습니다.
+
 #### 9.5.1 Flight 수정 제한
 
 Reservation이 존재하지 않는 `SCHEDULED` Flight는
@@ -647,6 +712,11 @@ Flight 취소가 정상적으로 처리되면:
 
 - Flight: `SCHEDULED → CANCELLED`
 
+다음 Reservation 처리 규칙은 `ONE_WAY` Reservation의 기본 처리 기준입니다.
+
+`ROUND_TRIP` Reservation에 연결된 Flight 취소는
+9.6.1 왕복 Reservation과 Flight 취소 정책을 우선 적용합니다.
+
 취소된 Flight와 연결된 Reservation은 더 이상 유효한 예약 상태로 유지하지 않고
 정책에 따라 `CANCELLED` 상태로 전환합니다.
 
@@ -666,6 +736,39 @@ Flight 취소가 정상적으로 처리되면:
 
 MVP에서는 Flight 취소로 인한 결제 금액을 전액 Mock 환불하며,
 대체편 제공 및 자동 재예약은 지원하지 않습니다.
+
+#### 9.6.1 왕복 Reservation과 Flight 취소
+
+`ROUND_TRIP` Reservation에 포함된 출국 Flight 또는 귀국 Flight가 취소되면
+해당 Reservation은 더 이상 정상적인 왕복 여정을 제공할 수 없으므로
+Reservation 전체를 `CANCELLED` 상태로 전환합니다.
+
+아직 어느 Flight도 출발하지 않은 경우:
+
+- Reservation: `CONFIRMED → CANCELLED`
+- 성공한 Payment: `SUCCESS → REFUNDED`
+- 출국 및 귀국 Flight의 모든 예약 Seat: `RESERVED → AVAILABLE`
+
+`PENDING` Reservation인 경우:
+
+- Reservation: `PENDING → CANCELLED`
+- 진행 중인 Payment가 존재하면 `PENDING → CANCELLED`
+- 출국 및 귀국 Flight의 모든 `HELD` Seat → `AVAILABLE`
+- 기존 `FAILED` Payment는 결제 이력으로 유지
+
+MVP에서는 왕복 Reservation에 대해서도 부분 환불을 지원하지 않으므로
+Mock 결제 금액은 전체 금액을 환불합니다.
+
+출국 Flight가 이미 `DEPARTED` 상태이고
+귀국 Flight가 이후 취소된 경우에도
+Reservation은 `CANCELLED` 상태로 전환하고
+성공한 Mock Payment는 전액 `REFUNDED` 처리합니다.
+
+이미 출발한 Flight의 Seat 상태 및 과거 탑승 이력은 변경하지 않으며,
+아직 출발하지 않은 Flight의 예약 Seat만 `AVAILABLE` 상태로 반환합니다.
+
+MVP에서는 Flight 취소로 인한 대체편 제공,
+자동 재예약 및 부분 환불을 지원하지 않습니다.
 
 Flight 취소 시 처리한 Admin 또는 SuperAdmin,
 대상 Flight, 처리 시각 및 취소 사유를 Audit Log로 기록합니다.
@@ -713,9 +816,14 @@ Passenger의 기본 정보 입력이 완료되면
 자동 생성된 테스트용 여권 정보는 사용자가 직접 입력하거나 수정하지 않습니다.
 
 생성된 테스트용 여권 만료일은
-해당 Passenger가 탑승할 Flight의 출발일 이후여야 합니다.
+해당 Passenger가 Reservation을 통해 탑승할 모든 Flight의 출발일 이후여야 합니다.
 
-여권 만료일이 Flight 출발일보다 이른 경우
+`ONE_WAY`에서는 출국 Flight의 탑승일을 기준으로 합니다.
+
+`ROUND_TRIP`에서는 출국 Flight와 귀국 Flight 모두의
+탑승일 조건을 만족해야 합니다.
+
+하나의 Flight라도 테스트용 여권 유효기간 조건을 만족하지 못하면
 Reservation을 `CONFIRMED` 상태로 확정할 수 없습니다.
 
 테스트용 여권 정보는 Passenger에 귀속됩니다.
@@ -758,44 +866,122 @@ Reservation을 `CONFIRMED` 상태로 확정하기 전에
 
 연령 구분은 탑승객이 직접 선택하는 값이 아니라, 입력된 생년월일을 기준으로 시스템에서 계산하는 것을 원칙으로 합니다.
 
+`ROUND_TRIP`에서는 Passenger의 연령 구분을
+출국 Flight와 귀국 Flight의 탑승일을 기준으로 각각 계산합니다.
+
+따라서 동일 Passenger라도 출국 Flight와 귀국 Flight에서
+연령 구분이 달라질 수 있습니다.
+
+예를 들어 출국 시 `Infant`였던 Passenger가
+귀국일에는 `Child`가 될 수 있습니다.
+
+Seat 필요 여부와 Adult 동반 Validation은
+각 Flight에서 계산된 Passenger의 연령 구분을 기준으로 적용합니다.
+
 ### 10.6 Child 및 Infant 동반 정책
 
-Child가 포함된 Reservation에는 최소 1명 이상의 Adult가 포함되어야 합니다.
+Child 및 Infant 관련 정책은 각 Flight의 탑승일을 기준으로
+계산된 Passenger 연령 구분에 따라 적용합니다.
 
-Child는 같은 Reservation의 Adult 중 최소 1명과
+해당 Flight에서 Child인 Passenger가 포함된 경우
+동일 Flight에 최소 1명 이상의 Adult가 함께 탑승해야 합니다.
+
+Child는 동일 Flight에서 함께 탑승하는 Adult 중 최소 1명과
 인접한 Seat를 배정받아야 합니다.
 
 MVP에서 인접한 Seat는 동일 Row에서 좌우로 직접 연결되어 있으며,
 두 Seat 사이에 통로가 존재하지 않는 Seat를 의미합니다.
 
-MVP에서 Infant는 독립된 Seat를 사용하지 않습니다.
+해당 Flight에서 Infant인 Passenger는 독립된 Seat를 사용하지 않습니다.
 
-Infant는 반드시 같은 Reservation의 Adult와 연결되어야 하며,
+Infant는 해당 Flight에서 Adult인 Passenger와 연결되어야 하며,
 Adult 1명당 최대 1명의 Infant를 동반할 수 있습니다.
 
-Infant만으로 Reservation을 생성할 수 없습니다.
+해당 Flight에서 Infant만으로 탑승 구성을 만들 수 없습니다.
+
+`ROUND_TRIP`에서는 위 Validation을
+출국 Flight와 귀국 Flight 각각에 독립적으로 적용합니다.
+
+Infant의 동반 Adult는 Reservation의 Passenger 중에서 지정합니다.
+
+`ROUND_TRIP`에서 동일 Passenger가 하나 이상의 Flight에서
+`Infant`로 분류되는 경우 동일한 동반 Adult를 기본으로 사용합니다.
+
+지정된 동반 Adult는 해당 Infant가 `Infant`로 분류되는
+모든 Flight에서 `Adult` 조건을 만족해야 합니다.
+
+어느 Flight에서든 지정된 동반 Passenger가 `Adult` 조건을
+만족하지 못하면 Reservation을 시작할 수 없습니다.
+
+구체적인 Passenger 간 동반 관계의 저장 구조는
+`05-data-api-design.md`에서 정의합니다.
 
 ---
 
 ## 11. 예약 정책
 
-### 11.1 예약 생성 및 확정 조건
+### 11.1 여행 유형 및 Reservation의 Flight 구성
+
+MVP에서 Reservation의 여행 유형은 `TripType`으로 구분합니다.
+
+- `ONE_WAY`
+- `ROUND_TRIP`
+
+#### ONE_WAY
+
+`ONE_WAY` Reservation은 하나의 KOKU Airline Flight를 포함합니다.
+
+#### ROUND_TRIP
+
+`ROUND_TRIP` Reservation은 다음 두 KOKU Airline Flight를 하나의 예약 단위로 포함합니다.
+
+1. 출국 Flight
+2. 귀국 Flight
+
+귀국 Flight의 Route는 출국 Flight Route의 역방향이어야 합니다.
+
+귀국 Flight의 출발 예정 시각은
+출국 Flight의 도착 예정 시각보다 이후여야 합니다.
+
+MVP에서는 귀국 Flight의 출발 Date가
+출국 Flight의 출발 Date보다 이후여야 합니다.
+
+따라서 출국보다 먼저 출발하는 귀국 Flight나
+동일 Date의 왕복 일정은 허용하지 않습니다.
+
+`ROUND_TRIP`에서도 하나의 Reservation으로 처리하며,
+출국 Flight와 귀국 Flight를 별개의 독립 Reservation으로 생성하지 않습니다.
+
+동일한 Passenger 구성을 출국 Flight와 귀국 Flight에 공통으로 적용합니다.
+
+단, Passenger의 연령 구분과 Seat 배정은
+각 Flight의 탑승일 및 Seat 구성에 따라 Flight별로 판단합니다.
+
+구체적인 Reservation과 Flight의 Database 관계 및 Mapping 방식은
+`05-data-api-design.md`에서 정의합니다.
+
+### 11.2 예약 생성 및 확정 조건
 
 #### PENDING 예약 생성
 
 예약 진행을 시작하려면 최소한 다음 조건을 만족해야 합니다.
 
 - `ACTIVE` 상태의 인증된 Member
-- 유효하고 예약 가능한 `SCHEDULED` KOKU Airline Flight
-- Flight 출발 예정 시각까지 2시간 이상 남아 있음
+- Reservation에 포함되는 모든 KOKU Airline Flight가 유효한 `SCHEDULED` 상태
+- Reservation에 포함되는 모든 Flight가 예약 가능 시간 조건을 만족
 - Passenger 정보 입력 완료
-- Passenger의 연령 및 Child / Infant 동반 조건 충족
-- Seat가 필요한 모든 Passenger의 Seat 선택 완료
-- 선택한 모든 Seat가 `AVAILABLE` 상태
+- Reservation에 포함된 각 Flight를 기준으로
+  Passenger의 연령 및 Child / Infant 동반 조건 충족
+- Reservation에 포함된 각 Flight에서 Seat가 필요한 모든 Passenger의 Seat 선택 완료
+- 출국 / 귀국을 포함하여 선택한 모든 Seat가 `AVAILABLE` 상태
 
-모든 조건을 만족하고 Seat 확보에 성공한 경우
-`PENDING` Reservation을 생성하고
-선택한 모든 Seat를 `AVAILABLE → HELD` 상태로 전환합니다.
+모든 조건을 만족하고 Reservation에 포함된 모든 Flight의
+Seat 확보에 성공한 경우에만 `PENDING` Reservation을 생성합니다.
+
+선택한 모든 Seat는 `AVAILABLE → HELD` 상태로 전환합니다.
+
+`ROUND_TRIP`에서는 출국 Flight와 귀국 Flight의 Seat 확보를
+하나의 Reservation 시작 과정으로 처리하며 Partial Success를 허용하지 않습니다.
 
 #### 예약 확정
 
@@ -808,7 +994,7 @@ Infant만으로 Reservation을 생성할 수 없습니다.
 
 모든 조건을 만족하면 예약을 `CONFIRMED` 상태로 전환합니다.
 
-### 11.2 예약 소유자
+### 11.3 예약 소유자
 
 하나의 Reservation은 하나의 Member에 소속됩니다.
 
@@ -816,7 +1002,7 @@ Member는 자신의 예약만 조회하거나 취소할 수 있습니다.
 
 Admin과 SuperAdmin은 운영 목적의 예약 현황을 조회할 수 있습니다.
 
-### 11.3 Reservation과 Passenger
+### 11.4 Reservation과 Passenger
 
 하나의 Reservation은 한 명 이상의 Passenger를 포함할 수 있습니다.
 
@@ -832,7 +1018,15 @@ Reservation과 Passenger의 구체적인 데이터 관계는
 
 한 명의 예약자가 자신을 포함한 여러 Passenger의 항공편을 함께 예약할 수 있습니다.
 
-### 11.4 예약 상태
+`ROUND_TRIP` Reservation에서는 동일한 Passenger 구성을
+출국 Flight와 귀국 Flight에 공통으로 적용합니다.
+
+Passenger 자체를 출국편과 귀국편별로 별도로 다시 입력하지 않습니다.
+
+단, Passenger의 연령 구분, Seat 필요 여부 및 Seat 배정은
+각 Flight별로 독립적으로 판단합니다.
+
+### 11.5 예약 상태
 
 MVP에서 예약 상태는 다음과 같이 정의합니다.
 
@@ -864,8 +1058,9 @@ MVP에서는 취소 사유별로 별도의 예약 상태를 추가하지 않고
 
 필요한 경우 취소 원인은 별도의 정보로 구분합니다.
 
-### 11.5 예약 생성과 Seat 확보
+### 11.6 예약 생성과 Seat 확보
 
+Reservation에 포함된 모든 Flight에서
 Seat가 필요한 모든 Passenger의 Seat 선택이 완료되면
 선택한 모든 Seat가 `AVAILABLE` 상태인지 검증합니다.
 
@@ -876,7 +1071,8 @@ Seat가 필요한 모든 Passenger의 Seat 선택이 완료되면
 `PENDING` Reservation 생성과 선택한 모든 Seat의 `HELD` 전환은
 하나의 예약 시작 과정으로 처리합니다.
 
-선택한 Seat 중 하나라도 확보에 실패하면
+편도 또는 왕복 여부와 관계없이,
+Reservation에 포함된 Flight의 선택 Seat 중 하나라도 확보에 실패하면
 예약 시작 전체를 실패 처리합니다.
 
 이 경우:
@@ -919,6 +1115,15 @@ MVP에서는 하나의 `Payment`를 하나의 Mock 결제 시도로 정의합니
 하나의 Reservation은 여러 Payment를 가질 수 있습니다.
 
 `Reservation 1 : N Payment`
+
+`ROUND_TRIP` Reservation에서도 Payment는 출국 Flight와 귀국 Flight별로
+분리하지 않습니다.
+
+하나의 Payment는 하나의 Reservation 전체에 대한 Mock 결제 시도를 의미합니다.
+
+따라서 왕복 Reservation의 Mock 결제 금액은
+출국 및 귀국 여정 전체 금액을 기준으로 하며,
+결제 시도 횟수 최대 3회 정책도 Reservation 전체를 기준으로 적용합니다.
 
 사용자가 Mock 결제를 요청할 때마다 새로운 `Payment`를 생성합니다.
 
@@ -1091,6 +1296,8 @@ Admin 및 SuperAdmin의 취소 권한은 별도 관리자 정책에서 정의합
 
 ### 13.2 취소 가능 조건
 
+다음 기본 취소 가능 조건은 `ONE_WAY` Reservation에 적용합니다.
+
 Member는 항공편 출발 예정 시각 기준 24시간 전까지 확정된 예약을 취소할 수 있습니다.
 
 출발 예정 시각까지 24시간 미만이 남은 예약은 Member가 취소할 수 없습니다.
@@ -1098,6 +1305,33 @@ Member는 항공편 출발 예정 시각 기준 24시간 전까지 확정된 예
 이미 취소된 예약은 다시 취소할 수 없습니다.
 
 MVP에서는 정상 취소 시 Mock 결제 금액을 전액 환불합니다.
+
+### 13.2.1 왕복 Reservation 취소
+
+MVP에서는 `ROUND_TRIP` Reservation의 부분 취소를 지원하지 않습니다.
+
+따라서 다음 기능을 제공하지 않습니다.
+
+- 출국 Flight만 취소
+- 귀국 Flight만 취소
+- 출국 후 남은 귀국 Flight만 Member가 취소
+- 일부 Flight에 대한 부분 Mock 환불
+
+Member가 `ROUND_TRIP` Reservation을 정상 취소하려면
+출국 Flight 출발 예정 시각까지 24시간 이상 남아 있어야 합니다.
+
+조건을 만족하면 왕복 Reservation 전체를 취소합니다.
+
+- Reservation: `CONFIRMED → CANCELLED`
+- 성공한 Payment: `SUCCESS → REFUNDED`
+- 출국 Flight의 예약 Seat: `RESERVED → AVAILABLE`
+- 귀국 Flight의 예약 Seat: `RESERVED → AVAILABLE`
+
+Mock 결제 금액은 전체 왕복 Reservation에 대해 전액 환불합니다.
+
+출국 Flight가 이미 출발했거나
+출국 Flight 출발까지 24시간 미만인 경우
+Member는 해당 왕복 Reservation을 취소할 수 없습니다.
 
 ### 13.3 좌석 반환
 
@@ -1300,6 +1534,24 @@ MVP에서는 강제 취소 시 Mock 결제 금액을 전액 환불합니다.
 강제 취소 시 SuperAdmin, 대상 Reservation, 처리 시각 및 취소 사유를
 Audit Log로 기록합니다.
 
+`ROUND_TRIP` Reservation의 경우
+출국 Flight와 귀국 Flight가 모두 아직 출발하지 않은 경우에만
+SuperAdmin이 Reservation 전체를 강제 취소할 수 있습니다.
+
+왕복 Reservation의 일부 Flight가 이미 `DEPARTED` 상태인 경우
+SuperAdmin의 Reservation 강제 취소 기능을 제공하지 않습니다.
+
+MVP에서는 왕복 Reservation의 일부 Flight만 강제 취소하거나
+부분 Mock 환불하는 기능을 제공하지 않습니다.
+
+강제 취소가 가능한 왕복 Reservation은 전체를 취소하며:
+
+- Reservation: `CONFIRMED → CANCELLED`
+- 성공한 Payment: `SUCCESS → REFUNDED`
+- 출국 및 귀국 Flight의 모든 예약 Seat: `RESERVED → AVAILABLE`
+
+처리합니다.
+
 ---
 
 ## 17. 데이터 삭제 및 비활성화 정책
@@ -1350,6 +1602,9 @@ Hard Delete는 테스트 데이터 정리 등 명확한 관리 목적이 있는 
 ---
 
 ## 18. 주요 상태 전이
+
+다음 Reservation 상태 전이는 `ONE_WAY`와 `ROUND_TRIP` 모두 동일하게 적용합니다.
+`ROUND_TRIP`에서도 출국 / 귀국 Flight별 Reservation 상태를 별도로 관리하지 않습니다.
 
 ### 18.1 예약
 
@@ -1402,6 +1657,9 @@ Mock 결제 처리 과정에서 예상하지 못한 오류가 발생한 경우 �
 SuperAdmin에 의해 강제 취소되거나,
 연결된 Flight가 취소되어 전액 환불된 경우 발생합니다.
 
+`ROUND_TRIP`에서는 다음 Seat 상태 전이를
+출국 Flight와 귀국 Flight의 각 Seat에 적용합니다.
+
 ### 18.3 좌석
 
 예약 진행 시작:
@@ -1419,6 +1677,15 @@ Mock 결제 성공:
 예약 취소:
 
 `RESERVED → AVAILABLE`
+
+단, `ROUND_TRIP` Reservation에서 일부 Flight가 이미 `DEPARTED`한 이후
+나머지 Flight 취소로 Reservation 전체가 `CANCELLED`되는 경우에는
+이미 출발한 Flight의 Seat 상태를 변경하지 않습니다.
+
+아직 출발하지 않은 Flight의 `RESERVED` Seat만
+`AVAILABLE` 상태로 반환합니다.
+
+구체적인 예외는 9.6.1 왕복 Reservation과 Flight 취소 정책을 따릅니다.
 
 ### 18.4 Flight
 
@@ -1440,7 +1707,7 @@ MVP에서는 실제 운항 시스템과 연동하지 않으므로
 
 ## 19. 주요 정상 시나리오
 
-### 19.1 일반 회원가입 및 예약
+### 19.1 일반 회원가입 및 편도 예약
 
 1. 사용자가 일반 회원가입을 진행합니다.
 2. 로그인합니다.
@@ -1477,7 +1744,7 @@ MVP에서는 실제 운항 시스템과 연동하지 않으므로
 7. 서비스 인증이 완료됩니다.
 8. 이후 Member와 동일한 예약 흐름을 이용합니다.
 
-### 19.3 예약 취소
+### 19.3 편도 Reservation 취소
 
 1. Member가 자신의 예약을 조회합니다.
 2. 취소 가능한 `CONFIRMED` 예약을 선택합니다.
@@ -1497,6 +1764,43 @@ MVP에서는 실제 운항 시스템과 연동하지 않으므로
 5. 실제 항공편 결과를 수집합니다.
 6. 조건에 맞게 결과를 필터링 및 정렬합니다.
 7. AI가 추천 항공편과 추천 이유를 제공합니다.
+
+### 19.5 왕복 예약
+
+1. Member가 `ROUND_TRIP`을 선택합니다.
+2. 출발 Airport, 도착 Airport, 출발 Date, 귀국 Date를 입력합니다.
+3. 출국 Flight를 검색하고 선택합니다.
+4. 출국 Route의 역방향 Route에서 귀국 Flight를 검색하고 선택합니다.
+5. 동일한 Passenger 구성을 입력합니다.
+6. 각 Flight 탑승일 기준으로 Passenger 연령을 계산합니다.
+7. 출국 Flight의 Seat를 선택합니다.
+8. 귀국 Flight의 Seat를 선택합니다.
+9. 출국 및 귀국 Flight의 모든 선택 Seat가 `AVAILABLE`인지 검증합니다.
+10. 모든 Seat 확보에 성공한 경우 하나의 `PENDING` Reservation을 생성합니다.
+11. 출국 및 귀국 Flight의 선택 Seat를 모두 `HELD` 상태로 전환합니다.
+12. 사용자가 왕복 전체 Reservation 내용을 확인합니다.
+13. 왕복 전체 금액을 대상으로 Mock 결제를 한 번 진행합니다.
+14. Payment가 `SUCCESS`가 되면 Reservation을 `CONFIRMED`로 변경합니다.
+15. 출국 및 귀국 Flight의 모든 `HELD` Seat를 `RESERVED`로 변경합니다.
+16. 사용자는 하나의 왕복 Reservation으로 출국 및 귀국 여정을 조회합니다.
+
+### 19.6 왕복 Reservation 취소
+
+1. Member가 자신의 `ROUND_TRIP` Reservation을 조회합니다.
+2. Reservation이 `CONFIRMED` 상태인지 확인합니다.
+3. 출국 Flight 출발 예정 시각까지 24시간 이상 남아 있는지 확인합니다.
+4. 조건을 만족하면 Member가 왕복 Reservation 전체 취소를 요청합니다.
+5. Reservation을 `CONFIRMED → CANCELLED` 상태로 변경합니다.
+6. 성공한 Payment를 `SUCCESS → REFUNDED` 상태로 변경합니다.
+7. 출국 및 귀국 Flight의 모든 `RESERVED` Seat를 `AVAILABLE`로 반환합니다.
+8. 왕복 전체 Mock 결제 금액을 전액 환불합니다.
+9. 변경된 Reservation 및 환불 상태를 Member에게 제공합니다.
+
+출국 Flight 출발 예정 시각까지 24시간 미만이거나
+이미 출국한 경우 Member 취소를 허용하지 않습니다.
+
+MVP에서는 출국 또는 귀국 Flight만 별도로 취소하는
+부분 취소를 지원하지 않습니다.
 
 ---
 
@@ -1523,6 +1827,10 @@ MVP에서는 실제 운항 시스템과 연동하지 않으므로
 
 실패한 사용자에게는 선택한 Seat 중 일부를 확보하지 못했음을 안내하고
 최신 Seat 상태를 다시 조회한 후 좌석을 다시 선택하도록 합니다.
+
+`ROUND_TRIP`에서는 출국 Flight와 귀국 Flight의 모든 선택 Seat를
+하나의 확보 대상 집합으로 취급하며,
+어느 Flight의 Seat에서든 확보 실패가 발생하면 왕복 Reservation 시작 전체를 실패 처리합니다.
 
 ### 20.4 Mock 결제 실패
 
@@ -1597,5 +1905,7 @@ AI Agent는 구현 과정에서 본 문서의 Domain Policy를 임의로 변경�
 - Member와 AuthAccount 관계 변경
 - 외부 실제 항공편과 내부 항공편의 경계 변경
 - 새로운 핵심 도메인 추가
+- `TripType` 또는 편도 / 왕복 예약 정책 변경
+- Reservation과 Flight 구성 관계 변경
 
 정책 변경이 승인된 경우 관련 문서, ERD 및 API Contract의 일관성을 함께 검토합니다.
