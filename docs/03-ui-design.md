@@ -1056,7 +1056,14 @@ KIM JIHUN → 12A
 KIM JIHUN → 8C
 ```
 
-Infant는 출국편과 귀국편 모두 별도의 Seat를 사용하지 않습니다.
+Passenger의 Seat 필요 여부는 각 Flight의 탑승일을 기준으로 계산된
+연령 구분에 따라 판단합니다.
+
+해당 Flight에서 `Infant`인 Passenger는 별도의 Seat를 사용하지 않으며,
+해당 Flight에서 `Child` 또는 `Adult`인 Passenger는 Seat를 선택해야 합니다.
+
+따라서 왕복 일정 중 Passenger의 연령 구분이 변경되는 경우
+출국 Flight와 귀국 Flight의 Seat 필요 여부가 달라질 수 있습니다.
 
 왕복 Reservation 시작 시에는 출국 Flight와 귀국 Flight에서
 선택한 모든 Seat를 하나의 예약 시작 과정으로 처리합니다.
@@ -1139,8 +1146,13 @@ Reservation 진행을 위해 최소 1명의 Passenger가 필요하므로
 Infant와 연결된 Adult를 삭제하려는 경우
 해당 Infant의 동반 Adult를 먼저 변경하거나 Infant를 삭제해야 합니다.
 
-Passenger 정보 입력이 완료되면 입력된 생년월일을 기준으로
-Adult, Child, Infant를 판단하고 다음 Seat 선택 단계로 이동합니다.
+Passenger 정보 입력이 완료되면
+입력된 생년월일과 Reservation에 포함된 각 Flight의 탑승일을 기준으로
+Adult, Child, Infant를 판단합니다.
+
+`ONE_WAY`에서는 출국 Flight를 기준으로 계산하고,
+`ROUND_TRIP`에서는 출국 Flight와 귀국 Flight의 연령 구분을
+각각 계산한 후 Seat 선택 단계로 이동합니다.
 
 ---
 
@@ -1179,9 +1191,12 @@ Child
 
 ### 15.1 Child
 
-Child가 포함된 Reservation에는 최소 1명의 Adult가 포함되어야 합니다.
+Passenger의 Child 여부는 각 Flight의 탑승일을 기준으로 판단합니다.
 
-Child는 같은 Reservation의 Adult 중 최소 1명과
+해당 Flight에서 Child인 Passenger가 포함된 경우
+동일 Flight에 최소 1명 이상의 Adult가 함께 탑승해야 합니다.
+
+Child는 동일 Flight에서 함께 탑승하는 Adult 중 최소 1명과
 인접한 Seat를 배정받아야 합니다.
 
 MVP에서 인접한 Seat는 동일 Row에서 좌우로 직접 연결되어 있으며,
@@ -1190,18 +1205,25 @@ MVP에서 인접한 Seat는 동일 Row에서 좌우로 직접 연결되어 있�
 안내 예:
 
 ```text
-소아 탑승객은 같은 예약의 성인과 인접한 좌석을 선택해야 합니다.
+소아 탑승객은 해당 Flight에서 함께 탑승하는
+성인과 인접한 좌석을 선택해야 합니다.
 ```
 
 조건을 만족하지 않는 경우 다음 단계로 진행하지 못하도록 합니다.
+
+ROUND_TRIP에서는 위 Validation을
+출국 Flight와 귀국 Flight 각각에 적용합니다.
 
 ---
 
 ### 15.2 Infant
 
-Infant는 별도의 Seat를 사용하지 않습니다.
+Passenger의 Infant 여부는 각 Flight의 탑승일을 기준으로 판단합니다.
 
-Passenger 입력 화면에서 Infant를 동반할 Adult를 지정합니다.
+해당 Flight에서 `Infant`인 Passenger는 별도의 Seat를 사용하지 않습니다.
+
+Passenger 입력 화면에서는 Reservation에 포함된 Passenger 중
+Infant를 동반할 Adult를 지정합니다.
 
 ```text
 Infant
@@ -1213,7 +1235,19 @@ KIM BABY
 
 Adult 1명당 최대 1명의 Infant를 연결할 수 있습니다.
 
-Infant는 반드시 같은 Reservation의 Adult와 연결되어야 하며,
+지정된 동반 Adult는 해당 Infant가 Infant로 분류되는 Flight에서
+Adult 조건을 만족해야 합니다.
+
+ROUND_TRIP에서 동일 Passenger가 하나 이상의 Flight에서
+Infant로 분류되는 경우 동일한 동반 Adult를 기본으로 사용합니다.
+
+어느 Flight에서든 지정된 동반 Passenger가
+Adult 조건을 만족하지 못하면 Reservation을 시작할 수 없습니다.
+
+왕복 일정 중 Passenger의 연령 구분이 변경되는 경우
+각 Flight의 연령 구분에 따라 Seat 필요 여부와
+Infant 동반 Validation을 각각 적용합니다.
+
 Infant만으로 Reservation을 생성할 수 없습니다.
 
 ---
@@ -1557,8 +1591,8 @@ Seat Hold 시간이 만료된 Reservation은 Backend 정책에 따라
 
 ## 20. Member 예약 취소
 
-`CONFIRMED` Reservation이며
-Flight 출발 예정 시각까지 24시간 이상 남아 있는 경우
+`ONE_WAY` Reservation의 경우
+`CONFIRMED` 상태이며 Flight 출발 예정 시각까지 24시간 이상 남아 있으면
 예약 취소 Action을 제공합니다.
 
 ```text
@@ -1598,12 +1632,43 @@ RESERVED → AVAILABLE
 
 예약 취소 Action을 제공하지 않거나 Disabled 처리합니다.
 
-왕복 Reservation의 취소 가능 기준,
-출국 후 귀국 Flight만 남은 경우의 처리,
-부분 취소 허용 여부 및 환불 범위는
-`02-domain-policy.md`의 왕복 취소 정책을 따릅니다.
+### 왕복 Reservation 취소
 
-해당 정책이 확정된 이후 본 UI 문서에 동기화합니다.
+MVP에서는 `ROUND_TRIP` Reservation의 부분 취소를 지원하지 않습니다.
+
+Member는 출국 Flight 출발 예정 시각까지 24시간 이상 남아 있는 경우에만
+왕복 Reservation 전체를 취소할 수 있습니다.
+
+취소가 가능한 경우:
+
+```text
+Reservation
+CONFIRMED → CANCELLED
+
+성공한 Payment
+SUCCESS → REFUNDED
+
+출국 Flight의 예약 Seat
+RESERVED → AVAILABLE
+
+귀국 Flight의 예약 Seat
+RESERVED → AVAILABLE
+```
+
+왕복 전체 Mock 결제 금액을 전액 환불합니다.
+
+다음 경우 Member에게 예약 취소 Action을 제공하지 않거나
+Disabled 처리합니다.
+
+- 출국 Flight 출발 예정 시각까지 24시간 미만인 경우
+- 출국 Flight가 이미 출발한 경우
+
+MVP에서는 다음 기능을 제공하지 않습니다.
+
+- 출국 Flight만 취소
+- 귀국 Flight만 취소
+- 출국 후 남은 귀국 Flight만 취소
+- 일부 Flight에 대한 부분 Mock 환불
 
 ---
 
@@ -1880,6 +1945,8 @@ Admin 또는 SuperAdmin이 수정할 수 있습니다.
 [Flight 취소]
 ```
 
+수정 Action 표시 기준:
+
 ```text
 Reservation 없음 → [수정] 표시
 PENDING/CONFIRMED Reservation 존재 → [수정] 숨김 또는 비활성화
@@ -1957,12 +2024,63 @@ HELD → AVAILABLE
 
 MVP에서는 대체편 제공 또는 자동 재예약을 제공하지 않습니다.
 
-왕복 Reservation에 포함된 출국 또는 귀국 Flight 중 하나가 취소되는 경우의
-Reservation 전체 취소 여부, 나머지 Flight 처리 및 환불 범위는
-`02-domain-policy.md`의 왕복 Flight 취소 정책을 따릅니다.
+#### 왕복 Reservation과 Flight 취소
 
-UI에서는 해당 Domain Policy를 기준으로
-왕복 여정 전체에 미치는 영향을 사용자에게 명확하게 안내합니다.
+`ROUND_TRIP` Reservation에 포함된 출국 Flight 또는 귀국 Flight 중
+하나가 취소되면 왕복 Reservation 전체를 `CANCELLED` 상태로 처리합니다.
+
+아직 출국 Flight와 귀국 Flight가 모두 출발하지 않은
+`CONFIRMED` Reservation의 경우:
+
+```text
+Reservation
+CONFIRMED → CANCELLED
+
+성공한 Payment
+SUCCESS → REFUNDED
+
+출국 / 귀국 Flight의 모든 예약 Seat
+RESERVED → AVAILABLE
+```
+
+PENDING Reservation의 경우:
+
+```text
+Reservation
+PENDING → CANCELLED
+
+
+현재 처리 중인 PENDING Payment가 존재하는 경우
+PENDING → CANCELLED
+
+
+출국 / 귀국 Flight의 모든 HELD Seat
+HELD → AVAILABLE
+```
+
+기존 FAILED Payment는 결제 이력으로 유지합니다.
+
+출국 Flight가 이미 DEPARTED 상태인 이후
+귀국 Flight가 취소된 경우:
+
+```text
+Reservation
+CONFIRMED → CANCELLED
+
+성공한 Payment
+SUCCESS → REFUNDED
+```
+
+이 경우:
+- 이미 출발한 Flight의 Seat 상태 및 과거 탑승 이력은 변경하지 않음
+- 아직 출발하지 않은 귀국 Flight의 RESERVED Seat만 AVAILABLE로 반환
+- Mock 결제 금액은 전액 환불
+
+MVP에서는 왕복 Reservation에서도
+대체편 제공, 자동 재예약 및 부분 환불을 제공하지 않습니다.
+
+UI에서는 Flight 취소가 왕복 여정 전체에 미치는 영향을
+Confirmation UI에서 명확하게 안내합니다.
 
 ---
 
@@ -2006,7 +2124,8 @@ Admin에게는 해당 Action을 제공하지 않습니다.
 강제 취소 가능 조건:
 
 - Reservation이 `CONFIRMED`
-- Flight가 아직 출발하지 않음
+- `ONE_WAY`에서는 해당 Flight가 아직 출발하지 않음
+- `ROUND_TRIP`에서는 출국 Flight와 귀국 Flight가 모두 아직 출발하지 않음
 
 ```text
 [강제 취소]
@@ -2037,11 +2156,26 @@ SuperAdmin 강제 취소에는 적용하지 않습니다.
 
 강제 취소 완료 후 처리 결과를 화면에 표시합니다.
 
-왕복 Reservation에서 일부 Flight가 이미 출발한 경우의
-SuperAdmin 강제 취소 가능 여부와 환불 범위는
-`02-domain-policy.md`의 왕복 강제 취소 정책을 따릅니다.
+왕복 Reservation의 일부 Flight가 이미 `DEPARTED` 상태인 경우
+강제 취소 Action을 제공하지 않거나 Disabled 처리합니다.
 
-해당 정책이 확정된 이후 본 UI 문서에 동기화합니다.
+강제 취소가 가능한 왕복 Reservation은 전체를 취소합니다.
+
+```text
+Reservation
+CONFIRMED → CANCELLED
+
+성공한 Payment
+SUCCESS → REFUNDED
+
+출국 / 귀국 Flight의 모든 예약 Seat
+RESERVED → AVAILABLE
+```
+
+Mock 결제 금액은 전액 환불합니다.
+
+MVP에서는 왕복 Reservation의 일부 Flight만 강제 취소하거나
+부분 Mock 환불하는 기능을 제공하지 않습니다.
 
 ---
 
