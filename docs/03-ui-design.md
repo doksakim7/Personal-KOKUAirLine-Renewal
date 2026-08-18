@@ -287,11 +287,12 @@ SuperAdmin에게만 허용된 기능은 권한에 따라 추가 Action을 표시
 
 ### 5.4 Brand Logo
 
-KOKU Airline의 Brand Symbol은 깃발과 Wing을 결합한
-간결한 항공 Emblem 형태를 기본 방향으로 합니다.
+KOKU Airline의 Brand Symbol은 깃발 형태 안에
+Wing 요소를 결합한 간결한 항공 Emblem 형태를 기본 방향으로 합니다.
 
 - 깃발을 주요 Motif로 사용
-- Wing 요소를 결합
+- Wing 요소는 깃발 내부에 통합하여 표현
+- 깃발과 Wing이 하나의 Symbol로 인식되도록 구성
 - Skull, Bones 등 직접적인 해적 상징은 사용하지 않음
 - 작은 Header 영역에서도 식별 가능한 단순한 형태
 - KOKU Airline Wordmark와 함께 사용 가능
