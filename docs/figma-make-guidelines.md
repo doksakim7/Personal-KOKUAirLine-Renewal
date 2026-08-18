@@ -616,15 +616,37 @@ ROUND_TRIP의 Seat 단계에서는
 
 ### 11.1 Seat 상태
 
-Seat는 최소 다음 상태를 표현해야 합니다.
+Backend / Domain의 Seat 상태는 다음과 같이 유지합니다.
 
-* 선택 가능
-* 현재 사용자가 선택
-* 다른 Reservation에서 `HELD`
+* `AVAILABLE`
+* `HELD`
 * `RESERVED`
 * `UNAVAILABLE`
 
-상태 구분은 색상만으로 하지 말고, 텍스트, 아이콘 또는 패턴을 함께 사용합니다.
+다만 최종 사용자용 Seat 선택 UI에서는 다음 세 가지 상태만 표현합니다.
+
+* 선택 가능
+* 내가 선택
+* 선택 불가
+
+UI 표현 기준:
+
+* `AVAILABLE` → 선택 가능
+* 현재 사용자가 화면에서 선택한 Seat → 내가 선택
+* 다른 Reservation에서 `HELD` → 선택 불가
+* `RESERVED` → 선택 불가
+* `UNAVAILABLE` → 선택 불가
+
+Figma Make는 `HELD`, `RESERVED`, `UNAVAILABLE`을
+Seat 선택 화면에서 각각 별도의 사용자용 상태명으로 노출하지 않습니다.
+
+`다른 사용자 선택 중`, `예약 완료` 등의 별도 범례도 생성하지 않습니다.
+
+다른 Reservation에서 `HELD`된 Seat는
+내부적으로 Hold 상태를 유지하면서 현재 사용자에게는 선택 불가로 표현합니다.
+
+상태 구분은 색상만으로 하지 말고,
+텍스트, 아이콘, 패턴 또는 Disabled 표현 등을 함께 사용합니다.
 
 ### 11.2 Hold 규칙
 

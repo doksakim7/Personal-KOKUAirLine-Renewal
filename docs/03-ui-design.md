@@ -109,12 +109,18 @@ Reservation, Payment, Seat 등의 상태는 사용자가 이해할 수 있는 �
 | Payment | `CANCELLED` | 결제 취소 | 支払いキャンセル |
 | Payment | `REFUNDED` | 환불 완료 | 払い戻し完了 |
 | Seat | `AVAILABLE` | 선택 가능 | 選択可能 |
-| Seat | `HELD` | 임시 확보 | 一時確保 |
-| Seat | `RESERVED` | 예약됨 | 予約済み |
+| Seat | `HELD` | 선택 불가 | 選択不可 |
+| Seat | `RESERVED` | 선택 불가 | 選択不可 |
 | Seat | `UNAVAILABLE` | 선택 불가 | 選択不可 |
 
 Frontend에서는 Backend 상태 값을 직접 사용자에게 노출하지 않고
 Locale에 맞는 사용자용 문자열로 변환하여 표시합니다.
+
+Seat의 내부 상태인 `HELD`, `RESERVED`, `UNAVAILABLE`은 구분하여 유지하지만,
+Seat 선택 화면에서는 최종 사용자에게 모두 `선택 불가`로 표현합니다.
+
+현재 사용자가 Seat 선택 화면에서 직접 선택한 Seat는
+내부 Seat 상태와 별개의 UI 선택 상태로 `내가 선택`이라고 표현할 수 있습니다.
 
 ### 2.4 Responsive UI
 
@@ -1206,16 +1212,35 @@ ICN → NRT
 
 ### 13.1 Seat 상태
 
-최소 다음 상태를 시각적으로 구분합니다.
+Backend / Domain에서는 다음 Seat 상태를 구분하여 유지합니다.
 
-- 선택 가능
-- 현재 사용자가 선택
-- 다른 Reservation에서 `HELD`
+- `AVAILABLE`
+- `HELD`
 - `RESERVED`
 - `UNAVAILABLE`
 
+다만 최종 사용자용 Seat 선택 UI에서는 다음 세 가지 상태로 단순화하여 표현합니다.
+
+- 선택 가능
+- 내가 선택
+- 선택 불가
+
+UI 표현 기준은 다음과 같습니다.
+
+- `AVAILABLE` → 선택 가능
+- 현재 사용자가 화면에서 선택한 Seat → 내가 선택
+- 다른 Reservation에서 `HELD` → 선택 불가
+- `RESERVED` → 선택 불가
+- `UNAVAILABLE` → 선택 불가
+
+`HELD`, `RESERVED`, `UNAVAILABLE`은 내부적으로 서로 다른 상태이지만
+Seat 선택 화면에서는 사용자에게 각각의 상태명을 별도로 노출하지 않습니다.
+
+다른 Reservation에서 `HELD`된 Seat도
+현재 사용자는 선택할 수 없어야 합니다.
+
 상태는 색상만으로 구분하지 않고
-Text, Icon 또는 Pattern 등을 함께 사용합니다.
+Text, Icon, Pattern 또는 Disabled 표현 등을 함께 사용합니다.
 
 ---
 
