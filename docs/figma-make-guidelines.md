@@ -401,6 +401,25 @@ Flight를 처음부터 다시 검색해야 하는 흐름을 만들지 않습니�
 
 Figma Make는 편도와 왕복 Reservation의 Happy Path를 구분하여 이해해야 합니다.
 
+#### Flight 선택 완료 UI 통일
+
+Figma Make는 `ONE_WAY`와 `ROUND_TRIP`에서
+Flight 선택 완료 후 동일한 UX 패턴을 사용합니다.
+
+```text
+선택 완료
+→ 선택한 여정 Summary
+→ 예약 절차 시작 Action
+```
+
+- `ONE_WAY`: 1개 Flight Summary
+- `ROUND_TRIP`: 출국 / 귀국 Flight를 포함한 하나의 왕복 여정 Summary
+
+`ROUND_TRIP` Summary를 별도의 독립 Page로 강제하지 않습니다.
+
+Desktop과 Mobile 모두
+선택 완료 상태 안에서 Summary와 예약 절차 시작 CTA를 제공하는 의미를 유지합니다.
+
 ### 10.1 편도 예약
 
 ```text
@@ -410,7 +429,7 @@ Home
 → Flight 검색 결과 또는 Flight 상세
 → [항공편 선택]
 → 선택한 Flight Summary
-→ Reservation 시작
+→ 예약 절차 시작
 → Passenger 정보 입력
 → Seat 선택
 → PENDING Reservation 생성 + 선택한 모든 Seat HELD
@@ -436,7 +455,7 @@ Member:
 [예약하기]
 ```
 
-Figma Make는 ONE_WAY Flight 선택과 Reservation 시작을
+Figma Make는 ONE_WAY Flight 선택과 예약 절차 시작을
 하나의 CTA로 합치지 않습니다.
 
 ### 10.2 왕복 예약
@@ -449,7 +468,7 @@ Home
 → 귀국 Flight 검색 결과
 → 귀국 Flight 선택
 → 선택한 왕복 여정 Summary
-→ Reservation 시작
+→ 예약 절차 시작
 → Passenger 정보 입력
 → 출국 Flight Seat 선택
 → 귀국 Flight Seat 선택
@@ -519,7 +538,7 @@ Member:
 
 #### Flight 상세의 선택 CTA
 
-Flight 상세에서도 Flight 선택과 Reservation 시작을 구분합니다.
+Flight 상세에서도 Flight 선택과 예약 절차 시작을 구분합니다.
 
 `ONE_WAY`:
 
@@ -541,7 +560,7 @@ Flight 상세에서도 Flight 선택과 Reservation 시작을 구분합니다.
 
 Flight 선택 이전에는
 `[예약하기]` 또는 `[로그인 후 예약]`을
-Reservation 시작 CTA로 직접 제공하지 않습니다.
+예약 절차 시작 CTA로 직접 제공하지 않습니다.
 
 필요한 Flight 선택이 완료된 이후
 선택된 여정 Summary에서 다음 Action을 제공합니다.

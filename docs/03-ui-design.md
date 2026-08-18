@@ -521,7 +521,7 @@ Reservation CONFIRMED
 Reservation 상세
 ```
 
-Flight 선택과 Reservation 시작은 별도의 Action으로 구분합니다.
+Flight 선택과 예약 절차 시작은 별도의 Action으로 구분합니다.
 
 Member는 편도 Flight를 선택한 이후
 `[예약하기]`를 선택하여 Passenger 정보 입력 단계로 이동합니다.
@@ -568,7 +568,7 @@ Mock 결제
 Reservation 상세
 ```
 
-왕복 Reservation에서도 Flight 선택 완료와 Reservation 시작을 구분합니다.
+왕복 Reservation에서도 Flight 선택 완료와 예약 절차 시작을 구분합니다.
 
 출국 Flight와 귀국 Flight를 모두 선택한 이후
 선택한 왕복 여정 Summary를 표시하고,
@@ -1007,6 +1007,28 @@ Member:
 
 출국 Flight 또는 귀국 Flight 중 하나라도 선택되지 않은 상태에서는
 예약 절차 시작 Action을 활성화하지 않습니다.
+
+#### Flight 선택 완료 공통 표현
+
+`ONE_WAY`와 `ROUND_TRIP`은
+Flight 선택 완료 후 동일한 UI 패턴을 사용합니다.
+
+```text
+Flight 선택 완료
+↓
+선택한 여정 Summary
+↓
+예약 절차 시작 Action
+```
+
+`ONE_WAY`에서는 하나의 Flight Summary를 표시하고,
+`ROUND_TRIP`에서는 출국 Flight와 귀국 Flight를 포함한 하나의 왕복 여정 Summary를 표시합니다.
+
+왕복 여정 Summary를 표시하기 위해
+별도의 독립 Page를 필수로 사용하지 않습니다.
+
+Desktop과 Mobile 모두
+선택 완료 상태 안에서 Summary와 예약 절차 시작 Action을 제공하는 것을 기본으로 합니다.
 
 ---
 
