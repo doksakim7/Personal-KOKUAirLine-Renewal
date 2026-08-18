@@ -262,6 +262,10 @@ Figma Make는 Symbol의 핵심 구조를 임의로 재해석하거나 다른 형
 - 상태는 색상만으로 구분하지 않습니다.
 - 한국어 / 일본어 전환 시 Text가 잘리거나 주요 CTA가 가려지지 않도록 합니다.
 - Desktop과 Mobile 모두에서 주요 Form Label과 Error Message의 관계가 명확하게 보이도록 합니다.
+- Mobile Header와 상단 고정 UI는 Device Safe Area를 고려하여
+  Logo, Locale Toggle, Menu 등 주요 요소가 시스템 UI 영역과 겹치지 않도록 배치합니다.
+- Header Background는 화면 최상단까지 이어질 수 있지만,
+  Header Content는 Safe Area 아래에서 시작하도록 구성합니다.
 
 ---
 

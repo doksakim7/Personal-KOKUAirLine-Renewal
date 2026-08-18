@@ -2484,6 +2484,10 @@ Figma Wireframe의 Mobile 기준 Width는 `390px`로 합니다.
 - 긴 Form은 Field 단위로 세로 배치
 - Modal은 Mobile에서 화면 폭에 맞는 Dialog 또는 Full-width 표현 가능
 - 주요 Action이 화면 밖으로 과도하게 밀리지 않도록 구성
+- Mobile Header와 상단 고정 UI는 Device Safe Area를 고려하여
+  Logo, Navigation, Locale 및 주요 Action이 화면 상단 시스템 영역과 겹치지 않도록 배치합니다.
+- Header Background는 화면 최상단까지 이어질 수 있으나,
+  Header Content는 Safe Area 아래에서 시작하도록 구성합니다.
 
 Desktop에서 존재하는 주요 Customer 기능을
 Mobile에서 임의로 제거하지 않습니다.
