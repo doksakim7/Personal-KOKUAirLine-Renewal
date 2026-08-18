@@ -1199,6 +1199,33 @@ Reservation은 한 명 이상의 Passenger를 포함할 수 있습니다.
 
 Passenger별로 다음 정보를 입력합니다.
 
+### 14.1 ROUND_TRIP Flight Summary
+
+`ROUND_TRIP` Passenger 정보 입력 화면에서는
+현재 Reservation에 포함된 출국 Flight와 귀국 Flight의 요약 정보를 모두 표시합니다.
+
+두 Flight는 하나의 `ROUND_TRIP` Reservation에 포함된 여정으로 표현하며,
+귀국 Flight만 단독으로 표시하지 않습니다.
+
+최소 다음 정보를 구분하여 표시합니다.
+
+- 출국 Flight
+  - Flight Number
+  - 출발 / 도착 Airport
+  - 출발 Date
+  - 출발 / 도착 Time
+- 귀국 Flight
+  - Flight Number
+  - 출발 / 도착 Airport
+  - 출발 Date
+  - 출발 / 도착 Time
+
+Desktop에서는 두 Flight Summary를 나란히 또는 명확하게 구분된 영역으로 표현할 수 있으며,
+Mobile에서는 출국 Flight → 귀국 Flight 순서의 1 Column Layout으로 배치할 수 있습니다.
+
+Passenger 구성은 출국 Flight와 귀국 Flight에 공통으로 적용하며,
+Flight별로 별도의 Passenger 입력 Form을 제공하지 않습니다.
+
 #### 기본 정보
 
 - 테스트용 영문 성 (여권 영문명 형식)
@@ -1239,7 +1266,7 @@ Passenger의 기본 정보를 입력하면 테스트용 여권 정보는 시스�
 
 ---
 
-### 14.1 Passenger 추가 및 삭제
+### 14.2 Passenger 추가 및 삭제
 
 하나의 Reservation에는 여러 Passenger가 포함될 수 있으므로
 사용자는 Passenger 입력 화면에서 탑승객을 추가하거나 삭제할 수 있습니다.

@@ -566,6 +566,33 @@ Passenger별 입력 정보는 다음과 같습니다.
 * 성별
 * 국적
 
+`ROUND_TRIP` Passenger 입력 화면에서는
+출국 Flight와 귀국 Flight의 Summary를 모두 함께 표시합니다.
+
+최소 다음 정보를 구분하여 표현합니다.
+
+- 출국 Flight
+  - Flight Number
+  - 출발 / 도착 Airport
+  - 출발 Date
+  - 출발 / 도착 Time
+- 귀국 Flight
+  - Flight Number
+  - 출발 / 도착 Airport
+  - 출발 Date
+  - 출발 / 도착 Time
+
+출국 Flight와 귀국 Flight는 하나의 `ROUND_TRIP` Reservation에 포함된 여정으로 표현합니다.
+
+다음 표현은 사용하지 않습니다.
+
+- 귀국 Flight 정보만 단독으로 표시
+- 출국 Flight와 귀국 Flight를 별도의 Reservation처럼 표현
+- Flight별로 Passenger 입력 Form을 별도로 생성
+
+Desktop에서는 두 Flight Summary를 나란히 표현할 수 있으며,
+Mobile에서는 출국 Flight → 귀국 Flight 순서의 1 Column Layout을 사용할 수 있습니다.
+
 ### 12.2 테스트용 여권 정보
 
 테스트용 여권 정보는 사용자가 직접 입력하지 않습니다.
