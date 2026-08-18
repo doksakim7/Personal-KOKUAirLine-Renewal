@@ -7,6 +7,7 @@
 본 문서의 목적은 다음과 같습니다.
 
 - MVP에서 필요한 화면 범위를 정의합니다.
+- MVP에서는 Desktop Web 환경을 지원 범위로 하며, Mobile 및 Tablet 전용 UI는 구현하지 않습니다.
 - Guest, Member, Admin, SuperAdmin별 접근 가능한 화면을 정의합니다.
 - 주요 사용자 시나리오와 화면 이동 흐름을 정의합니다.
 - 예약, 좌석, 결제 등 상태에 따라 UI가 어떻게 변경되는지 정의합니다.
@@ -739,8 +740,6 @@ Desktop 예:
 ```text
 [1 탑승객] ─ [2 좌석] ─ [3 확인] ─ [4 결제] ─ [5 완료]
 ```
-
-Mobile에서는 현재 Step을 중심으로 단순하게 표현할 수 있습니다.
 
 ---
 
@@ -1833,30 +1832,37 @@ KOKU Airline 내부 검색,
 
 ---
 
-## 30. Responsive UI
+## 30. 화면 지원 범위
 
-Frontend는 Desktop과 Mobile 환경을 모두 고려합니다.
+MVP에서는 Desktop Web 환경만 지원합니다.
 
-MVP에서는 별도의 Mobile App을 개발하지 않고
-React Web UI를 Responsive하게 구현하는 것을 기본으로 합니다.
+Frontend UI와 Figma Wireframe은 Desktop을 기준으로 설계하고 구현합니다.
 
-### Desktop
+### 30.1 Desktop
+
+MVP의 주요 화면은 Desktop Web 사용을 기준으로 구성합니다.
 
 - Header Navigation
 - 넓은 검색 결과 Layout
 - 필요한 경우 2 Column Layout
 - 예약 과정에서 요약 정보 Side Panel 사용 가능
 
-### Mobile
+Figma Wireframe의 기본 기준 Width는 `1440px`로 설정합니다.
 
-- Vertical Layout
-- 주요 CTA를 명확하게 표시
-- 예약 Step Navigation 단순화
-- Seat Map의 Scroll 또는 확대 UI 고려
-- 긴 Form의 가독성을 고려
-- Modal 대신 Bottom Sheet를 사용할 수 있음
+구체적인 최소 지원 Width와 세부 Layout 기준은
+Frontend 구현 단계에서 확정합니다.
 
-구체적인 Breakpoint는 Frontend 구현 단계에서 결정합니다.
+### 30.2 MVP 제외 범위
+
+다음 환경을 위한 별도의 UI 최적화는 MVP 범위에 포함하지 않습니다.
+
+- Mobile
+- Tablet
+
+Mobile 및 Tablet 전용 Navigation, Layout, Seat Map 최적화 등은
+MVP 완료 이후 확장 단계에서 검토합니다.
+
+MVP에서는 Responsive UI 구현을 필수 요구사항으로 두지 않습니다.
 
 ---
 
