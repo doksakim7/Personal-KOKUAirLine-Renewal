@@ -28,6 +28,7 @@ KOKU Airline Renewal은 기존 항공 예약 프로젝트를 최신 기술 스�
 
 - Java 21과 Spring Boot 기반의 Backend 설계 및 구현
 - React 기반의 Frontend 구현
+- 주요 사용자 화면의 Desktop / Mobile Responsive Web 지원
 - REST API 기반 Frontend / Backend 분리
 - JPA를 활용한 도메인 및 데이터 모델링
 - 예약 및 좌석 처리에서 발생하는 동시성 문제 해결
@@ -191,6 +192,47 @@ Backend의 Domain Model, API Field, Enum, Database 내부 값 및 식별자는
 구체적인 Locale 감지, 언어 선택 저장 방식 및 i18n 구현 방식은
 UI Design과 System Design에서 정의합니다.
 
+### 5.3 지원 화면 환경
+
+KOKU Airline Renewal의 MVP는 Web 기반 서비스로 구현하며,
+일반 사용자용 주요 화면은 Desktop Web과 Mobile Web을 모두 지원합니다.
+
+Frontend는 Responsive Web을 기본으로 하며,
+동일한 사용자 기능을 화면 크기에 따라 적절하게 재배치하여 제공합니다.
+
+기본 UI 설계 기준은 다음과 같습니다.
+
+- Desktop: `1440px`
+- Mobile: `390px`
+
+Guest와 Member가 사용하는 주요 Customer UI는
+Desktop과 Mobile에서 동일한 기능 범위를 제공하는 것을 원칙으로 합니다.
+
+주요 대상 화면:
+
+- Home
+- KOKU Flight 검색
+- Flight 상세
+- 로그인 / 회원가입
+- Passenger 정보 입력
+- Seat 선택
+- 예약 확인
+- Mock 결제
+- 예약 완료
+- My Page
+- Reservation 목록 및 상세
+- 외부 실제 항공편 조회
+- AI 항공편 검색
+
+Admin 및 SuperAdmin 관리 화면은
+MVP에서 Desktop Web 사용성을 우선합니다.
+
+Admin / SuperAdmin 화면의 Mobile 전용 최적화는
+MVP 필수 범위에 포함하지 않습니다.
+
+구체적인 Responsive Layout, Navigation 및 Component 배치 정책은
+`03-ui-design.md`에서 정의합니다.
+
 ---
 
 ## 6. MVP 핵심 기능
@@ -206,9 +248,12 @@ UI Design과 System Design에서 정의합니다.
 
 ### 항공편
 
+- 여행 유형 선택 (`ONE_WAY`, `ROUND_TRIP`)
 - 출발 공항 / 도착 공항 선택
 - 출발 날짜 선택
-- 항공편 검색
+- 왕복 예약의 경우 귀국 날짜 선택
+- 편도 / 왕복 항공편 검색
+- 왕복의 경우 출국 Flight 선택 후 역방향 Route의 귀국 Flight 선택
 - 항공편 상세 조회
 
 ### 좌석
@@ -221,10 +266,15 @@ UI Design과 System Design에서 정의합니다.
 
 ### 예약
 
+- 편도 / 왕복 Reservation 지원
 - 탑승객 정보 입력
+- 왕복 Reservation에서는 동일 Passenger 구성을 출국 / 귀국 Flight에 공통 적용
+- Flight별 Seat 선택
+- 왕복의 경우 출국 / 귀국 Seat 전체를 All-or-Nothing으로 확보
 - 예약 생성
 - 예약 조회
-- 출발 예정 시각 기준 24시간 전까지 확정 예약 취소
+- 정책에 따른 확정 예약 취소
+- 왕복 Reservation의 부분 취소는 지원하지 않음
 - 정상 취소 시 Mock 전액 환불
 
 ### 결제
@@ -325,7 +375,11 @@ Member는 정책에 따라 회원 탈퇴를 수행할 수 있어야 합니다.
 
 ### FR-02 항공편 검색
 
-사용자는 출발지, 목적지, 날짜를 기준으로 항공편을 검색할 수 있어야 합니다.
+사용자는 `ONE_WAY` 또는 `ROUND_TRIP` 여행 유형을 선택하고
+출발지, 목적지 및 날짜를 기준으로 항공편을 검색할 수 있어야 합니다.
+
+`ROUND_TRIP`에서는 출국 Flight를 먼저 선택한 후
+출국 Route의 역방향 Route에 해당하는 귀국 Flight를 선택할 수 있어야 합니다.
 
 ### FR-03 좌석 조회
 
@@ -345,6 +399,15 @@ Seat가 필요한 모든 Passenger의 예약 가능한 좌석을 선택할 수 �
 
 Seat 확보는 All-or-Nothing을 원칙으로 하며,
 선택한 Seat 중 하나라도 확보하지 못한 경우 예약 시작 전체가 실패해야 합니다.
+
+`ROUND_TRIP` Reservation은 하나의 Reservation으로 관리하며,
+출국 Flight와 귀국 Flight를 포함합니다.
+
+왕복 Reservation에서는 동일한 Passenger 구성을 두 Flight에 공통으로 적용하고,
+Seat는 각 Flight별로 선택합니다.
+
+출국 Flight와 귀국 Flight에서 선택한 모든 Seat를
+확보할 수 있는 경우에만 Reservation을 시작할 수 있어야 합니다.
 
 필요한 테스트용 여권 정보는 시스템에서 자동 생성하며,
 Mock 결제가 정상적으로 완료된 경우 Reservation을
@@ -447,6 +510,28 @@ Backend API, Domain Model, Enum 및 Database 내부 값은
 표시 언어와 독립적으로 영문 기준으로 관리합니다.
 
 한국어와 일본어 환경에서 동일한 기능 및 비즈니스 규칙이 적용되어야 합니다.
+
+### NFR-09 Responsive Web
+
+Guest와 Member가 사용하는 주요 사용자 화면은
+Desktop 및 Mobile Web 환경에서 정상적으로 사용할 수 있어야 합니다.
+
+Responsive Layout은 화면 크기에 따라 정보 구조를 임의로 변경하지 않고,
+동일한 사용자 흐름과 기능을 유지하는 것을 원칙으로 합니다.
+
+Desktop과 Mobile에서 다음 요소가 정상적으로 사용 가능해야 합니다.
+
+- Navigation
+- 검색 Form
+- Flight 검색 결과
+- Passenger 입력
+- Seat 선택
+- 예약 Step
+- Mock Payment
+- Reservation 조회 및 취소
+
+Admin 및 SuperAdmin 관리 화면은
+MVP에서 Desktop Web 사용성을 우선합니다.
 
 ---
 
@@ -635,7 +720,7 @@ CI 통과 또는 AI Review 완료만으로 자동 Merge하지 않습니다.
 - ERD 및 데이터 모델 설계
 - API Contract 설계
 - 시스템 아키텍처 설계
-- UI 흐름 및 Wireframe 설계
+- Desktop / Mobile 주요 UI 흐름 및 Wireframe 설계
 - AI Harness 규칙 작성
 - Spring Boot Backend 초기 구성
 - React Frontend 초기 구성
@@ -729,6 +814,9 @@ AI Agent가 정의된 설계와 규칙을 기반으로 독립적인 작업을 �
 - [ ] Google OAuth 2.0 소셜 로그인이 정상 동작합니다.
 - [ ] 일반 로그인과 Google OAuth 로그인이 동일한 Member 및 권한 체계로 처리됩니다.
 - [ ] 한국 ↔ 일본 KOKU Airline 항공편을 검색할 수 있습니다.
+- [ ] 편도 / 왕복 항공편을 검색할 수 있습니다.
+- [ ] 왕복 Reservation에서 출국 / 귀국 Flight와 Seat가 하나의 Reservation으로 정상 처리됩니다.
+- [ ] 왕복 Reservation의 전체 Mock 결제 및 전체 취소 정책이 정상 동작합니다.
 - [ ] 항공편의 예약 가능한 좌석을 조회할 수 있습니다.
 - [ ] 좌석을 선택하고 예약할 수 있습니다.
 - [ ] 탑승객 정보를 등록할 수 있습니다.
@@ -741,7 +829,8 @@ AI Agent가 정의된 설계와 규칙을 기반으로 독립적인 작업을 �
 - [ ] 선택된 좌석은 1시간 동안 Hold되고 만료 시 정상 반환됩니다.
 - [ ] 하나의 예약에 대해 Mock 결제는 최대 3회까지만 시도할 수 있습니다.
 - [ ] 결제 3회 실패 시 예약 취소 및 좌석 반환이 정상 처리됩니다.
-- [ ] 출발 24시간 전까지 예약 취소 및 Mock 전액 환불이 정상 처리됩니다.
+- [ ] 편도 및 왕복 Reservation의 취소 가능 조건이 Domain Policy에 따라 정상 적용되며,
+      정상 취소 시 Mock 전액 환불이 처리됩니다.
 - [ ] 회원 탈퇴 시 Member가 `WITHDRAWN` 상태로 변경되고 더 이상 로그인할 수 없습니다.
 - [ ] 진행 중이거나 향후 탑승 예정인 예약이 존재하는 Member의 탈퇴가 제한됩니다.
 
@@ -765,6 +854,15 @@ AI Agent가 정의된 설계와 규칙을 기반으로 독립적인 작업을 �
 - [ ] 사용자가 한국어와 일본어 사이에서 표시 언어를 전환할 수 있습니다.
 - [ ] 주요 안내 및 오류 메시지가 한국어와 일본어를 모두 지원합니다.
 - [ ] 언어 변경에 따라 API 및 Business Logic의 동작이 달라지지 않습니다.
+
+### Responsive Web
+
+- [ ] 주요 Customer UI가 Desktop Web에서 정상적으로 동작합니다.
+- [ ] 주요 Customer UI가 Mobile Web에서 정상적으로 동작합니다.
+- [ ] Desktop과 Mobile에서 동일한 주요 사용자 기능을 사용할 수 있습니다.
+- [ ] Mobile 환경에서 Navigation, 검색, 예약, Seat 선택 및 Mock 결제 흐름이 정상적으로 동작합니다.
+- [ ] 한국어와 일본어 모두 Desktop / Mobile Layout에서 Text가 잘리거나 주요 UI가 깨지지 않습니다.
+- [ ] Admin / SuperAdmin 관리 화면은 Desktop Web에서 정상적으로 사용할 수 있습니다.
 
 ### 성능
 
