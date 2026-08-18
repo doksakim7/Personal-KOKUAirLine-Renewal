@@ -531,6 +531,24 @@ Member:
 [예약하기]
 ```
 
+#### 왕복 Flight 변경
+
+왕복 Flight 선택 완료 후
+출국 Flight와 귀국 Flight는 각각 변경할 수 있습니다.
+
+Flight 변경은 Home에서 확정한 Airport와 Date를 변경하는 기능이 아닙니다.
+
+- `출국편 변경`: 기존 출국 Route와 출국 Date를 유지하고 다른 출국 Flight를 선택
+- `귀국편 변경`: 기존 귀국 Route와 귀국 Date를 유지하고 다른 귀국 Flight를 선택
+
+Flight 변경 시 반대 구간의 선택은 유지합니다.
+
+Airport, Date, Trip Type 등의 검색 조건 변경은
+별도의 `[검색 수정]` Action을 사용합니다.
+
+Figma Make는 `[출국편 변경]` 또는 `[귀국편 변경]`을
+Airport / Date 변경 기능으로 해석하지 않습니다.
+
 편도와 왕복 모두 Passenger 정보 입력이 Seat 선택보다 먼저입니다.
 
 결제 성공 후에만 Reservation은 CONFIRMED,
