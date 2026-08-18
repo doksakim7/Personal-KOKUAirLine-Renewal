@@ -7,7 +7,9 @@
 본 문서의 목적은 다음과 같습니다.
 
 - MVP에서 필요한 화면 범위를 정의합니다.
-- MVP에서는 Desktop Web 환경을 지원 범위로 하며, Mobile 및 Tablet 전용 UI는 구현하지 않습니다.
+- MVP에서는 일반 사용자용 주요 화면을 Desktop Web과 Mobile Web에서 지원하며,
+  Responsive Web을 기본으로 설계합니다.
+- Admin 및 SuperAdmin 관리 화면은 MVP에서 Desktop Web 사용성을 우선합니다.
 - Guest, Member, Admin, SuperAdmin별 접근 가능한 화면을 정의합니다.
 - 주요 사용자 시나리오와 화면 이동 흐름을 정의합니다.
 - 예약, 좌석, 결제 등 상태에 따라 UI가 어떻게 변경되는지 정의합니다.
@@ -114,9 +116,45 @@ Reservation, Payment, Seat 등의 상태는 사용자가 이해할 수 있는 �
 Frontend에서는 Backend 상태 값을 직접 사용자에게 노출하지 않고
 Locale에 맞는 사용자용 문자열로 변환하여 표시합니다.
 
+### 2.4 Responsive UI
+
+Guest와 Member가 사용하는 주요 Customer UI는
+Desktop과 Mobile에서 동일한 기능 및 사용자 흐름을 제공합니다.
+
+Responsive Layout은 화면 크기에 따라
+정보를 삭제하거나 기능을 축소하는 방식이 아니라,
+동일한 정보를 적절하게 재배치하는 방식으로 구성합니다.
+
+기본 디자인 기준 Width는 다음과 같습니다.
+
+- Desktop: `1440px`
+- Mobile: `390px`
+
+구체적인 CSS Breakpoint는 본 문서에서 확정하지 않으며,
+Frontend 구현 단계에서 결정합니다.
+
+Responsive 전환 시에도 다음 요소를 유지합니다.
+
+- 현재 Page 및 Navigation 상태
+- 편도 / 왕복 검색 조건
+- Flight 선택 상태
+- Passenger 정보
+- Seat 선택 상태
+- Reservation Step
+- Hold Countdown
+- Payment 상태
+- Locale
+- 인증 상태
+
+Mobile 화면이라는 이유로
+Desktop에서 제공하는 주요 Customer 기능을 제거하지 않습니다.
+
 ---
 
 ## 3. 다국어 UI 정책
+
+Date Picker 등 외부 UI Component의 월, 요일 및 날짜 관련 표시도
+현재 Locale(`ko`, `ja`)에 맞게 제공하는 것을 원칙으로 합니다.
 
 ### 3.1 지원 언어
 
@@ -261,10 +299,52 @@ AI 항공편 검색
                     [My Page]
                     [로그아웃]
 ```
+---
+
+### 5.3 Customer Mobile Navigation
+
+Guest와 Member의 Mobile 화면에서는
+Desktop Header의 모든 항목을 한 줄에 유지할 필요가 없습니다.
+
+Mobile Header의 기본 구조는 다음 방향으로 합니다.
+
+```text
+[KOKU Airline]                 [KO | JA] [Menu]
+```
+
+Menu를 열면 현재 Role에 따라 주요 Navigation과 Account Action을 제공합니다.
+
+#### Guest
+
+```text
+항공편 검색
+실제 항공편
+AI 항공편 검색
+로그인
+회원가입
+```
+
+#### Member
+
+```text
+항공편 검색
+실제 항공편
+AI 항공편 검색
+내 예약
+My Page
+로그아웃
+```
+
+현재 Page는 Desktop과 동일하게 Active State를 명확하게 표시합니다.
+
+Mobile Menu를 사용하더라도
+Navigation 기능이나 Role별 접근 범위를 변경하지 않습니다.
+
+언어 전환은 Mobile에서도 쉽게 접근할 수 있어야 합니다.
 
 ---
 
-### 5.3 Admin / SuperAdmin Header
+### 5.4 Admin / SuperAdmin Header
 
 일반 사용자 화면과 관리자 화면은 Navigation을 분리합니다.
 
@@ -285,7 +365,7 @@ Reservation
 
 SuperAdmin에게만 허용된 기능은 권한에 따라 추가 Action을 표시합니다.
 
-### 5.4 Brand Logo
+### 5.5 Brand Logo
 
 KOKU Airline의 Brand Symbol은 깃발 형태 안에
 Wing 요소를 결합한 간결한 항공 Emblem 형태를 기본 방향으로 합니다.
@@ -924,6 +1004,41 @@ Desktop 예:
 ```text
 [1 탑승객] ─ [2 좌석] ─ [3 확인] ─ [4 결제] ─ [5 완료]
 ```
+
+Mobile에서는 좁은 화면에서 Step Label이 지나치게 압축되지 않도록
+간결한 Step Indicator를 사용할 수 있습니다.
+
+예:
+
+```text
+2 / 5  좌석 선택
+
+● ─ ● ─ ○ ─ ○ ─ ○
+```
+
+또는 공간이 충분한 경우:
+
+```text
+탑승객 > 좌석 > 확인 > 결제 > 완료
+```
+
+Mobile에서도 전체 예약 단계 수와
+현재 진행 단계를 사용자가 확인할 수 있어야 합니다.
+
+왕복 Reservation의 Seat 단계에서는
+추가로 현재 선택 중인 Flight를 표시합니다.
+
+```text
+2 / 5 좌석 선택
+
+출국편
+ICN → NRT
+
+[좌석 선택 UI]
+```
+
+귀국 Seat 선택 시에는 같은 위치에서
+`귀국편`으로 변경하여 표시합니다.
 
 왕복 Reservation에서도 기본 Step은 동일하게 유지합니다.
 
@@ -2321,35 +2436,100 @@ KOKU Airline 내부 검색,
 
 ## 30. 화면 지원 범위
 
-MVP에서는 Desktop Web 환경만 지원합니다.
+KOKU Airline Renewal의 MVP는 Web 기반 서비스로 구현하며,
+일반 사용자용 Customer UI는 Desktop Web과 Mobile Web을 지원합니다.
 
-Frontend UI와 Figma Wireframe은 Desktop을 기준으로 설계하고 구현합니다.
+Frontend는 Responsive Web을 기본으로 합니다.
 
-### 30.1 Desktop
+기본 디자인 기준 Width:
 
-MVP의 주요 화면은 Desktop Web 사용을 기준으로 구성합니다.
+- Desktop: `1440px`
+- Mobile: `390px`
 
-- Header Navigation
-- 넓은 검색 결과 Layout
+Desktop과 Mobile은 동일한 주요 사용자 기능과
+비즈니스 규칙을 제공합니다.
+
+화면 크기에 따라 Layout과 Component 배치는 변경할 수 있지만
+기능, 상태 또는 사용자 흐름을 임의로 제거하지 않습니다.
+
+### 30.1 Desktop Customer UI
+
+Desktop에서는 다음 Layout을 우선적으로 사용할 수 있습니다.
+
+- Global Header Navigation
+- 넓은 검색 Form
+- 검색 결과 Card Layout
 - 필요한 경우 2 Column Layout
-- 예약 과정에서 요약 정보 Side Panel 사용 가능
+- 예약 과정에서 요약 정보 Side Panel
+- 충분한 Horizontal Space를 활용한 Reservation Step
+- Seat Map과 Passenger 정보를 함께 확인할 수 있는 Layout
 
-Figma Wireframe의 기본 기준 Width는 `1440px`로 설정합니다.
+Figma Wireframe의 Desktop 기준 Width는 `1440px`로 합니다.
 
-구체적인 최소 지원 Width와 세부 Layout 기준은
+### 30.2 Mobile Customer UI
+
+Mobile에서는 동일한 정보와 기능을
+좁은 화면에 맞게 재배치합니다.
+
+Figma Wireframe의 Mobile 기준 Width는 `390px`로 합니다.
+
+기본 방향:
+
+- 주요 콘텐츠는 1 Column Layout 우선
+- Desktop Horizontal Form은 Vertical Stack으로 전환 가능
+- Flight Card는 화면 Width에 맞춰 세로형으로 재배치
+- 2 Column Layout은 필요 시 1 Column으로 전환
+- Desktop Side Panel 정보는 본문 Section 또는 Summary Card로 이동
+- 주요 CTA는 충분한 Touch Area 확보
+- 긴 Form은 Field 단위로 세로 배치
+- Modal은 Mobile에서 화면 폭에 맞는 Dialog 또는 Full-width 표현 가능
+- 주요 Action이 화면 밖으로 과도하게 밀리지 않도록 구성
+
+Desktop에서 존재하는 주요 Customer 기능을
+Mobile에서 임의로 제거하지 않습니다.
+
+### 30.3 Mobile Seat 선택
+
+Mobile Seat Map에서도 Seat의 실제 Row / Column 관계와
+인접 Seat 의미를 유지해야 합니다.
+
+좁은 화면에서 전체 Seat Map을 한 번에 표시하기 어려운 경우
+가로 Scroll 등 Mobile에 적합한 탐색 방식을 사용할 수 있습니다.
+
+단, 화면 크기에 맞추기 위해 Seat의 실제 배치 관계를
+임의로 변경해서는 안 됩니다.
+
+Mobile에서도 다음 내용을 확인할 수 있어야 합니다.
+
+- 현재 Flight
+- Passenger
+- Seat 상태 범례
+- 현재 Passenger의 선택 Seat
+- 선택 완료 Action
+- 왕복의 경우 출국 / 귀국 Flight 구분
+
+### 30.4 Admin / SuperAdmin
+
+Admin 및 SuperAdmin 관리 화면은
+MVP에서 Desktop Web 사용성을 우선합니다.
+
+관리 화면은 Table, 상세 정보, 운영 Action이 많으므로
+Mobile 전용 최적화를 MVP 필수 범위로 두지 않습니다.
+
+Admin / SuperAdmin의 Mobile Wireframe은
+MVP에서 필수로 생성하지 않습니다.
+
+### 30.5 Tablet
+
+Tablet 전용 Wireframe은 MVP 필수 범위에 포함하지 않습니다.
+
+Responsive Web 구현 과정에서 일반 Customer UI가
+중간 Width에서도 심각하게 깨지지 않도록 고려하되,
+Tablet 전용 Navigation이나 별도 Layout을
+독립적으로 설계하는 것은 MVP 필수사항이 아닙니다.
+
+구체적인 CSS Breakpoint와 구현 방식은
 Frontend 구현 단계에서 확정합니다.
-
-### 30.2 MVP 제외 범위
-
-다음 환경을 위한 별도의 UI 최적화는 MVP 범위에 포함하지 않습니다.
-
-- Mobile
-- Tablet
-
-Mobile 및 Tablet 전용 Navigation, Layout, Seat Map 최적화 등은
-MVP 완료 이후 확장 단계에서 검토합니다.
-
-MVP에서는 Responsive UI 구현을 필수 요구사항으로 두지 않습니다.
 
 ---
 
@@ -2365,6 +2545,10 @@ MVP에서도 최소한 다음 사항을 고려합니다.
 - Disabled 상태를 명확하게 표현합니다.
 - Focus 상태를 확인할 수 있도록 합니다.
 - 한국어와 일본어 환경에서 Text가 잘리지 않도록 합니다.
+- Mobile에서는 Button, Link, Form Control 등 주요 Action이
+  Touch로 조작하기 충분한 크기와 간격을 가지도록 합니다.
+- Desktop과 Mobile 모두에서 한국어 / 일본어 전환 시
+  Text Overflow로 인해 주요 Action이나 정보가 가려지지 않도록 합니다.
 
 ---
 
@@ -2577,6 +2761,195 @@ Reservations
 
 [Flight 취소]
 ```
+---
+
+### 32.8 Mobile Home
+
+기준 Width: `390px`
+
+```text
++------------------------------+
+| KOKU Airline       KO|JA ☰  |
++------------------------------+
+
+한국과 일본을 연결하는
+KOKU Airline
+
+가상 항공편 예약과
+실제 항공편 조회를 한 번에
+
+[ 편도 ] [ 왕복 ]
+
+출발지
+[ ICN                  ]
+
+도착지
+[ NRT                  ]
+
+출발일
+[ 2026-09-10           ]
+
+도착일
+[ 2026-09-15           ]
+
+[        항공편 검색        ]
+
+-------------------------------
+
+KOKU Airline 항공편
+좌석을 선택하고 예약할 수 있습니다.
+
+[항공편 검색]
+
+-------------------------------
+
+실제 항공편 조회
+실제 한국 ↔ 일본 항공편을 검색합니다.
+
+[실제 항공편 조회]
+
+-------------------------------
+
+AI 항공편 검색
+자연어로 항공편을 추천받습니다.
+
+[AI 항공편 추천 받기]
+```
+
+편도 선택 시 도착일 Input은 표시하지 않습니다.
+
+---
+
+### 32.9 Mobile Flight 검색 결과
+
+```text
++------------------------------+
+| ←  ICN → NRT                |
+|    2026-09-10               |
++------------------------------+
+
+KOKU Airline
+KO101
+
+09:30 ICN
+   ↓
+11:50 NRT
+
+예약 가능
+
+[          상세보기          ]
+
+-------------------------------
+
+KOKU Airline
+KO205
+
+14:00 ICN
+   ↓
+16:20 NRT
+
+예약 마감
+
+[          상세보기          ]
+```
+
+---
+
+### 32.10 Mobile 왕복 Flight 검색
+
+```text
+1 / 2 출국편 선택
+
+ICN → NRT
+2026-09-10
+
+KO101
+09:30 → 11:50
+
+[출국편 선택]
+
+------------------------------
+
+선택한 출국편
+KO101
+ICN → NRT
+09:30 → 11:50
+
+2 / 2 귀국편 선택
+
+NRT → ICN
+2026-09-15
+
+KO102
+17:00 → 19:30
+
+[귀국편 선택]
+```
+
+출국 Flight 선택 전에는 귀국 Flight 선택 단계로 진행하지 않습니다.
+
+---
+
+### 32.11 Mobile Seat 선택
+
+```text
+2 / 5 좌석 선택
+
+출국편
+KO101
+ICN → NRT
+
+Passenger
+KIM JIHUN
+
+□ 선택 가능
+■ 현재 선택
+X 선택 불가
+
+        FRONT
+
+     A  B    C  D
+1    ■  □    □  □
+2    □  X    □  □
+3    □  □    □  □
+
+선택 Seat
+1A
+
+[      좌석 선택 완료      ]
+```
+
+Seat Map의 실제 Row / Column 및 인접 Seat 관계는
+Desktop과 동일하게 유지합니다.
+
+---
+
+### 32.12 Mobile Mock 결제
+
+```text
+4 / 5 결제
+
+Mock Payment
+
+KO101
+ICN → NRT
+
+Passenger 2명
+Seat 1A / 1B
+
+Hold 남은 시간
+00:31:52
+
+결제 시도
+1 / 3
+
+실제 금융 거래가
+발생하지 않습니다.
+
+[예약 진행 취소]
+
+[      Mock 결제하기      ]
+```
 
 ---
 
@@ -2626,6 +2999,12 @@ Reservations
 - [ ] Loading / Empty / Error 상태가 정의되어 있습니다.
 - [ ] 한국어 / 일본어 UI 정책이 정의되어 있습니다.
 - [ ] 주요 Low-Fidelity Wireframe이 정의되어 있습니다.
+- [ ] 주요 Customer UI의 Desktop / Mobile Layout 정책이 정의되어 있습니다.
+- [ ] Mobile Navigation 정책이 정의되어 있습니다.
+- [ ] Mobile에서 검색 / Flight 선택 / Passenger / Seat / Payment 흐름이 정의되어 있습니다.
+- [ ] Desktop과 Mobile에서 동일한 주요 Customer 기능을 제공하도록 정의되어 있습니다.
+- [ ] 주요 Mobile Low-Fidelity Wireframe이 정의되어 있습니다.
+- [ ] Admin / SuperAdmin의 Mobile 최적화가 MVP 필수 범위가 아님을 명확히 정의했습니다.
 
 ---
 
