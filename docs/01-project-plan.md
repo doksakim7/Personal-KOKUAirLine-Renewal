@@ -255,6 +255,9 @@ MVP 필수 범위에 포함하지 않습니다.
 - 편도 / 왕복 항공편 검색
 - 왕복의 경우 출국 Flight 선택 후 역방향 Route의 귀국 Flight 선택
 - 항공편 상세 조회
+- 사전에 정의된 고정 운임 규칙 적용
+- 출국편 / 귀국편의 여정 역할, 출발 시간대 및 출발 요일에 따른 운임 산정
+- Adult / Child / Infant별 Passenger 운임 계산
 
 ### 좌석
 
@@ -340,7 +343,7 @@ AI 항공편 검색은 인증된 Member에게만 제공합니다.
 - 실제 PG를 이용한 금융 환불 처리
 - 마일리지 시스템
 - 쿠폰 시스템
-- 복잡한 가격 정책
+- 잔여 Seat 수, Seat 점유율 및 수요 기반 Dynamic Pricing
 - 다구간 항공권
 - 코드셰어 처리
 - 실제 체크인
@@ -755,6 +758,8 @@ AI Agent가 정의된 설계와 규칙을 기반으로 독립적인 작업을 �
 
 - 한국 ↔ 일본 항공편 검색
 - 항공편 상세 조회
+- Domain Policy 기반 KOKU Airline 고정 운임 산정
+- PENDING Reservation 생성 시 최종 운임 확정 및 보존
 - 좌석 조회
 - 좌석 선택
 - 예약 생성
@@ -815,6 +820,8 @@ AI Agent가 정의된 설계와 규칙을 기반으로 독립적인 작업을 �
 - [ ] 일반 로그인과 Google OAuth 로그인이 동일한 Member 및 권한 체계로 처리됩니다.
 - [ ] 한국 ↔ 일본 KOKU Airline 항공편을 검색할 수 있습니다.
 - [ ] 편도 / 왕복 항공편을 검색할 수 있습니다.
+- [ ] KOKU Airline Flight의 운임이 Domain Policy의 고정 운임 규칙에 따라 계산됩니다.
+- [ ] PENDING Reservation 생성 시 최종 결제 예정 금액이 확정되고 이후 결제 재시도 과정에서 변경되지 않습니다.
 - [ ] 왕복 Reservation에서 출국 / 귀국 Flight와 Seat가 하나의 Reservation으로 정상 처리됩니다.
 - [ ] 왕복 Reservation의 전체 Mock 결제 및 전체 취소 정책이 정상 동작합니다.
 - [ ] 항공편의 예약 가능한 좌석을 조회할 수 있습니다.
