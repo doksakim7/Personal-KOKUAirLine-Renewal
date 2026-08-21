@@ -278,10 +278,20 @@ Figma Make는 내부 `KOKU Flight`와 외부 실제 항공편을 **절대로 같
 #### 내부 `KOKU Flight`
 
 - KOKU Airline 브랜드 표시
+- Domain Policy에 따라 계산된 현재 고정 운임 표시
 - 예약 가능
 - Seat 선택 가능
 - Mock Payment 가능
 - Flight 선택 완료 후 예약 절차 시작 CTA 제공 가능
+
+KOKU Flight 검색 결과와 Flight 선택 Summary에서는
+Domain Policy에 따라 계산된 현재 고정 운임을 표시합니다.
+
+검색 화면의 운임은 고정 운임 정책에 따라 계산된 금액이며,
+최종 결제 예정 금액은 `PENDING` Reservation 생성 시 확정됩니다.
+
+Figma Make는 잔여 Seat 수, Seat 점유율 또는 수요에 따라
+운임이 실시간으로 변경되는 UI를 생성하지 않습니다.
 
 Flight 선택 Action과 예약 절차 시작 Action은 구분합니다.
 
@@ -608,7 +618,32 @@ Mobile에서도 전체 단계 수와 현재 진행 단계를
 ROUND_TRIP의 Seat 단계에서는
 현재 선택 중인 Flight가 출국편인지 귀국편인지 함께 표시합니다.
 
+### 10.4 Reservation 번호 표시
 
+`PENDING` Reservation이 정상적으로 생성된 이후에는
+Domain Policy에서 정의한 공개 Reservation 번호를 사용자에게 표시합니다.
+
+Reservation 번호는 다음 화면에서 확인할 수 있어야 합니다.
+
+- 예약 확인
+- 예약 완료
+- Reservation 목록
+- Reservation 상세
+
+표시 예:
+
+```text
+예약번호
+KOKU-20260821-A7F3K9
+```
+
+`ROUND_TRIP`도 하나의 Reservation이므로
+출국 Flight와 귀국 Flight에 별도의 Reservation 번호를 생성하거나 표시하지 않습니다.
+
+하나의 왕복 Reservation에는 하나의 Reservation 번호만 표시합니다.
+
+Figma Make는 Database Primary Key를
+사용자용 예약번호처럼 표시하지 않습니다.
 
 ---
 
@@ -1408,7 +1443,7 @@ Admin과 SuperAdmin은 Reservation 현황을 조회할 수 있습니다.
 * Flight Number
 * 출발 Date
 * Member
-* Reservation 식별정보
+* Reservation 번호
 
 Reservation 목록에서 Reservation 상세로 이동할 수 있어야 합니다.
 
@@ -1466,7 +1501,7 @@ Reservation 상태별 Filter를 제공할 수 있습니다.
 
 가능하면 다음 정보를 표시합니다.
 
-* Reservation 식별정보
+* Reservation 번호
 * Reservation 상태
 * Flight
 * Passenger

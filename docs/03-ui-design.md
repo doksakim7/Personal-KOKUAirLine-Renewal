@@ -394,7 +394,7 @@ Wing 요소를 결합한 간결한 항공 Emblem 형태를 기본 방향으로 �
 | KOKU Flight 검색 | O | O | O | O |
 | Flight 상세 조회 | O | O | O | O |
 | 외부 실제 항공편 조회 | O | O | O | O |
-| AI 항공편 검색 | X | O | - | - |
+| AI 항공편 검색 실행 | X | O | - | - |
 | Seat 선택 | X | O | - | - |
 | 예약 생성 | X | O | - | - |
 | Mock 결제 | X | O | - | - |
@@ -907,11 +907,20 @@ ICN                 NRT
 
 2026.09.10
 
+현재 운임
+270,000원
+
 예약 가능
 
                 [상세보기]
 --------------------------------
 ```
+
+검색 결과 Card에는 Domain Policy에 따라 계산된
+해당 Flight의 현재 고정 운임을 표시합니다.
+
+표시되는 금액은 검색 시점의 고정 운임이며,
+최종 결제 예정 금액은 `PENDING` Reservation 생성 시 확정됩니다.
 
 출발 예정 시각까지 2시간 미만이 남은 Flight는
 새로운 Reservation을 생성할 수 없습니다.
@@ -947,6 +956,9 @@ KO103
 ICN → NGO
 2026-08-26
 09:30 → 11:50
+
+현재 운임
+270,000원
 ```
 
 Flight 선택 완료 후 인증 상태에 따라
@@ -1572,6 +1584,7 @@ Mock 결제로 이동하기 전에 Reservation 전체 내용을 확인합니다.
 
 표시 정보:
 
+- Reservation 번호
 - 여행 유형
 - 출국 Flight
 - 귀국 Flight (왕복인 경우)
@@ -1587,6 +1600,9 @@ Mock 결제로 이동하기 전에 Reservation 전체 내용을 확인합니다.
 
 ```text
 예약 내용 확인
+
+예약번호
+KOKU-20260821-A7F3K9
 
 KO101
 ICN → NRT
@@ -1701,6 +1717,9 @@ HELD → RESERVED
 
 ```text
 예약이 완료되었습니다.
+
+예약번호
+KOKU-20260821-A7F3K9
 
 KO101
 ICN → NRT
@@ -1817,8 +1836,9 @@ Frontend에서도 각 조건의 충족 여부를 안내하고 검증합니다.
 편도 Reservation Card 예:
 
 ```text
-KO101
+KOKU-20260821-A7F3K9
 
+KO101
 ICN → NRT
 2026.09.10
 
@@ -1832,6 +1852,8 @@ ICN → NRT
 예:
 
 ```text
+KOKU-20260821-A7F3K9
+
 왕복
 
 ICN → NRT
@@ -1851,7 +1873,7 @@ NRT → ICN
 
 표시 정보:
 
-- Reservation 식별정보
+- Reservation 번호
 - Reservation 상태
 - Flight
 - Passenger
