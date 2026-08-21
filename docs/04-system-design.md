@@ -405,16 +405,24 @@ Access Token 만료시간과 함께 결정합니다.
 
 ## 6. 권한 구조
 
-Spring Security에서는 인증된 사용자에게 다음 권한을 사용합니다.
+서비스의 사용자 Role과 Spring Security 권한 Code를 구분합니다.
 
-- `MEMBER`
+서비스 Role:
+
+- `Member`
+- `Admin`
+- `SuperAdmin`
+
+Spring Security 권한 Code:
+
+- `USER`
 - `ADMIN`
 - `SUPERADMIN`
 
 권한 의미:
 
 ```text
-MEMBER
+USER
  └─ Member 기능
 
 ADMIN
@@ -426,7 +434,7 @@ SUPERADMIN
     + Reservation 강제 취소
 ```
 
-`Guest`는 인증되지 않은 사용자이므로 별도 Role을 Token에 저장하지 않습니다.
+`Guest`는 인증되지 않은 사용자이므로 별도 Spring Security 권한 Code를 가지지 않습니다.
 
 Backend API에서 권한을 최종 검증합니다.
 
