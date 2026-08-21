@@ -1201,6 +1201,60 @@ Reservation에 포함된 Flight의 선택 Seat 중 하나라도 확보에 실패
 구체적인 Transaction 및 동시성 제어 구현 방식은
 시스템 및 데이터 설계에서 정의합니다.
 
+### 11.7 Reservation 번호
+
+모든 Reservation은 사용자 및 운영자가 예약을 식별할 수 있는
+고유한 Reservation 번호를 가집니다.
+
+Reservation 번호는 Database 내부 Primary Key와 별도로 관리합니다.
+
+MVP에서는 다음 형식을 사용합니다.
+
+`KOKU-YYYYMMDD-XXXXXX`
+
+예:
+
+- `KOKU-20260821-A7F3K9`
+
+구성은 다음과 같습니다.
+
+- `KOKU`: KOKU Airline 고정 Prefix
+- `YYYYMMDD`: Reservation이 생성된 날짜
+- `XXXXXX`: 6자리 무작위 영문 대문자 및 숫자 조합
+
+랜덤 문자열의 영문자는 반드시 대문자를 사용합니다.
+
+사용자 입력 및 확인 과정에서 혼동을 줄이기 위해
+다음 문자는 랜덤 문자열에서 사용하지 않습니다.
+
+- `I`
+- `O`
+- `0`
+- `1`
+
+Reservation 번호는 `PENDING` Reservation이 정상적으로 생성되는 시점에 발급합니다.
+
+Seat 확보에 실패하여 Reservation 시작 전체가 실패한 경우에는
+정상적인 Reservation 번호를 발급하지 않습니다.
+
+한 번 발급된 Reservation 번호는 Reservation의 상태가 변경되더라도
+변경하지 않습니다.
+
+취소된 Reservation의 번호를 새로운 Reservation에서 재사용하지 않습니다.
+
+`ROUND_TRIP` Reservation도 하나의 Reservation이므로
+출국 Flight와 귀국 Flight에 대해 하나의 Reservation 번호만 사용합니다.
+
+Reservation 번호는 전체 시스템에서 유일해야 합니다.
+
+Application에서 중복 여부를 검증하며,
+Database에서도 Unique Constraint를 적용하여 중복 생성을 방지합니다.
+
+랜덤 문자열 충돌이 발생한 경우 새로운 Reservation 번호를 생성하여 다시 시도합니다.
+
+구체적인 Primary Key 및 Reservation 번호 생성 구현 방식은
+`05-data-api-design.md`에서 정의합니다.
+
 ---
 
 ## 12. Mock 결제 정책
