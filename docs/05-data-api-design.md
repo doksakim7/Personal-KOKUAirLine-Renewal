@@ -1,0 +1,3223 @@
+# KOKU Airline Renewal - Data & API Design
+
+## 1. 문서 목적
+
+본 문서는 KOKU Airline Renewal의
+Database 구조, Entity 관계, Constraint, Index 및 API Contract의 기본 구조를 정의합니다.
+
+본 문서의 주요 목적은 다음과 같습니다.
+
+- 핵심 Entity와 관계를 정의합니다.
+- Domain Policy를 Database 구조로 표현합니다.
+- Reservation과 Flight의 관계를 정의합니다.
+- Passenger와 Reservation의 관계를 정의합니다.
+- Flight별 Seat 상태 관리 구조를 정의합니다.
+- Mock Payment 이력 구조를 정의합니다.
+- Reservation 번호 생성 및 유일성 보장 방식을 정의합니다.
+- Audit Log 데이터 구조를 정의합니다.
+- REST API의 기본 규칙을 정의합니다.
+- API Request / Response의 기본 Contract를 정의합니다.
+- Idempotency가 필요한 API의 기본 방향을 정의합니다.
+- 외부 실제 항공편 API와 내부 Domain Model의 데이터 경계를 정의합니다.
+- AI 항공편 검색에 필요한 Structured Data Contract의 기본 방향을 정의합니다.
+
+비즈니스 규칙은 `02-domain-policy.md`를 기준으로 합니다.
+
+사용자 화면과 사용자 흐름은
+`03-ui-design.md`를 기준으로 합니다.
+
+시스템 Architecture, 인증, Transaction, 동시성 및 Infrastructure 관련 원칙은
+`04-system-design.md`를 기준으로 합니다.
+
+본 문서는 상위 문서에서 정의된 정책을
+Database 또는 API 구조를 이유로 임의 변경하지 않습니다.
+
+---
+
+### 1.1 설계 원칙
+
+Data 및 API 설계는 다음 원칙을 따릅니다.
+
+1. Domain Policy를 Database 구조보다 우선합니다.
+2. 내부 Database Primary Key와 사용자 공개 식별자를 구분합니다.
+3. Entity 관계는 실제 Business Lifecycle을 기준으로 정의합니다.
+4. Database Constraint로 보호 가능한 정합성은 Application Validation과 함께 보호합니다.
+5. API Response에 Database 내부 구조를 그대로 노출하지 않습니다.
+6. 외부 Flight API의 Data Model과 내부 KOKU Airline Domain Model을 분리합니다.
+7. 사용자에게 필요하지 않은 민감정보는 API Response에 포함하지 않습니다.
+8. 상태 값은 Backend의 Canonical Enum을 사용합니다.
+9. API Contract 변경은 Frontend와 Backend 양쪽 영향을 검토합니다.
+10. 구현 편의를 위해 Domain Policy를 약화하지 않습니다.
+
+---
+
+##  2. 데이터 모델 전체 구조
+
+###  2.1 핵심 Domain Entity
+
+MVP의 핵심 Domain Entity는 다음과 같습니다.
+
+- `Member`
+- `AuthAccount`
+- `Airport`
+- `Route`
+- `Aircraft`
+- `Flight`
+- `Seat`
+- `Passenger`
+- `Reservation`
+- `Payment`
+
+Domain Policy에서 정의된 Canonical Term을 유지합니다.
+
+---
+
+###  2.2 지원 관계 모델
+
+핵심 Entity 사이의 관계를 표현하기 위해
+다음과 같은 Supporting Model 또는 Mapping Table을 사용할 수 있습니다.
+
+초안:
+
+- `AircraftSeat`
+- `ReservationFlight`
+- `ReservationPassenger`
+- `PassengerFlight`
+- `AuditLog`
+
+이들은 핵심 Domain을 새롭게 추가하기 위한 개념이 아니라
+기존 Domain Policy를 관계형 Database에 표현하기 위한 기술적 모델입니다.
+
+실제 JPA Entity로 구현할지,
+단순 Join Table 또는 별도 Entity로 구현할지는
+각 관계의 추가 속성 필요 여부를 기준으로 결정합니다.
+
+---
+
+### 2.3 전체 관계 초안
+
+```text
+Member
+  |
+  +----< AuthAccount
+  |
+  +----< Reservation
+              |
+              +----< ReservationFlight >---- Flight
+              |
+              +----< ReservationPassenger >---- Passenger
+              |
+              +----< Payment
+              |
+              +----< PassengerFlight
+                         |
+                         +---- Passenger
+                         |
+                         +---- Flight
+                         |
+                         +---- Seat
+                         |
+                         +---- Companion Adult
+
+Airport
+  |
+  +----< Route >---- Airport
+              |
+              +----< Flight
+
+Aircraft
+  |
+  +----< AircraftSeat
+  |
+  +----< Flight
+             |
+             +----< Seat
+```
+
+위 구조는 초안이며,
+구체적인 FK와 Mapping 방향은 본 문서의 각 절에서 정의합니다.
+
+---
+
+## 3. 공통 Database 원칙
+
+### 3.1 Primary Key
+
+내부 Entity의 Primary Key는
+Database 내부 식별을 위한 값으로 사용합니다.
+
+기본 방향:
+
+```text
+BIGINT
+AUTO_INCREMENT
+```
+
+또는 JPA에서 이에 대응하는 Identity 전략을 사용합니다.
+
+Database Primary Key는
+사용자에게 공개되는 업무 식별자로 사용하지 않습니다.
+
+예:
+
+```text
+Reservation PK
+12345
+
+사용자 공개 Reservation 번호
+KOKU-20260821-A7F3K9
+```
+
+---
+
+### 3.2 생성 / 수정 시각
+
+필요한 Entity는 다음 Audit Timestamp를 가질 수 있습니다.
+
+- `created_at`
+- `updated_at`
+
+삭제 대신 비활성화 정책을 사용하는 Master Data는
+필요한 경우 다음 값도 가질 수 있습니다.
+
+- `active`
+- `deactivated_at`
+
+구체적인 공통 BaseEntity 구조는
+Backend 구현 시 확정합니다.
+
+---
+
+### 3.3 Enum 저장
+
+상태 및 유형 Enum은
+Database에서 의미를 확인할 수 있도록 문자열 저장을 기본 방향으로 합니다.
+
+예:
+
+```text
+ACTIVE
+WITHDRAWN
+
+PENDING
+CONFIRMED
+CANCELLED
+
+AVAILABLE
+HELD
+RESERVED
+UNAVAILABLE
+```
+
+JPA에서는 `EnumType.STRING` 사용을 기본으로 검토합니다.
+
+Enum 순서 변경으로 Database 의미가 달라질 수 있는
+Ordinal 저장은 기본안으로 사용하지 않습니다.
+
+---
+
+### 3.4 Soft Delete / 비활성화
+
+Domain Policy상 물리적 삭제를 사용하지 않는 Master Data는
+`active` 등 명시적인 활성 상태를 관리합니다.
+
+대상:
+
+- `Airport`
+- `Route`
+- `Aircraft`
+- Aircraft Seat 구성
+
+과거 Reservation 또는 Flight와 연결된 Data는
+참조 무결성을 위해 임의로 삭제하지 않습니다.
+
+---
+
+## 4. Member
+
+### 4.1 역할
+
+`Member`는 서비스 사용자를 나타냅니다.
+
+인증 수단 자체는 `Member`가 아니라
+`AuthAccount`에서 관리합니다.
+
+하나의 Member는
+여러 AuthAccount를 가질 수 있습니다.
+
+```text
+Member 1 : N AuthAccount
+```
+
+---
+
+### 4.2 주요 Column 초안
+
+```text
+member
+--------------------------------
+id
+email
+role
+status
+created_at
+updated_at
+```
+
+초안 의미:
+
+- `id`: 내부 Primary Key
+- `email`: 정규화된 Member Email
+- `role`: `MEMBER`, `ADMIN`, `SUPERADMIN`
+- `status`: `ACTIVE`, `WITHDRAWN`
+
+`role`은 서비스 Role을 저장하며 다음 값을 사용합니다.
+
+- `MEMBER`
+- `ADMIN`
+- `SUPERADMIN`
+
+Spring Security에서는 서비스 Role을 다음 권한 Code로 매핑합니다.
+
+```text
+MEMBER     → USER
+ADMIN      → ADMIN
+SUPERADMIN → SUPERADMIN
+```
+
+`Member.role`의 `MEMBER`와 Spring Security 권한 Code `USER`를 혼용하지 않습니다.
+
+---
+
+### 4.3 Email
+
+Member Email은
+Domain Policy에서 정의한 정규화 규칙을 적용한 결과를 저장합니다.
+
+기준:
+
+```text
+trim()
++
+lowercase(Locale.ROOT)
+```
+
+일반 회원가입, 일반 로그인 및 Google OAuth 계정 연동 모두
+동일한 정규화 기준을 사용합니다.
+
+Email 원본 대소문자 형태를 별도로 보존하지 않습니다.
+
+Database에서는 정규화된 Email의 중복을 허용하지 않습니다.
+
+초안 Constraint:
+
+```text
+UNIQUE(member.email)
+```
+
+---
+
+### 4.4 Member 상태
+
+```text
+ACTIVE
+WITHDRAWN
+```
+
+`WITHDRAWN` Member는 물리적으로 삭제하지 않습니다.
+
+기존 Reservation 및 Payment 이력과의 관계도 유지합니다.
+
+---
+
+## 5. AuthAccount
+
+### 5.1 역할
+
+`AuthAccount`는 Member의 인증 수단을 나타냅니다.
+
+지원 Provider:
+
+```text
+LOCAL
+GOOGLE
+```
+
+하나의 Member는
+LOCAL과 GOOGLE AuthAccount를 각각 가질 수 있습니다.
+
+---
+
+### 5.2 주요 Column 초안
+
+```text
+auth_account
+--------------------------------
+id
+member_id
+provider
+provider_subject
+password_hash
+created_at
+updated_at
+```
+
+Column 사용 원칙:
+
+#### LOCAL
+
+```text
+provider = LOCAL
+password_hash = PasswordEncoder 결과
+provider_subject = NULL
+```
+
+#### GOOGLE
+
+```text
+provider = GOOGLE
+provider_subject = Google OAuth provider sub
+password_hash = NULL
+```
+
+---
+
+### 5.3 Google 식별자
+
+Google 계정의 고유 식별에는
+Email이 아니라 Provider에서 제공하는 `sub`를 사용합니다.
+
+Google `sub`에는
+Member Email 정규화 규칙을 적용하지 않습니다.
+
+초안 Constraint:
+
+```text
+UNIQUE(provider, provider_subject)
+```
+
+LOCAL에 대해서는
+동일 Member에 중복 LOCAL AuthAccount가 생성되지 않도록
+Application 및 Database 구조에서 보호합니다.
+
+---
+
+### 5.4 Password
+
+Password 평문은 저장하지 않습니다.
+
+LOCAL AuthAccount에는
+PasswordEncoder 결과만 저장합니다.
+
+Password Hash는 API Response에 포함하지 않습니다.
+
+---
+
+## 6. Airport
+
+### 6.1 역할
+
+`Airport`는 KOKU Airline이 지원하는 공항 Master Data입니다.
+
+MVP 지원 공항은 Domain Policy를 기준으로 합니다.
+
+#### 한국
+
+- ICN
+- GMP
+- PUS
+- CJU
+
+#### 일본
+
+- NRT
+- HND
+- KIX
+- FUK
+- CTS
+- NGO
+
+---
+
+### 6.2 주요 Column 초안
+
+```text
+airport
+--------------------------------
+id
+iata_code
+country_code
+timezone
+active
+created_at
+updated_at
+```
+
+---
+
+### 6.3 IATA Code
+
+Airport의 업무 식별자는 IATA Code입니다.
+
+예:
+
+```text
+ICN
+NRT
+KIX
+```
+
+초안 Constraint:
+
+```text
+UNIQUE(airport.iata_code)
+```
+
+IATA Code는 대문자 영문 3자리 형식을 사용합니다.
+
+---
+
+### 6.4 Time Zone
+
+Airport는 향후 Time Zone 처리 확장을 위해
+Time Zone 정보를 표현할 수 있어야 합니다.
+
+예:
+
+```text
+Asia/Seoul
+Asia/Tokyo
+```
+
+실제 Date / Time Database 저장 방식은
+`04-system-design.md`의 미확정 시간 정책과 함께 최종 결정합니다.
+
+---
+
+## 7. Route
+
+### 7.1 역할
+
+`Route`는 KOKU Airline이 운항 가능한
+출발 Airport와 도착 Airport의 조합을 나타냅니다.
+
+MVP에서는 한국 ↔ 일본 Route만 허용합니다.
+
+---
+
+### 7.2 주요 Column 초안
+
+```text
+route
+--------------------------------
+id
+departure_airport_id
+arrival_airport_id
+active
+created_at
+updated_at
+```
+
+---
+
+### 7.3 Constraint
+
+다음 조건을 만족해야 합니다.
+
+```text
+departure_airport_id != arrival_airport_id
+```
+
+동일 방향 Route 중복을 허용하지 않습니다.
+
+초안:
+
+```text
+UNIQUE(
+  departure_airport_id,
+  arrival_airport_id
+)
+```
+
+예:
+
+```text
+ICN → NRT
+```
+
+와
+
+```text
+NRT → ICN
+```
+
+은 서로 다른 Route입니다.
+
+`ROUND_TRIP`에서는
+출국 Route와 정확히 반대 방향 Route를 귀국 Flight에 사용합니다.
+
+---
+
+## 8. Aircraft
+
+### 8.1 역할
+
+`Aircraft`는 KOKU Airline의 가상 운항 항공기를 나타냅니다.
+
+하나의 Flight에는 하나의 Aircraft가 배정됩니다.
+
+---
+
+### 8.2 주요 Column 초안
+
+```text
+aircraft
+--------------------------------
+id
+aircraft_code
+model_name
+active
+created_at
+updated_at
+```
+
+`aircraft_code`의 구체적인 형식은
+구현 전 결정합니다.
+
+---
+
+## 9. Aircraft Seat 구성
+
+### 9.1 역할
+
+Aircraft의 좌석 Layout은
+Flight 생성 시 Seat 구성의 기준으로 사용합니다.
+
+기존 Domain의 `Seat`와 구분하기 위해
+Database 기술 모델로 `AircraftSeat` 사용을 검토합니다.
+
+`AircraftSeat`는 새로운 사용자 Domain이 아니라
+Aircraft Seat Configuration을 표현하기 위한 Supporting Model입니다.
+
+---
+
+### 9.2 주요 Column 초안
+
+```text
+aircraft_seat
+--------------------------------
+id
+aircraft_id
+seat_no
+row_no
+seat_column
+active
+created_at
+updated_at
+```
+
+예:
+
+```text
+1A
+1B
+1C
+1D
+```
+
+---
+
+### 9.3 Seat 중복
+
+동일 Aircraft 안에서 Seat Number는 중복되지 않습니다.
+
+초안 Constraint:
+
+```text
+UNIQUE(
+  aircraft_id,
+  seat_no
+)
+```
+
+---
+
+### 9.4 Seat 인접성
+
+Child Passenger의 인접 Seat Validation을 위해
+Seat의 Row와 Column 구조를 판단할 수 있어야 합니다.
+
+MVP에서 인접 Seat는:
+
+- 동일 Row
+- 좌우 직접 연결
+- 두 Seat 사이에 통로 없음
+
+을 의미합니다.
+
+통로 위치를 어떻게 표현할지는
+Aircraft Seat Layout 구현 시 확정합니다.
+
+검토 가능한 방식:
+
+- Seat Column 기반 Rule
+- Seat adjacency 정보 명시 저장
+
+MVP에서는 과도한 Layout Model을 만들지 않고
+현재 Aircraft 구성에 필요한 최소 구조를 우선합니다.
+
+---
+
+## 10. Flight
+
+### 10.1 역할
+
+`Flight`는 특정 날짜와 시간에 운항하는
+KOKU Airline 내부 항공편입니다.
+
+외부 실제 항공편은
+이 Entity에 저장하지 않습니다.
+
+---
+
+### 10.2 주요 Column 초안
+
+```text
+flight
+--------------------------------
+id
+flight_number
+route_id
+aircraft_id
+departure_at
+arrival_at
+status
+cancellation_reason
+created_at
+updated_at
+```
+
+상태:
+
+```text
+SCHEDULED
+CANCELLED
+DEPARTED
+```
+
+---
+
+### 10.3 Flight Number
+
+Flight Number 형식:
+
+```text
+KO + 3자리 숫자
+```
+
+예:
+
+```text
+KO101
+KO205
+```
+
+같은 Flight Number는
+서로 다른 운항일에 재사용할 수 있습니다.
+
+동일한 운항 기준에서 중복되지 않도록 보호합니다.
+
+정확한 Unique Constraint는
+Date / Time 저장 기준을 확정한 후 최종 결정합니다.
+
+---
+
+### 10.4 Flight Date / Time
+
+`departure_at`, `arrival_at`은
+Time Zone을 고려할 수 있는 방식으로 저장합니다.
+
+구체적인 Java Type 및 Database Type은
+`04-system-design.md` 시간 정책 확정 후 최종 결정합니다.
+
+항상 다음 조건을 만족해야 합니다.
+
+```text
+departure_at < arrival_at
+```
+
+---
+
+### 10.5 Aircraft 일정 충돌
+
+동일 Aircraft를
+동시에 겹치는 Flight에 배정할 수 없습니다.
+
+정확한 시간 구간 충돌 기준과
+Turnaround Time 적용 여부는 아직 확정하지 않습니다.
+
+해당 정책이 확정되면
+Application Validation과 필요한 Database / Query 구조를 정의합니다.
+
+---
+
+## 11. Flight Seat
+
+### 11.1 역할
+
+Domain의 `Seat`는
+특정 Flight에서 실제 예약 가능한 좌석 상태를 나타냅니다.
+
+Aircraft Seat Configuration과
+실제 Flight 예약 상태를 분리합니다.
+
+Flight 생성 시 Aircraft의 Seat Layout을 기준으로
+Flight별 Seat를 구성하는 방식을 기본 방향으로 합니다.
+
+---
+
+### 11.2 주요 Column 초안
+
+```text
+seat
+--------------------------------
+id
+flight_id
+seat_no
+row_no
+seat_column
+status
+held_reservation_id
+created_at
+updated_at
+```
+
+상태:
+
+```text
+AVAILABLE
+HELD
+RESERVED
+UNAVAILABLE
+```
+
+`held_reservation_id` 같은 직접 참조가 실제로 필요한지는
+Reservation / Seat Mapping 구조와 함께 최종 결정합니다.
+
+---
+
+### 11.3 Unique Constraint
+
+하나의 Flight에서
+동일 Seat Number는 하나만 존재해야 합니다.
+
+```text
+UNIQUE(
+  flight_id,
+  seat_no
+)
+```
+
+---
+
+### 11.4 Seat 상태
+
+기본 상태:
+
+```text
+AVAILABLE
+```
+
+Reservation 시작 성공:
+
+```text
+AVAILABLE → HELD
+```
+
+결제 성공:
+
+```text
+HELD → RESERVED
+```
+
+Hold 만료 또는 예약 진행 취소:
+
+```text
+HELD → AVAILABLE
+```
+
+정상 Reservation 취소:
+
+```text
+RESERVED → AVAILABLE
+```
+
+Flight 취소에서 이미 출발한 Flight의 Seat는
+Domain Policy에 따라 변경하지 않습니다.
+
+---
+
+### 11.5 동시성
+
+Database 구조는
+동일 Flight의 동일 Seat가 둘 이상의 Reservation에
+동시에 확정되지 않도록 보호해야 합니다.
+
+구체적인 Lock 방식은
+`04-system-design.md` 및 M4 동시성 테스트 이후 확정합니다.
+
+따라서 본 문서에서는
+Pessimistic Lock, Optimistic Lock 또는 Redis Lock을
+특정 방식으로 확정하지 않습니다.
+
+---
+
+## 12. Reservation
+
+### 12.1 역할
+
+`Reservation`은 한 Member가 생성한
+하나의 예약 단위를 나타냅니다.
+
+상태:
+
+```text
+PENDING
+CONFIRMED
+CANCELLED
+```
+
+여행 유형:
+
+```text
+ONE_WAY
+ROUND_TRIP
+```
+
+---
+
+### 12.2 주요 Column 초안
+
+```text
+reservation
+--------------------------------
+id
+reservation_no
+member_id
+trip_type
+status
+total_amount
+hold_expires_at
+cancel_reason
+created_at
+updated_at
+```
+
+---
+
+### 12.3 Reservation 번호
+
+Database PK와 별도로
+사용자 공개 Reservation 번호를 저장합니다.
+
+형식:
+
+```text
+KOKU-YYYYMMDD-XXXXXX
+```
+
+예:
+
+```text
+KOKU-20260821-A7F3K9
+```
+
+Random 영역에서는
+사용자 혼동을 줄이기 위해 다음 문자를 제외합니다.
+
+```text
+I
+O
+0
+1
+```
+
+Reservation 번호는:
+
+- `PENDING` Reservation 정상 생성 시 발급
+- 생성 후 변경하지 않음
+- 재사용하지 않음
+- 시스템 전체에서 중복되지 않음
+
+을 원칙으로 합니다.
+
+Database Constraint:
+
+```text
+UNIQUE(reservation_no)
+```
+
+---
+
+### 12.4 Reservation 번호 Collision
+
+Application에서 Reservation 번호를 생성한 뒤
+Database Unique Constraint를 최종 보호 장치로 사용합니다.
+
+Collision 발생 시
+제한된 횟수 내에서 새로운 번호를 생성하여 재시도합니다.
+
+구체적인 재시도 횟수는 구현 단계에서 결정합니다.
+
+Reservation 번호 생성 실패 때문에
+중복 Reservation 번호를 허용해서는 안 됩니다.
+
+---
+
+### 12.5 Reservation 금액
+
+`total_amount`는
+해당 Reservation의 최종 결제 예정 금액입니다.
+
+Domain Policy에 따라
+모든 Seat 확보에 성공하여 `PENDING` Reservation이 생성되는 시점에 확정합니다.
+
+확정 이후 다음 상황에서도 변경하지 않습니다.
+
+- Mock Payment 재시도
+- Payment 실패 후 재시도
+
+실제 환불 처리 시에도
+원 Reservation 금액 자체를 변경하지 않습니다.
+
+Payment 상태를 통해 환불 이력을 표현합니다.
+
+---
+
+### 12.6 Hold 만료
+
+`PENDING` Reservation은
+Seat Hold 만료시각을 가져야 합니다.
+
+초안:
+
+```text
+hold_expires_at
+```
+
+Hold 만료시각은
+Domain Policy에 따라 최대 1시간이며,
+Reservation에 포함된 가장 빠른 Flight 출발 예정시각을 초과할 수 없습니다.
+
+---
+
+## 13. Reservation과 Flight 관계
+
+### 13.1 필요성
+
+`ONE_WAY` Reservation은 Flight 1개를 가집니다.
+
+`ROUND_TRIP` Reservation은 Flight 2개를 가집니다.
+
+따라서 Reservation에 단순히 하나의 `flight_id`만 저장하지 않습니다.
+
+---
+
+### 13.2 ReservationFlight
+
+Reservation과 Flight의 관계를 표현하기 위해
+`ReservationFlight` Supporting Model을 사용합니다.
+
+초안:
+
+```text
+reservation_flight
+--------------------------------
+id
+reservation_id
+flight_id
+journey_role
+sequence
+created_at
+```
+
+`journey_role` 초안:
+
+```text
+OUTBOUND
+RETURN
+```
+
+---
+
+### 13.3 ONE_WAY
+
+편도:
+
+```text
+Reservation
+  |
+  └─ ReservationFlight
+       journey_role = OUTBOUND
+       sequence = 1
+```
+
+방향이 일본 → 한국이라고 하더라도
+ONE_WAY의 단일 Flight는 Reservation Journey 기준
+여정 시작 Flight이므로 `OUTBOUND` 역할로 표현할 수 있습니다.
+
+---
+
+### 13.4 ROUND_TRIP
+
+왕복:
+
+```text
+Reservation
+  |
+  +─ ReservationFlight
+  |    journey_role = OUTBOUND
+  |    sequence = 1
+  |
+  └─ ReservationFlight
+       journey_role = RETURN
+       sequence = 2
+```
+
+출국과 귀국 Flight는
+하나의 Reservation에 포함됩니다.
+
+Flight마다 별도의 Reservation 번호를 만들지 않습니다.
+
+---
+
+### 13.5 Constraint
+
+하나의 Reservation 안에서
+동일 Flight가 중복 연결되지 않도록 보호합니다.
+
+초안:
+
+```text
+UNIQUE(
+  reservation_id,
+  flight_id
+)
+```
+
+`ROUND_TRIP`의 정확한 Flight 개수와 Journey Role Validation은
+Application에서 Domain Policy에 따라 검증합니다.
+
+---
+
+## 14. Passenger
+
+### 14.1 역할
+
+`Passenger`는 실제 탑승 대상에 해당하는
+테스트용 탑승객 정보를 나타냅니다.
+
+`Member`와 `Passenger`는 별개의 Entity입니다.
+
+Member가 자신이 아닌 다른 Passenger를 포함한 Reservation을 생성할 수 있습니다.
+
+---
+
+### 14.2 주요 Column 초안
+
+```text
+passenger
+--------------------------------
+id
+last_name
+first_name
+birth_date
+gender
+nationality
+test_passport_no
+test_passport_country
+test_passport_expires_at
+created_at
+updated_at
+```
+
+---
+
+### 14.3 영문 이름
+
+Passenger 이름은
+테스트용 여권 영문명 형식을 기준으로 저장합니다.
+
+구체적인 허용 문자, 길이 및 Validation은
+구현 전에 확정합니다.
+
+---
+
+### 14.4 생년월일과 연령 구분
+
+Passenger의 Adult / Child / Infant 구분을
+Passenger Table에 고정 Enum으로 저장하지 않는 것을 기본 방향으로 합니다.
+
+이유:
+
+`ROUND_TRIP`에서는 같은 Passenger라도
+각 Flight 탑승일에 따라 연령 구분이 달라질 수 있습니다.
+
+따라서 연령 Category는
+각 Flight의 탑승일과 Passenger `birth_date`를 기준으로 계산합니다.
+
+---
+
+## 15. 테스트용 여권정보
+
+### 15.1 기본 구조
+
+사용자는 실제 Passport 정보를 입력하지 않습니다.
+
+Passenger 기본 정보 입력 후
+시스템이 테스트용 여권정보를 생성합니다.
+
+생성 항목:
+
+- 테스트용 Passport Number
+- 발급국
+- 만료일
+
+---
+
+### 15.2 발급국
+
+초안:
+
+```text
+test_passport_country = Passenger nationality
+```
+
+---
+
+### 15.3 만료일
+
+Domain Policy 기준:
+
+```text
+생성일 + 5년
+```
+
+생성된 만료일은
+Reservation에 포함된 모든 Flight의 탑승일 이후여야 합니다.
+
+유효하지 않으면
+Reservation을 `CONFIRMED`로 변경할 수 없습니다.
+
+---
+
+### 15.4 Passport Number 생성
+
+테스트용 Passport Number는
+실제 여권번호가 아님을 명확하게 구분할 수 있는
+시스템 생성 값을 사용합니다.
+
+구체적인 형식은 구현 전에 확정합니다.
+
+사용자가 직접 입력하거나 수정할 수 없습니다.
+
+---
+
+### 15.5 저장 및 보호
+
+테스트용 Passport Number는
+실제 개인정보는 아니지만 민감정보와 유사하게 취급합니다.
+
+다음 원칙을 적용합니다.
+
+- Log 출력 금지
+- 불필요한 API Response 제외
+- 불필요한 관리자 화면 노출 금지
+
+Database Encryption 적용 여부와
+API Masking 방식은 아직 확정하지 않습니다.
+
+`04-system-design.md`의 보안 미확정 항목과 함께 결정합니다.
+
+---
+
+## 16. ReservationPassenger
+
+### 16.1 역할
+
+Reservation과 Passenger의 관계를 표현합니다.
+
+하나의 Reservation은
+한 명 이상의 Passenger를 가질 수 있습니다.
+
+초안:
+
+```text
+Reservation 1 : N ReservationPassenger
+Passenger   1 : N ReservationPassenger
+```
+
+---
+
+### 16.2 주요 Column 초안
+
+```text
+reservation_passenger
+--------------------------------
+id
+reservation_id
+passenger_id
+sequence
+created_at
+```
+
+Reservation 안에서 동일 Passenger의
+중복 연결을 허용하지 않는 것을 기본 방향으로 합니다.
+
+초안:
+
+```text
+UNIQUE(
+  reservation_id,
+  passenger_id
+)
+```
+
+---
+
+## 17. PassengerFlight
+
+### 17.1 필요성
+
+ROUND_TRIP에서는 Passenger의 상태가
+Flight마다 달라질 수 있습니다.
+
+예:
+
+- 출국 시 Infant
+- 귀국 시 Child
+
+또한 Flight별로 Seat와 Infant Companion 관계를 표현해야 합니다.
+
+따라서 Passenger와 Flight 사이의
+Flight별 예약 속성을 별도 관계로 표현하는 방안을 사용합니다.
+
+---
+
+### 17.2 주요 Column 초안
+
+```text
+passenger_flight
+--------------------------------
+id
+reservation_id
+passenger_id
+flight_id
+seat_id
+companion_passenger_id
+created_at
+```
+
+---
+
+### 17.3 Seat
+
+해당 Flight에서 Seat가 필요한 Passenger는
+`seat_id`를 가집니다.
+
+해당 Flight에서 Infant인 Passenger는
+별도 Seat를 사용하지 않으므로:
+
+```text
+seat_id = NULL
+```
+
+을 허용합니다.
+
+Seat 필요 여부는
+Passenger의 생년월일과 Flight 탑승일을 기준으로
+Backend에서 판단합니다.
+
+---
+
+### 17.4 Infant Companion
+
+해당 Flight에서 Infant인 경우
+Adult Passenger와 연결되어야 합니다.
+
+초안:
+
+```text
+companion_passenger_id
+```
+
+이 값은 동일 Reservation에 포함된 Passenger를 참조합니다.
+
+지정된 Companion은
+해당 Flight에서 Adult 조건을 만족해야 합니다.
+
+Adult 1명당
+해당 Flight에서 최대 Infant 1명만 연결할 수 있습니다.
+
+---
+
+### 17.5 ROUND_TRIP Companion
+
+Domain Policy에 따라
+Passenger가 하나 이상의 Flight에서 Infant인 경우
+동일 Companion Adult를 기본으로 사용합니다.
+
+그러나 Validation은
+각 Flight별로 수행합니다.
+
+한 Flight에서 Companion이 Adult 조건을 만족하지 못하면
+Reservation을 시작할 수 없습니다.
+
+---
+
+### 17.6 Child Seat Validation
+
+Passenger가 해당 Flight에서 Child인 경우
+동일 Flight에 Adult Passenger가 최소 1명 있어야 합니다.
+
+Child의 Seat는
+동일 Flight의 Adult Seat 중 최소 하나와
+Domain Policy상 인접 Seat 조건을 만족해야 합니다.
+
+이 Validation은 Application / Domain Logic에서 수행합니다.
+
+---
+
+## 18. Payment
+
+### 18.1 역할
+
+`Payment`는 Mock Payment의
+개별 결제 시도를 나타냅니다.
+
+하나의 Reservation은
+여러 Payment 이력을 가질 수 있습니다.
+
+```text
+Reservation 1 : N Payment
+```
+
+별도의 `PaymentAttempt` Entity는 사용하지 않습니다.
+
+각 Payment 자체가 하나의 Mock 결제 시도를 나타냅니다.
+
+---
+
+### 18.2 주요 Column 초안
+
+```text
+payment
+--------------------------------
+id
+reservation_id
+attempt_no
+status
+amount
+idempotency_key
+created_at
+updated_at
+```
+
+상태:
+
+```text
+PENDING
+SUCCESS
+FAILED
+CANCELLED
+REFUNDED
+```
+
+---
+
+### 18.3 Payment 횟수
+
+하나의 Reservation당
+최대 3회의 Payment를 생성할 수 있습니다.
+
+예:
+
+```text
+attempt_no = 1
+attempt_no = 2
+attempt_no = 3
+```
+
+세 번째 Payment까지 실패하면
+추가 Payment를 생성하지 않습니다.
+
+---
+
+### 18.4 Payment 금액
+
+각 Payment의 `amount`는
+Reservation에 확정된 `total_amount`를 기준으로 합니다.
+
+Payment 재시도 과정에서
+Reservation 금액을 다시 계산하지 않습니다.
+
+---
+
+### 18.5 Payment 성공
+
+하나의 Reservation에는
+최대 하나의 `SUCCESS` Payment만 존재할 수 있어야 합니다.
+
+Application에서 먼저 검증하고,
+가능한 Database Constraint 또는 Transaction 구조를 통해 보호합니다.
+
+구체적인 Database 보장 방식은
+MySQL 특성과 실제 구현 구조를 검토한 후 확정합니다.
+
+---
+
+### 18.6 실패 이력
+
+`FAILED` Payment는 삭제하거나 덮어쓰지 않습니다.
+
+각 실패 Payment는
+결제 시도 이력으로 유지합니다.
+
+---
+
+### 18.7 환불
+
+Reservation 취소로 Mock 환불이 발생하면
+성공한 Payment를:
+
+```text
+SUCCESS → REFUNDED
+```
+
+상태로 변경합니다.
+
+실제 금융 환불은 발생하지 않습니다.
+
+---
+
+## 19. Payment Idempotency
+
+### 19.1 목적
+
+동일한 Mock Payment 요청이
+Network Retry 또는 중복 Click 등에 의해 반복되어도
+
+- 새로운 Payment가 중복 생성되지 않고
+- Payment 시도 횟수가 중복 증가하지 않으며
+- Reservation이 중복 확정되지 않아야 합니다.
+
+---
+
+### 19.2 Idempotency Key
+
+Mock Payment 요청에는
+Idempotency Key를 사용하는 방안을 기본안으로 합니다.
+
+예:
+
+```text
+Idempotency-Key: 550e8400-e29b-41d4-a716-446655440000
+```
+
+구체적인 Header 이름은 API Contract 확정 시 결정합니다.
+
+---
+
+### 19.3 Database 보호
+
+초안에서는 Payment에
+`idempotency_key`를 저장합니다.
+
+동일 Reservation에서
+동일 Idempotency Key를 중복 사용할 수 없도록 합니다.
+
+초안 Constraint:
+
+```text
+UNIQUE(
+  reservation_id,
+  idempotency_key
+)
+```
+
+---
+
+### 19.4 동일 요청 재처리
+
+동일 Idempotency Key 요청이 다시 들어오면
+새로운 Payment를 생성하지 않고
+기존 처리 결과를 반환하는 방향을 사용합니다.
+
+동일 Key에 서로 다른 Request Body가 전달된 경우의 처리 방식은
+API 구현 전에 추가로 확정합니다.
+
+---
+
+## 20. AuditLog
+
+### 20.1 역할
+
+운영상 중요한 관리자 Action을
+Audit Log로 영구 기록합니다.
+
+최소 대상:
+
+- Flight 취소
+- SuperAdmin Reservation 강제 취소
+- 중요 Master Data 생성
+- 중요 Master Data 수정
+- 중요 Master Data 비활성화
+
+---
+
+### 20.2 주요 Column 초안
+
+```text
+audit_log
+--------------------------------
+id
+actor_member_id
+action_type
+target_type
+target_id
+reason
+created_at
+```
+
+---
+
+### 20.3 Actor
+
+`actor_member_id`는
+Action을 수행한 Admin 또는 SuperAdmin을 참조합니다.
+
+Audit 이력 보존을 위해
+Member가 이후 `WITHDRAWN` 또는 다른 상태가 되어도
+과거 기록은 유지합니다.
+
+---
+
+### 20.4 Target
+
+다양한 관리 대상을 기록할 수 있도록
+초안에서는 다음 구조를 검토합니다.
+
+```text
+target_type
+target_id
+```
+
+예:
+
+```text
+FLIGHT
+123
+
+RESERVATION
+456
+```
+
+실제 FK를 직접 사용하는 여러 Audit Table보다
+단일 AuditLog 구조를 우선 검토합니다.
+
+---
+
+### 20.5 Reason
+
+Domain Policy에서 사유 입력을 요구하는 Action은
+`reason`이 필수입니다.
+
+예:
+
+- Flight 취소
+- SuperAdmin Reservation 강제 취소
+
+---
+
+## 21. 주요 Unique Constraint 초안
+
+MVP에서 최소 다음 데이터 정합성을
+Database 수준에서도 보호하는 방향을 사용합니다.
+
+```text
+member.email
+    UNIQUE
+
+auth_account(provider, provider_subject)
+    UNIQUE
+
+airport.iata_code
+    UNIQUE
+
+route(departure_airport_id, arrival_airport_id)
+    UNIQUE
+
+aircraft_seat(aircraft_id, seat_no)
+    UNIQUE
+
+seat(flight_id, seat_no)
+    UNIQUE
+
+reservation.reservation_no
+    UNIQUE
+
+reservation_flight(reservation_id, flight_id)
+    UNIQUE
+
+reservation_passenger(reservation_id, passenger_id)
+    UNIQUE
+
+payment(reservation_id, idempotency_key)
+    UNIQUE
+```
+
+정확한 Constraint 이름과
+추가 Composite Unique Key는
+ERD 확정 시 결정합니다.
+
+---
+
+## 22. Index 설계 원칙
+
+### 22.1 기본 원칙
+
+Index는 모든 Column에 임의로 추가하지 않습니다.
+
+다음 기준을 우선 검토합니다.
+
+- 실제 조회 조건
+- Join FK
+- 정렬 조건
+- Unique Constraint
+- 자주 사용하는 상태 Filter
+
+---
+
+### 22.2 초기 검토 대상
+
+예:
+
+```text
+member(email)
+
+auth_account(member_id)
+auth_account(provider, provider_subject)
+
+route(departure_airport_id, arrival_airport_id)
+
+flight(route_id, departure_at)
+flight(aircraft_id, departure_at)
+flight(status, departure_at)
+
+seat(flight_id, status)
+
+reservation(member_id, created_at)
+reservation(member_id, status)
+reservation(reservation_no)
+reservation(status, hold_expires_at)
+
+payment(reservation_id, created_at)
+payment(reservation_id, status)
+```
+
+실제 Index는
+Query 및 `EXPLAIN` 결과를 검토해 확정합니다.
+
+---
+
+## 23. API 기본 원칙
+
+### 23.1 Base Path
+
+REST API는 공통 Prefix를 사용합니다.
+
+초안:
+
+```text
+/api/v1
+```
+
+MVP에서 Versioning을 사용하지 않을 경우
+단순 `/api`도 가능하나,
+초안에서는 `/api/v1`을 기준으로 합니다.
+
+최종 Prefix는 구현 시작 전에 확정합니다.
+
+---
+
+### 23.2 Content Type
+
+기본 Request / Response:
+
+```text
+application/json
+```
+
+---
+
+### 23.3 Naming
+
+JSON Field는
+Frontend / Backend Contract에서 일관된 Naming을 사용합니다.
+
+초안:
+
+```text
+camelCase
+```
+
+예:
+
+```json
+{
+  "reservationNo": "KOKU-20260821-A7F3K9",
+  "tripType": "ROUND_TRIP",
+  "totalAmount": 540000
+}
+```
+
+Database Column Naming은:
+
+```text
+snake_case
+```
+
+를 기본 방향으로 합니다.
+
+---
+
+### 23.4 내부 PK 노출
+
+API URL 또는 Response에서
+내부 PK를 기술적 식별자로 사용할 수 있지만,
+사용자에게 공개되어야 하는 업무 식별자는 별도로 사용합니다.
+
+Reservation 사용자 조회는
+가능하면 공개 `reservationNo`를 기준으로 제공하는 방안을 우선합니다.
+
+내부 관리자 API에서 PK 사용이 필요한 경우에도
+Frontend에 업무 식별자와 혼동되게 표시하지 않습니다.
+
+---
+
+## 24. 공통 API Response
+
+### 24.1 성공 Response
+
+모든 API를 반드시 하나의 Wrapper로 감싸야 하는지는
+구현 전에 최종 결정합니다.
+
+초안에서는 Resource 중심의 Response를 우선합니다.
+
+예:
+
+```json
+{
+  "reservationNo": "KOKU-20260821-A7F3K9",
+  "status": "CONFIRMED"
+}
+```
+
+불필요하게 다음과 같은 중복 Wrapper를 강제하지 않습니다.
+
+```json
+{
+  "success": true,
+  "data": {
+  }
+}
+```
+
+필요성이 확인되면 공통 Response 구조를 추가합니다.
+
+---
+
+### 24.2 Error Response
+
+Error Response는
+일관된 구조를 사용합니다.
+
+초안:
+
+```json
+{
+  "code": "SEAT_ALREADY_UNAVAILABLE",
+  "message": "선택한 좌석을 사용할 수 없습니다.",
+  "details": []
+}
+```
+
+필수 기본 Field:
+
+- `code`
+- `message`
+
+`details`는 Validation Error 등 필요한 경우 사용합니다.
+
+---
+
+### 24.3 Error Message와 i18n
+
+Backend Error `code`는
+Locale과 독립적인 영문 Canonical Value를 사용합니다.
+
+Frontend는 Error Code를 기준으로
+`ko` / `ja` 사용자 메시지를 표시할 수 있습니다.
+
+Backend가 사용자 UI 문구를
+Business Logic 안에 직접 Hard Coding하지 않습니다.
+
+---
+
+## 25. 인증 API 초안
+
+### 25.1 회원가입
+
+```text
+POST /api/v1/auth/signup
+```
+
+Request 초안:
+
+```json
+{
+  "email": "user@test.com",
+  "password": "Password1!"
+}
+```
+
+처리:
+
+1. Email 정규화
+2. 형식 Validation
+3. 중복 Member 확인
+4. Password 정책 검증
+5. Member 생성
+6. LOCAL AuthAccount 생성
+
+Response에 Password Hash를 포함하지 않습니다.
+
+---
+
+### 25.2 LOCAL 로그인
+
+```text
+POST /api/v1/auth/login
+```
+
+Request:
+
+```json
+{
+  "email": "user@test.com",
+  "password": "Password1!"
+}
+```
+
+Token Response 구조는
+`04-system-design.md`의 JWT 정책 확정 후 결정합니다.
+
+---
+
+### 25.3 Token 재발급
+
+초안 Endpoint:
+
+```text
+POST /api/v1/auth/refresh
+```
+
+Request / Cookie 구조는
+Refresh Token 저장 방식이 확정된 이후 정의합니다.
+
+---
+
+### 25.4 로그아웃
+
+초안:
+
+```text
+POST /api/v1/auth/logout
+```
+
+Token 무효화 방식은
+`04-system-design.md` Token 정책과 함께 확정합니다.
+
+---
+
+### 25.5 Google OAuth
+
+Google OAuth 시작 및 Callback URL은
+Spring Security OAuth2 Client 구조를 사용합니다.
+
+구체적인 URI는
+Spring Security Configuration 확정 시 문서화합니다.
+
+---
+
+## 26. Member API 초안
+
+### 26.1 내 정보 조회
+
+```text
+GET /api/v1/members/me
+```
+
+---
+
+### 26.2 비밀번호 변경
+
+LOCAL AuthAccount가 존재하는 Member만 사용할 수 있습니다.
+
+초안:
+
+```text
+PATCH /api/v1/members/me/password
+```
+
+현재 Password 재인증을 요구할지는
+인증 정책 검토 후 최종 확정합니다.
+
+---
+
+### 26.3 회원 탈퇴
+
+```text
+DELETE /api/v1/members/me
+```
+
+실제 DELETE Query를 의미하지 않습니다.
+
+Domain Policy에 따라:
+
+```text
+Member.status
+ACTIVE → WITHDRAWN
+```
+
+으로 변경합니다.
+
+탈퇴 가능 여부는 Backend에서
+Reservation 상태와 Flight 출발 여부를 기준으로 검증합니다.
+
+---
+
+## 27. KOKU Flight 검색 API
+
+### 27.1 편도 검색
+
+초안:
+
+```text
+GET /api/v1/flights
+```
+
+Query 예:
+
+```text
+departure=ICN
+arrival=NRT
+departureDate=2026-09-10
+tripType=ONE_WAY
+```
+
+---
+
+### 27.2 왕복 검색
+
+하나의 Search Endpoint에서 처리하거나
+Frontend에서 출국 / 귀국 조건을 나누어 호출할 수 있습니다.
+
+초안 Request Query:
+
+```text
+departure=ICN
+arrival=NRT
+departureDate=2026-09-10
+returnDate=2026-09-15
+tripType=ROUND_TRIP
+```
+
+구체적인 Search Contract는
+Frontend 구현 방식과 함께 최종 결정합니다.
+
+---
+
+### 27.3 검색 Response
+
+KOKU Flight 검색 결과에는
+UI Design에서 필요한 최소 정보를 제공합니다.
+
+예:
+
+```json
+{
+  "flightId": 101,
+  "flightNumber": "KO101",
+  "departureAirport": "ICN",
+  "arrivalAirport": "NRT",
+  "departureAt": "2026-09-10T09:30:00+09:00",
+  "arrivalAt": "2026-09-10T11:50:00+09:00",
+  "status": "SCHEDULED",
+  "bookable": true,
+  "currentFare": 270000
+}
+```
+
+`currentFare`는
+Domain Policy의 고정 운임 정책에 따라 계산된 현재 운임입니다.
+
+---
+
+## 28. Flight 상세 API
+
+초안:
+
+```text
+GET /api/v1/flights/{flightId}
+```
+
+Response에는 다음 정보를 포함할 수 있습니다.
+
+- Flight Number
+- Route
+- Airport
+- Date / Time
+- Aircraft 기본 정보
+- 예약 가능 여부
+- 현재 고정 운임
+
+외부 실제 Flight Data를
+이 API Response와 혼합하지 않습니다.
+
+---
+
+## 29. Seat 조회 API
+
+초안:
+
+```text
+GET /api/v1/flights/{flightId}/seats
+```
+
+Response 예:
+
+```json
+{
+  "flightId": 101,
+  "seats": [
+    {
+      "seatId": 1001,
+      "seatNo": "1A",
+      "status": "AVAILABLE"
+    },
+    {
+      "seatId": 1002,
+      "seatNo": "1B",
+      "status": "RESERVED"
+    }
+  ]
+}
+```
+
+Frontend에서는 Domain Policy / UI Design에 따라
+`HELD`, `RESERVED`, `UNAVAILABLE`을 모두
+사용자에게 선택 불가 상태로 표현할 수 있습니다.
+
+---
+
+## 30. Reservation 시작 API
+
+### 30.1 목적
+
+Passenger와 모든 Flight별 Seat 선택이 완료된 후
+실제 Reservation을 `PENDING` 상태로 시작합니다.
+
+---
+
+### 30.2 Endpoint 초안
+
+```text
+POST /api/v1/reservations
+```
+
+인증된 Member만 사용할 수 있습니다.
+
+---
+
+### 30.3 Request 초안
+
+예시 구조:
+
+```json
+{
+  "tripType": "ROUND_TRIP",
+  "flights": [
+    {
+      "flightId": 101,
+      "journeyRole": "OUTBOUND"
+    },
+    {
+      "flightId": 202,
+      "journeyRole": "RETURN"
+    }
+  ],
+  "passengers": [
+    {
+      "lastName": "KIM",
+      "firstName": "JIHUN",
+      "birthDate": "1991-02-04",
+      "gender": "MALE",
+      "nationality": "KR",
+      "flightSelections": [
+        {
+          "flightId": 101,
+          "seatId": 1001
+        },
+        {
+          "flightId": 202,
+          "seatId": 2001
+        }
+      ]
+    }
+  ]
+}
+```
+
+Infant가 있는 경우 Companion 식별 방식은
+Request DTO 최종 설계 시 별도로 정의합니다.
+
+Client가 Passenger Age Type을
+신뢰 가능한 값으로 직접 전달하지 않습니다.
+
+Backend가 생년월일과 각 Flight 탑승일을 기준으로 계산합니다.
+
+---
+
+### 30.4 처리
+
+Reservation 생성 API는 최소 다음을 검증합니다.
+
+1. 인증 Member
+2. Flight 존재
+3. Flight 상태
+4. 신규 Reservation 2시간 제한
+5. ONE_WAY / ROUND_TRIP 구조
+6. 왕복 Reverse Route
+7. 왕복 Date Rule
+8. Passenger 정보
+9. Adult / Child / Infant 판단
+10. Infant Companion
+11. Child Seat 인접성
+12. 선택 Seat 상태
+13. 모든 Flight Seat 확보 가능 여부
+
+모든 Validation을 통과하고
+모든 Seat 확보에 성공한 경우:
+
+```text
+Reservation → PENDING
+Reservation 번호 생성
+최종 운임 확정
+Seat → HELD
+Hold 만료시각 저장
+```
+
+을 하나의 Transaction Boundary 안에서 처리합니다.
+
+---
+
+### 30.5 실패
+
+Seat 중 하나라도 확보하지 못하면
+Reservation 시작 전체를 실패합니다.
+
+ROUND_TRIP에서도:
+
+- 출국만 성공
+- 귀국만 성공
+- Passenger 일부만 성공
+
+같은 Partial Success를 허용하지 않습니다.
+
+---
+
+## 31. Reservation 조회 API
+
+### 31.1 내 Reservation 목록
+
+```text
+GET /api/v1/reservations
+```
+
+인증된 Member 자신의 Reservation만 조회합니다.
+
+Query 예:
+
+```text
+status=CONFIRMED
+page=0
+size=20
+```
+
+Pagination의 구체적인 Response 형식은
+구현 전에 확정합니다.
+
+---
+
+### 31.2 Reservation 상세
+
+사용자 공개 Reservation 번호를 기준으로 조회하는 방안을 우선합니다.
+
+```text
+GET /api/v1/reservations/{reservationNo}
+```
+
+Backend는 현재 인증된 Member의 Reservation인지 검증합니다.
+
+다른 Member의 Reservation이면 조회를 거부합니다.
+
+---
+
+### 31.3 상세 Response
+
+예시:
+
+```json
+{
+  "reservationNo": "KOKU-20260821-A7F3K9",
+  "tripType": "ROUND_TRIP",
+  "status": "CONFIRMED",
+  "totalAmount": 540000,
+  "flights": [],
+  "passengers": [],
+  "payments": [],
+  "createdAt": "2026-08-21T20:30:00+09:00"
+}
+```
+
+실제 Passport Number 전체를
+기본 Reservation 상세 Response에 포함하지 않는 방향을 우선합니다.
+
+---
+
+## 32. Reservation 진행 취소 API
+
+`PENDING` Reservation의 예약 진행을
+사용자가 중단하는 경우 사용합니다.
+
+초안:
+
+```text
+POST /api/v1/reservations/{reservationNo}/cancel-pending
+```
+
+처리:
+
+```text
+Reservation
+PENDING → CANCELLED
+
+Seat
+HELD → AVAILABLE
+
+현재 PENDING Payment
+→ CANCELLED
+```
+
+기존 `FAILED` Payment는 변경하지 않습니다.
+
+Endpoint Naming은 API 전체 설계 검토 후 최종 결정합니다.
+
+---
+
+## 33. Confirmed Reservation 취소 API
+
+초안:
+
+```text
+POST /api/v1/reservations/{reservationNo}/cancel
+```
+
+Backend에서 다음을 검증합니다.
+
+- 자신의 Reservation인지
+- `CONFIRMED`인지
+- Domain Policy의 24시간 제한
+- ROUND_TRIP이면 부분 취소가 아닌 전체 취소인지
+- 관련 Flight 출발 여부
+
+성공 시:
+
+```text
+Reservation → CANCELLED
+Payment SUCCESS → REFUNDED
+아직 출발하지 않은 RESERVED Seat → AVAILABLE
+```
+
+ROUND_TRIP의 일부 Flight가 이미 출발한 Flight 취소 특수 케이스는
+일반 Member 취소와 구분하여 Domain Policy를 적용합니다.
+
+---
+
+## 34. Mock Payment API
+
+### 34.1 Endpoint 초안
+
+```text
+POST /api/v1/reservations/{reservationNo}/payments
+```
+
+---
+
+### 34.2 요청 조건
+
+다음 조건을 만족해야 합니다.
+
+- 현재 Member의 Reservation
+- Reservation `PENDING`
+- Seat Hold 유효
+- 기존 SUCCESS Payment 없음
+- Payment 시도 횟수 3회 미만
+
+---
+
+### 34.3 Idempotency
+
+Mock Payment 요청은
+Idempotency Key를 사용하는 방향을 기본으로 합니다.
+
+예:
+
+```text
+Idempotency-Key: <UUID>
+```
+
+동일 Key 요청을 다시 받으면
+새 Payment를 생성하지 않습니다.
+
+---
+
+### 34.4 성공
+
+성공 시 동일 Transaction 안에서:
+
+```text
+Payment
+PENDING → SUCCESS
+
+Reservation
+PENDING → CONFIRMED
+
+Seat
+HELD → RESERVED
+```
+
+를 처리합니다.
+
+---
+
+### 34.5 실패
+
+실패 시:
+
+```text
+Payment
+PENDING → FAILED
+```
+
+처리합니다.
+
+3번째 Payment까지 실패하면:
+
+```text
+Reservation
+PENDING → CANCELLED
+
+Seat
+HELD → AVAILABLE
+```
+
+추가 Payment를 허용하지 않습니다.
+
+---
+
+## 35. Admin Flight API
+
+### 35.1 Flight 조회
+
+Admin과 SuperAdmin이 사용할 수 있습니다.
+
+예:
+
+```text
+GET /api/v1/admin/flights
+GET /api/v1/admin/flights/{flightId}
+```
+
+---
+
+### 35.2 Flight 생성 / 수정
+
+Admin과 SuperAdmin의 Flight 관리 권한은
+Domain Policy를 기준으로 합니다.
+
+초안:
+
+```text
+POST  /api/v1/admin/flights
+PATCH /api/v1/admin/flights/{flightId}
+```
+
+기존 PENDING 또는 CONFIRMED Reservation이 연결된 Flight의
+핵심 운항정보 변경 제한을 적용합니다.
+
+---
+
+### 35.3 Flight 취소
+
+```text
+POST /api/v1/admin/flights/{flightId}/cancel
+```
+
+Request:
+
+```json
+{
+  "reason": "운항 일정 변경"
+}
+```
+
+취소 사유는 필수입니다.
+
+처리한 Admin / SuperAdmin 정보와
+대상 Flight, 시각 및 사유를 Audit Log로 기록합니다.
+
+---
+
+## 36. SuperAdmin Master Data API
+
+SuperAdmin만 다음 변경 API를 사용할 수 있습니다.
+
+#### Airport
+
+```text
+POST  /api/v1/admin/airports
+PATCH /api/v1/admin/airports/{airportId}
+```
+
+#### Route
+
+```text
+POST  /api/v1/admin/routes
+PATCH /api/v1/admin/routes/{routeId}
+```
+
+#### Aircraft
+
+```text
+POST  /api/v1/admin/aircraft
+PATCH /api/v1/admin/aircraft/{aircraftId}
+```
+
+Master Data는
+물리 DELETE보다 비활성화를 사용합니다.
+
+구체적인 Endpoint에서 `/admin`과 `/superadmin`을 구분할지는
+Spring Security 권한 구조 및 API Naming 검토 후 결정합니다.
+
+---
+
+## 37. Admin Reservation 조회 API
+
+Admin과 SuperAdmin은
+운영상 Reservation 상태를 조회할 수 있습니다.
+
+초안:
+
+```text
+GET /api/v1/admin/reservations
+GET /api/v1/admin/reservations/{reservationNo}
+```
+
+조회 API에서는
+Passenger Test Passport Number 등
+불필요한 민감정보 전체를 기본적으로 노출하지 않습니다.
+
+---
+
+## 38. SuperAdmin Reservation 강제 취소 API
+
+초안:
+
+```text
+POST /api/v1/admin/reservations/{reservationNo}/force-cancel
+```
+
+SuperAdmin만 사용할 수 있습니다.
+
+Request:
+
+```json
+{
+  "reason": "운영자 강제 취소 사유"
+}
+```
+
+Backend에서 Domain Policy의
+강제 취소 가능 조건을 검증합니다.
+
+사유는 필수입니다.
+
+Audit Log를 기록합니다.
+
+---
+
+## 39. 외부 실제 항공편 조회 API
+
+### 39.1 데이터 경계
+
+외부 실제 항공편 조회 결과는
+KOKU 내부 `Flight`, `Seat`, `Reservation`으로 저장하지 않습니다.
+
+---
+
+### 39.2 Endpoint 초안
+
+```text
+GET /api/v1/external-flights
+```
+
+Query 예:
+
+```text
+departure=ICN
+arrival=NRT
+departureDate=2026-09-10
+```
+
+Backend에서 한국 ↔ 일본 지원 범위를 먼저 검증한 후
+외부 API를 호출합니다.
+
+---
+
+### 39.3 External DTO
+
+외부 API Provider Response를
+Frontend에 그대로 전달하지 않습니다.
+
+Provider별 Adapter에서
+서비스 내부 External Flight DTO로 변환합니다.
+
+초안:
+
+```json
+{
+  "airline": "Example Airline",
+  "flightNumber": "EX101",
+  "departureAirport": "ICN",
+  "arrivalAirport": "NRT",
+  "departureAt": "2026-09-10T09:30:00+09:00",
+  "arrivalAt": "2026-09-10T11:50:00+09:00",
+  "price": 250000,
+  "currency": "KRW",
+  "stops": 0
+}
+```
+
+실제 Field는
+선택한 External Flight API의 제공 Data에 맞춰 확정합니다.
+
+Provider가 제공하지 않는 값을
+임의로 생성하지 않습니다.
+
+---
+
+## 40. AI 항공편 검색 API
+
+### 40.1 권한
+
+AI 항공편 검색 실행은
+인증된 Member만 사용할 수 있습니다.
+
+---
+
+### 40.2 Endpoint 초안
+
+```text
+POST /api/v1/ai/flight-search
+```
+
+Request:
+
+```json
+{
+  "query": "9월 10일 인천에서 도쿄로 오전에 출발하는 직항편 중 저렴한 항공편 찾아줘"
+}
+```
+
+---
+
+### 40.3 처리 단계
+
+```text
+자연어 Query
+    |
+    v
+AI Structured Output
+    |
+    v
+Application Validation
+    |
+    v
+한국 ↔ 일본 범위 검증
+    |
+    v
+External Flight API
+    |
+    v
+Application Filter
+    |
+    v
+Application Rank
+    |
+    v
+AI 추천 설명
+```
+
+---
+
+### 40.4 Structured Search Criteria 초안
+
+```json
+{
+  "departureAirport": "ICN",
+  "arrivalAirport": "NRT",
+  "departureDate": "2026-09-10",
+  "departureTimePreference": "MORNING",
+  "directOnly": true,
+  "maxPrice": null
+}
+```
+
+AI가 생성한 Criteria는
+외부 API 호출 전 Backend에서 다시 Validation합니다.
+
+---
+
+### 40.5 AI Response 초안
+
+```json
+{
+  "criteria": {
+    "departureAirport": "ICN",
+    "arrivalAirport": "NRT",
+    "departureDate": "2026-09-10"
+  },
+  "recommendations": [
+    {
+      "flight": {
+      },
+      "reason": "오전 출발 조건을 만족하는 직항편입니다."
+    }
+  ]
+}
+```
+
+실제 Flight의 사실 정보는
+External Flight API 데이터를 기준으로 합니다.
+
+AI는 Flight Number, 가격, Airline, 출도착 시각 등을
+임의로 생성하지 않습니다.
+
+---
+
+## 41. Pagination
+
+목록 API에는 필요한 경우 Pagination을 적용합니다.
+
+초기 대상:
+
+- Reservation 목록
+- Admin Reservation 목록
+- Admin Flight 목록
+
+초안 Query:
+
+```text
+page=0
+size=20
+```
+
+Page 기반 Pagination을 우선 검토합니다.
+
+실제 데이터 규모와 Query 특성상
+Cursor Pagination이 필요하다고 판단되면 이후 변경할 수 있습니다.
+
+---
+
+## 42. API Authorization Matrix 초안
+
+| API 영역 | Guest | Member | Admin | SuperAdmin |
+| --- | --- | --- | --- | --- |
+| KOKU Flight 검색 | O | O | O | O |
+| Flight 상세 | O | O | O | O |
+| 외부 실제 Flight 조회 | O | O | O | O |
+| AI Flight 검색 실행 | X | O | 정책상 필요 시 가능 | 정책상 필요 시 가능 |
+| Reservation 생성 | X | O | 자신의 Member 기능 사용 시 | 자신의 Member 기능 사용 시 |
+| 내 Reservation 조회 | X | O | 자신의 예약에 한함 | 자신의 예약에 한함 |
+| Admin Reservation 조회 | X | X | O | O |
+| Flight 관리 | X | X | O | O |
+| Master Data 변경 | X | X | X | O |
+| Reservation 강제 취소 | X | X | X | O |
+
+Admin / SuperAdmin이 일반 Member 기능을 함께 사용할지
+계정 Role 설계에서 별도 Member 계정으로 분리할지는
+구현 전에 최종 확인합니다.
+
+따라서 해당 부분은 현재 Domain Policy를 확장하는 방식으로
+임의 확정하지 않습니다.
+
+---
+
+## 43. Transaction과 API Boundary
+
+다음 API는
+Database 정합성을 위해 명확한 Transaction Boundary를 가져야 합니다.
+
+#### Reservation 시작
+
+```text
+POST /reservations
+```
+
+#### Mock Payment
+
+```text
+POST /reservations/{reservationNo}/payments
+```
+
+#### Reservation 취소
+
+```text
+POST /reservations/{reservationNo}/cancel
+```
+
+#### Flight 취소
+
+```text
+POST /admin/flights/{flightId}/cancel
+```
+
+#### SuperAdmin 강제 취소
+
+```text
+POST /admin/reservations/{reservationNo}/force-cancel
+```
+
+Controller가 직접 Transaction을 관리하지 않고
+Application / Service 계층에서 처리합니다.
+
+---
+
+## 44. External API와 Transaction Boundary
+
+External Flight API 또는 AI API 호출을
+KOKU 내부 Reservation Transaction과 결합하지 않습니다.
+
+예:
+
+```text
+External Flight API 실패
+
+≠
+
+Reservation Transaction 실패
+```
+
+외부 API 장애가
+내부 Reservation Database 상태에 영향을 주지 않도록 합니다.
+
+---
+
+## 45. 데이터 노출 정책
+
+### 45.1 API에 노출하지 않는 값
+
+기본적으로 다음 값은 Client에 전달하지 않습니다.
+
+- Password Hash
+- Refresh Token 저장값
+- OAuth Provider Secret
+- External API Key
+- AI API Key
+- 내부 Security 정보
+
+---
+
+### 45.2 제한적으로 노출하는 값
+
+테스트용 Passport Number 등은
+업무상 필요한 Endpoint에만 제한적으로 포함합니다.
+
+Reservation 목록과 같이
+필요하지 않은 API에는 포함하지 않습니다.
+
+---
+
+## 46. Data Migration 및 Seed
+
+### 46.1 초기 Master Data
+
+MVP 개발환경에서는
+지원 Airport 등 필요한 Master Data를
+Seed Data로 구성할 수 있습니다.
+
+예:
+
+```text
+ICN
+GMP
+PUS
+CJU
+
+NRT
+HND
+KIX
+FUK
+CTS
+NGO
+```
+
+---
+
+### 46.2 테스트 Flight
+
+Local / Test 환경에서는
+KOKU Airline Flight와 Aircraft를
+테스트용 Seed Data로 구성할 수 있습니다.
+
+운영 환경 Seed와
+테스트 전용 Data를 구분합니다.
+
+---
+
+### 46.3 Migration Tool
+
+Database Schema Migration Tool 도입 여부는
+Backend 초기 구성 단계에서 결정합니다.
+
+검토 대상:
+
+- Flyway
+- Liquibase
+
+Migration Tool을 사용하는 경우
+Schema 변경 이력을 Repository에서 관리합니다.
+
+---
+
+## 47. 아직 확정하지 않는 Data 설계
+
+다음 사항은
+`04-system-design.md` 또는 실제 구현 검토 후 확정합니다.
+
+### 47.1 시간
+
+- [ ] `departure_at` Database Type
+- [ ] `arrival_at` Database Type
+- [ ] UTC 저장 여부
+- [ ] Offset / Zone 저장 방식
+- [ ] `hold_expires_at` Type
+
+---
+
+### 47.2 Flight / Aircraft
+
+- [ ] 동일 Aircraft 운항 충돌의 정확한 시간 구간 기준
+- [ ] Turnaround Time 적용 여부
+- [ ] Flight Number 중복 기준의 정확한 Composite Constraint
+
+---
+
+### 47.3 Seat
+
+- [ ] Aircraft Seat 통로 표현 방식
+- [ ] Flight Seat 생성 시점
+- [ ] Seat 동시성 Lock 방식
+- [ ] Seat와 Reservation 직접 FK 필요 여부
+
+---
+
+### 47.4 Passenger
+
+- [ ] Gender Enum 상세 값
+- [ ] Nationality 저장 규칙
+- [ ] Test Passport Number 형식
+- [ ] Passport Number Encryption 적용 여부
+- [ ] Passport API Masking 규칙
+
+---
+
+### 47.5 Reservation
+
+- [ ] Reservation Number Collision 재시도 횟수
+- [ ] `ReservationFlight` 실제 Entity 여부
+- [ ] `ReservationPassenger` 실제 Entity 여부
+- [ ] `PassengerFlight` 실제 Entity 여부
+- [ ] Cancellation Reason 상세 코드 구조
+
+---
+
+### 47.6 Payment
+
+- [ ] Idempotency Header 최종 이름
+- [ ] 동일 Key + 다른 Body 요청 처리
+- [ ] SUCCESS Payment Database 추가 보호 방식
+
+---
+
+### 47.7 API
+
+- [ ] `/api/v1` Version Prefix 최종 적용 여부
+- [ ] 공통 Success Response Wrapper 여부
+- [ ] Pagination Response 형식
+- [ ] Validation Error `details` 구조
+- [ ] HTTP Status Code 상세 Mapping
+
+---
+
+### 47.8 External / AI
+
+- [ ] 실제 External Flight API Provider
+- [ ] External Flight DTO 최종 Field
+- [ ] AI Structured Output DTO
+- [ ] AI Recommendation 최대 후보 수
+- [ ] Tool Contract
+
+---
+
+## 48. 권장 HTTP Status 기본 방향
+
+구체적인 Error Code Mapping은
+API 구현 전에 최종 확정합니다.
+
+기본 방향:
+
+```text
+200 OK
+→ 정상 조회 / 처리
+
+201 Created
+→ Resource 생성
+
+204 No Content
+→ Response Body가 필요 없는 정상 처리
+
+400 Bad Request
+→ 입력 Validation 실패
+
+401 Unauthorized
+→ 인증 필요 / 인증 실패
+
+403 Forbidden
+→ 권한 부족
+
+404 Not Found
+→ Resource 없음
+
+409 Conflict
+→ Seat 경쟁 등 현재 Resource 상태와 충돌
+
+500 Internal Server Error
+→ 예상하지 못한 서버 오류
+
+502 / 503 계열
+→ External API 장애를 표현해야 하는 경우 검토
+```
+
+Business Error와 HTTP Status는
+일관되게 Mapping합니다.
+
+---
+
+## 49. Error Code 초안
+
+Error Code는
+Locale과 독립적인 영문 식별자를 사용합니다.
+
+예:
+
+```text
+AUTHENTICATION_REQUIRED
+ACCESS_DENIED
+
+MEMBER_NOT_FOUND
+MEMBER_WITHDRAWN
+EMAIL_ALREADY_EXISTS
+
+FLIGHT_NOT_FOUND
+FLIGHT_NOT_BOOKABLE
+FLIGHT_ALREADY_DEPARTED
+
+SEAT_NOT_AVAILABLE
+SEAT_HOLD_EXPIRED
+
+INVALID_PASSENGER
+CHILD_ADULT_REQUIRED
+CHILD_ADJACENT_SEAT_REQUIRED
+INFANT_COMPANION_REQUIRED
+
+RESERVATION_NOT_FOUND
+RESERVATION_NOT_CANCELLABLE
+
+PAYMENT_ATTEMPT_EXCEEDED
+PAYMENT_ALREADY_SUCCEEDED
+
+EXTERNAL_FLIGHT_API_ERROR
+AI_RESPONSE_ERROR
+```
+
+최종 Error Code 목록은
+API 구현 과정에서 Domain Exception과 함께 확정합니다.
+
+---
+
+## 50. Data & API Design 완료 기준
+
+다음 조건을 모두 만족하면
+MVP Data & API Design이 완료된 것으로 판단합니다.
+
+### Data Model
+
+- [ ] 핵심 Entity가 정의되어 있습니다.
+- [ ] Member와 AuthAccount 관계가 정의되어 있습니다.
+- [ ] Airport와 Route 관계가 정의되어 있습니다.
+- [ ] Aircraft와 Seat Configuration 관계가 정의되어 있습니다.
+- [ ] Flight와 Seat 관계가 정의되어 있습니다.
+- [ ] Reservation과 Flight 관계가 정의되어 있습니다.
+- [ ] Reservation과 Passenger 관계가 정의되어 있습니다.
+- [ ] Passenger의 Flight별 Seat 구조가 정의되어 있습니다.
+- [ ] Infant Companion 표현 방식이 정의되어 있습니다.
+- [ ] Reservation과 Payment 관계가 정의되어 있습니다.
+- [ ] Audit Log 구조가 정의되어 있습니다.
+
+### Constraint
+
+- [ ] Member Email Unique가 정의되어 있습니다.
+- [ ] Airport IATA Unique가 정의되어 있습니다.
+- [ ] Route 중복 방지가 정의되어 있습니다.
+- [ ] Flight Seat 중복 방지가 정의되어 있습니다.
+- [ ] Reservation 번호 Unique가 정의되어 있습니다.
+- [ ] Payment Idempotency Unique가 정의되어 있습니다.
+- [ ] 필요한 Foreign Key가 정의되어 있습니다.
+
+### Reservation
+
+- [ ] ONE_WAY / ROUND_TRIP Mapping이 정의되어 있습니다.
+- [ ] Journey Role 표현 방식이 정의되어 있습니다.
+- [ ] PENDING 생성 시 운임 저장 구조가 정의되어 있습니다.
+- [ ] Hold 만료시각 저장 구조가 정의되어 있습니다.
+- [ ] Reservation 번호 생성 구조가 정의되어 있습니다.
+
+### Passenger
+
+- [ ] Passenger 기본정보 Column이 정의되어 있습니다.
+- [ ] 연령을 Flight별로 계산하는 구조가 정의되어 있습니다.
+- [ ] Test Passport 저장 구조가 정의되어 있습니다.
+- [ ] Test Passport 보호 정책이 확정되어 있습니다.
+- [ ] Child Seat Validation에 필요한 데이터가 정의되어 있습니다.
+- [ ] Infant Companion 관계가 정의되어 있습니다.
+
+### Payment
+
+- [ ] Payment가 개별 결제 시도를 나타내도록 정의되어 있습니다.
+- [ ] Payment 최대 3회 구조가 정의되어 있습니다.
+- [ ] Payment Idempotency 구조가 정의되어 있습니다.
+- [ ] SUCCESS / FAILED / CANCELLED / REFUNDED 상태 처리가 정의되어 있습니다.
+
+### API
+
+- [ ] 인증 API Contract가 정의되어 있습니다.
+- [ ] Member API Contract가 정의되어 있습니다.
+- [ ] Flight 검색 / 상세 API가 정의되어 있습니다.
+- [ ] Seat 조회 API가 정의되어 있습니다.
+- [ ] Reservation 생성 API가 정의되어 있습니다.
+- [ ] Reservation 조회 / 취소 API가 정의되어 있습니다.
+- [ ] Mock Payment API가 정의되어 있습니다.
+- [ ] Admin / SuperAdmin API가 정의되어 있습니다.
+- [ ] External Flight API Contract가 정의되어 있습니다.
+- [ ] AI Flight Search API Contract가 정의되어 있습니다.
+- [ ] Error Response Contract가 정의되어 있습니다.
+
+### Security / Boundary
+
+- [ ] 내부 Primary Key와 공개 식별자가 구분되어 있습니다.
+- [ ] Password Hash가 API에 노출되지 않습니다.
+- [ ] Passport 정보 노출 정책이 정의되어 있습니다.
+- [ ] 외부 Flight Data와 내부 Flight Entity가 분리되어 있습니다.
+- [ ] AI가 Transaction API를 직접 실행하지 않습니다.
+
+---
+
+## 51. Data & API Design 변경 원칙
+
+본 문서는 Backend와 Frontend 사이의
+Database 및 API Contract 기준으로 사용합니다.
+
+구현 과정에서 Data Model 또는 API Contract 변경이 필요한 경우
+코드를 먼저 변경하지 않습니다.
+
+기본 절차:
+
+```text
+설계 문제 발견
+        |
+        v
+영향 범위 확인
+        |
+        v
+Domain Policy 영향 검토
+        |
+        v
+System Design 영향 검토
+        |
+        v
+Data & API Design 수정
+        |
+        v
+Frontend / Backend Contract 수정
+        |
+        v
+구현
+```
+
+다음 변경은 반드시 관련 문서 정합성을 검토합니다.
+
+- Core Entity 추가 / 삭제
+- Entity 관계 변경
+- Reservation / Flight Mapping 변경
+- Passenger / Flight Mapping 변경
+- Seat 상태 저장 구조 변경
+- Payment 상태 또는 시도 구조 변경
+- Reservation 번호 정책 변경
+- API Endpoint 변경
+- Request / Response Field 변경
+- Error Contract 변경
+- Idempotency 방식 변경
+- External Flight Data 경계 변경
+- AI Tool Contract 변경
+
+비즈니스 규칙 자체를 변경해야 하는 경우
+`02-domain-policy.md`를 먼저 수정합니다.
+
+사용자 흐름에 영향을 주는 경우
+`03-ui-design.md`를 함께 검토합니다.
+
+Architecture 또는 Transaction 구조에 영향을 주는 경우
+`04-system-design.md`를 함께 수정합니다.
