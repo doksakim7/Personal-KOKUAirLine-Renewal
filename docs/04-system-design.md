@@ -58,16 +58,16 @@ React Frontend
      v
 Spring Boot Backend
      |
-     +----------------------+
-     |                      |
-     v                      v
-MySQL                 External Services
-                           |
-                           +-- Google OAuth
-                           |
-                           +-- External Flight API
-                           |
-                           +-- AI Model API
+     +----------------------+----------------------+
+     |                      |                      |
+     v                      v                      v
+MySQL                    Redis              External Services
+                                                  |
+                                                  +-- Google OAuth
+                                                  |
+                                                  +-- External Flight API
+                                                  |
+                                                  +-- AI Model API
 ```
 
 Frontend는 사용자 인터페이스와 사용자 입력을 담당합니다.
@@ -87,7 +87,14 @@ Backend는 다음 책임을 가집니다.
 - AI 검색 Orchestration
 - 데이터 영속화
 
-Database는 KOKU Airline 내부 업무 데이터의 Source of Truth로 사용합니다.
+MySQL은 KOKU Airline의 영속적인 내부 업무 데이터에 대한
+Source of Truth로 사용합니다.
+
+Redis는 Refresh Token의 Server-side 상태 및 만료 관리를 위한
+인증 Infrastructure로 사용합니다.
+
+Cache 또는 Distributed Lock 용도의 Redis 사용 여부는
+해당 기능의 실제 필요성에 따라 별도로 결정합니다.
 
 ---
 
@@ -197,6 +204,7 @@ i18n Library는 Frontend 초기 구성 단계에서 확정합니다.
 
 - Docker
 - Docker Compose
+- Redis
 - AWS
 - GitHub Actions
 
@@ -214,15 +222,18 @@ i18n Library는 Frontend 초기 구성 단계에서 확정합니다.
 
 다음 기술은 MVP 시작 시점부터 필수로 도입하지 않습니다.
 
-- Redis
 - Kafka
 - k6 또는 기타 부하 테스트 도구
-
-Redis는 Cache 또는 동시성 문제 해결에서 필요성이 확인된 경우 검토합니다.
 
 Kafka는 비동기 Event 처리 필요성이 실제로 발생한 경우 검토합니다.
 
 동시성 또는 성능 개선 기술은 반드시 도입 전후 결과를 비교할 수 있어야 합니다.
+
+Redis는 Refresh Token의 Server-side 저장 및 만료 관리를 위해
+MVP 인증 Infrastructure에 포함합니다.
+
+Cache 또는 Distributed Lock 용도로 Redis를 추가 활용할지는
+각 기능의 실제 필요성과 측정 결과를 기반으로 별도로 결정합니다.
 
 ---
 
@@ -277,6 +288,42 @@ Email은 `02-domain-policy.md`의 Email 정규화 정책을 적용한 뒤 비교
 
 Password는 평문으로 저장하거나 Logging하지 않습니다.
 
+#### 4.2.1 LOCAL 비밀번호 변경
+
+`LOCAL` AuthAccount의 비밀번호를 변경하려면
+현재 비밀번호 재인증을 반드시 수행합니다.
+
+기본 흐름은 다음과 같습니다.
+
+```text
+인증된 Member
+
+        ↓
+
+현재 Password 입력
+
+        ↓
+
+PasswordEncoder 검증
+
+        ↓
+
+새 Password 정책 검증
+
+        ↓
+
+새 Password Hash 저장
+```
+
+현재 Password 검증에 실패한 경우
+비밀번호 변경 요청을 거부합니다.
+
+새 Password는 `02-domain-policy.md`의 비밀번호 정책을 만족해야 하며,
+평문 Password를 Database 또는 Log에 저장하지 않습니다.
+
+`GOOGLE` AuthAccount만 보유하고 `LOCAL` AuthAccount가 없는 Member에게는
+LOCAL 비밀번호 변경 기능을 제공하지 않습니다.
+
 ---
 
 ### 4.3 Google OAuth
@@ -323,83 +370,296 @@ LOCAL Password 재인증에 성공한 경우에만
 
 ## 5. JWT 및 Token 정책
 
-> 본 절은 System Design 검토 과정에서 최종 확정합니다.
-
 ### 5.1 기본 방향
 
-Backend API 인증은 JWT 기반 Stateless 인증을 기본 방향으로 합니다.
+Backend API 인증은 JWT 기반 인증을 사용합니다.
 
 다음 Token을 구분합니다.
 
 - Access Token
 - Refresh Token
 
-Access Token은 인증이 필요한 API 호출에 사용합니다.
+Access Token은 인증이 필요한 일반 API 호출에 사용합니다.
 
-Refresh Token은 Access Token 재발급에만 사용합니다.
+Refresh Token은 Access Token 재발급을 위한 인증 수단으로만 사용하며,
+일반 Business API 인증에는 사용하지 않습니다.
+
+Access Token 자체는 Server-side Session으로 관리하지 않지만,
+Refresh Token은 Redis에서 Server-side 상태를 관리합니다.
+
+따라서 본 시스템은 Access Token 검증은 Stateless하게 유지하면서
+Refresh Token의 폐기, Rotation 및 만료는 Server에서 통제하는 구조를 사용합니다.
 
 ---
 
 ### 5.2 Access Token
 
-초안 정책:
+Access Token의 만료시간은 **30분**으로 설정합니다.
 
-- 짧은 만료시간 사용
-- 사용자 식별자와 권한 정보를 Claim에 포함
-- Password, Email 등 불필요한 개인정보는 포함하지 않음
-- API 요청 시 Backend에서 Signature와 만료시간 검증
+Access Token에는 인증 및 인가에 필요한 최소한의 정보만 포함합니다.
 
-Access Token의 구체적인 만료시간은 구현 전에 확정합니다.
+예:
+
+- Member 식별자
+- Spring Security 권한
+
+다음과 같은 불필요한 개인정보 및 Credential은 포함하지 않습니다.
+
+- Password
+- Password Hash
+- 불필요한 Email 정보
+- Refresh Token
+
+인증이 필요한 API 요청에서는 다음 Header를 사용합니다.
+
+```text
+Authorization: Bearer <Access Token>
+```
+
+Backend는 Access Token의 다음 항목을 검증합니다.
+
+- Signature
+- 만료시간
+- Token 형식
+- 필요한 인증 Claim
+
+Access Token은 Frontend Memory에서 관리하는 것을 기본으로 하며,
+`localStorage` 또는 장기 Browser Storage에 저장하지 않습니다.
+
+Access Token에 대한 Server-side Blacklist는 사용하지 않습니다.
+
+로그아웃 또는 Refresh Token 폐기 이후에도
+이미 발급된 Access Token은 최대 30분 동안 자체 만료시간까지 유효할 수 있습니다.
+
+Access Token의 짧은 TTL을 통해 해당 위험 범위를 제한합니다.
 
 ---
 
 ### 5.3 Refresh Token
 
-초안 정책:
+Refresh Token의 만료시간은 **7일**로 설정합니다.
 
-Refresh Token은 Access Token보다 긴 만료시간을 사용합니다.
+Refresh Token은 Access Token보다 긴 인증 수명을 제공하지만,
+보안을 고려하여 장기간 유지하지 않습니다.
 
-Refresh Token을 이용해 새로운 Access Token을 발급합니다.
+Refresh Token의 원문은 Server 저장소에 저장하지 않습니다.
 
-Refresh Token 저장 및 Rotation 여부는 본 문서 검토 과정에서 확정합니다.
+Backend는 Refresh Token을 검증할 수 있도록
+Token의 Hash 기반 값을 Redis에 저장합니다.
 
-검토 대상:
+기본 구조는 다음과 같습니다.
 
-- Database 저장
-- Redis 저장
-- Refresh Token Rotation
-- Token Family / 재사용 탐지
+```text
+Client
 
-MVP 복잡도를 고려하여 필요 이상의 Token Infrastructure는 도입하지 않습니다.
+Refresh Token 원문
+        |
+        | HttpOnly Secure Cookie
+        v
+
+Backend
+
+Refresh Token 검증
+        |
+        v
+
+Hash 계산
+        |
+        v
+
+Redis 저장 값과 비교
+```
+
+Redis에는 Refresh Token 원문 대신
+검증에 필요한 Hash 및 최소한의 식별 정보를 저장합니다.
+
+Redis Entry에는 Refresh Token의 유효기간과 동일한
+**7일 TTL**을 적용합니다.
+
+Refresh Token 원문, Hash 또는 관련 Credential을
+Application Log에 출력하지 않습니다.
 
 ---
 
-### 5.4 Frontend Token 저장
+### 5.4 Refresh Token Rotation
 
-Token 저장 방식은 보안을 우선하여 결정합니다.
+Access Token 재발급에 성공할 때마다
+Refresh Token Rotation을 적용합니다.
 
-초안 방향:
+기본 흐름은 다음과 같습니다.
 
-- Access Token: Frontend Memory 기반 관리 우선 검토
-- Refresh Token: HttpOnly / Secure Cookie 우선 검토
+```text
+기존 Refresh Token 수신
 
-`localStorage`에 장기 인증 Token을 저장하는 방식은
-XSS 노출 위험 때문에 기본안으로 사용하지 않습니다.
+        ↓
 
-구체적인 Cookie Attribute 및 CSRF 대응 방식은
-JWT 정책 확정 시 함께 정의합니다.
+Signature / 만료시간 검증
+
+        ↓
+
+Hash 계산
+
+        ↓
+
+Redis 저장 값과 비교
+
+        ↓
+
+기존 Refresh Token 폐기
+
+        ↓
+
+새 Access Token 발급
+
+        ↓
+
+새 Refresh Token 발급
+
+        ↓
+
+새 Hash를 Redis에 저장
+```
+
+새 Refresh Token이 발급되면
+기존 Refresh Token은 더 이상 사용할 수 없습니다.
+
+Rotation 과정은 기존 Token과 새 Token이 동시에
+장기간 유효한 상태가 발생하지 않도록 처리합니다.
+
+Token Family 기반의 고도화된 재사용 탐지는
+MVP 필수 범위에 포함하지 않습니다.
+
+필요성이 확인되면 향후 보안 고도화 항목으로 검토할 수 있습니다.
 
 ---
 
-### 5.5 로그아웃
+### 5.5 Frontend Token 저장
 
-로그아웃 시 Frontend의 인증 상태를 제거합니다.
+Access Token과 Refresh Token의 저장 위치를 분리합니다.
 
-Refresh Token을 Server에서 관리하는 구조를 선택하는 경우
-로그아웃 시 해당 Refresh Token을 사용할 수 없도록 처리합니다.
+Access Token:
 
-Access Token 즉시 폐기 기능이 필요한지는
-Access Token 만료시간과 함께 결정합니다.
+- Frontend Memory에 저장
+- 인증 API 호출 시 `Authorization` Header로 전달
+- `localStorage`에 저장하지 않음
+
+Refresh Token:
+
+- Browser Cookie로 전달
+- JavaScript에서 직접 접근할 수 없도록 `HttpOnly` 적용
+- HTTPS 환경에서만 전송하도록 `Secure` 적용
+- 적절한 `SameSite` 정책 적용
+- 인증 관련 Endpoint 범위로 Cookie `Path`를 제한
+
+Refresh Token을 Frontend JavaScript가 직접 읽거나
+Browser Storage에 복사하여 저장하지 않습니다.
+
+---
+
+### 5.6 CSRF 보호
+
+Refresh Token을 Cookie로 전달하므로
+Refresh Token을 사용하는 Endpoint에는 CSRF 보호를 적용합니다.
+
+주요 보호 대상은 다음과 같습니다.
+
+- Access Token 재발급
+- Logout
+
+CSRF 대응은 **Double Submit Cookie Pattern**을 사용합니다.
+
+CSRF Token은 Refresh Token과 별도의 Cookie로 전달합니다.
+
+Refresh Token Cookie:
+
+```text
+HttpOnly = true
+Secure = true
+SameSite = 적용
+```
+
+CSRF Token Cookie:
+
+```text
+HttpOnly = false
+Secure = true
+SameSite = 적용
+```
+
+Frontend는 CSRF Token Cookie 값을 읽어
+CSRF 보호가 필요한 Request Header에 함께 전달합니다.
+
+예:
+
+```text
+Cookie
+csrf_token=<CSRF Token>
+
+Header
+X-CSRF-TOKEN: <CSRF Token>
+```
+
+Backend는 Cookie의 CSRF Token과
+Request Header의 CSRF Token을 검증한 뒤 요청을 처리합니다.
+
+CSRF Token이 없거나 유효하지 않은 경우
+보호 대상 요청을 거부합니다.
+
+Spring Security의 CSRF 지원 기능을 활용하여 구현하며,
+직접 구현한 임의의 CSRF 검증 로직을 기본 방식으로 사용하지 않습니다.
+
+`SameSite` Cookie 정책은 CSRF 방어의 추가 보호 계층으로 사용하며,
+CSRF Token 검증을 대체하지 않습니다.
+
+Access Token은 Cookie가 아니라 `Authorization` Header로 전달하므로
+일반적인 Access Token 기반 API 요청에는
+Refresh Token Cookie 기반 인증을 사용하지 않습니다.
+
+---
+
+### 5.7 로그아웃
+
+로그아웃 시 다음 작업을 수행합니다.
+
+```text
+Logout 요청
+
+        ↓
+
+CSRF 검증
+
+        ↓
+
+Refresh Token 검증
+
+        ↓
+
+Redis Refresh Token 정보 삭제
+
+        ↓
+
+Refresh Token Cookie 제거
+
+        ↓
+
+CSRF Cookie 정리
+
+        ↓
+
+Frontend Access Token 제거
+```
+
+Redis에서 해당 Refresh Token 정보를 삭제하여
+로그아웃 이후 Refresh Token을 다시 사용할 수 없도록 합니다.
+
+Access Token은 Server-side Blacklist에 등록하지 않습니다.
+
+이미 발급된 Access Token은 자체 만료시간인 최대 30분까지
+기술적으로 유효할 수 있으며,
+Frontend에서는 로그아웃 즉시 Memory의 Access Token을 제거합니다.
+
+Refresh Token이 이미 만료되었거나 Redis에 존재하지 않더라도
+Client의 인증 Cookie 정리는 수행할 수 있도록 설계합니다.
 
 ---
 
@@ -799,7 +1059,6 @@ Instant now = clock.instant();
 - 신규 Reservation 2시간 전
 - Reservation 취소 24시간 전
 - Seat Hold 만료
-- Passenger 연령 Boundary
 - Flight `DEPARTED` 전환
 
 운영 환경에서는 System Clock을 사용하고,
@@ -1045,7 +1304,9 @@ Cache 도입 시 다음 사항을 함께 결정합니다.
 - Cache 대상 Response
 - Invalid / Expiration 정책
 
-Redis는 Cache 필요성이 확인된 이후 도입 여부를 결정합니다.
+Redis는 Refresh Token 관리를 위해 이미 사용하지만,
+외부 Flight API Cache 용도로의 추가 사용은
+Cache 필요성이 확인된 경우에만 적용합니다.
 
 ---
 
@@ -1645,7 +1906,11 @@ MVP 초기 필수 Infrastructure는 다음과 같습니다.
 
 ```text
 MySQL
+Redis
 ```
+
+MySQL은 영속적인 내부 업무 데이터를 저장하고,
+Redis는 Refresh Token의 Server-side 저장 및 TTL 관리를 담당합니다.
 
 Spring Boot Backend와 React Frontend는
 개발 편의를 위해 Local Process로 실행할 수 있습니다.
@@ -1658,14 +1923,15 @@ Spring Boot Backend와 React Frontend는
 
 ```text
 Developer Mac
-
 ├─ React / Vite
 │
 ├─ Spring Boot
 │
 └─ Docker Compose
      |
-     └─ MySQL
+     +-- MySQL
+     |
+     +-- Redis
 ```
 
 Application 전체를 반드시 Container로 실행해야 하는 것은 아닙니다.
@@ -1677,10 +1943,23 @@ Backend와 Frontend는 Local Process 실행을 허용합니다.
 
 ### 19.3 Redis
 
-Redis는 초기 Local 개발환경의
-필수 Container에 포함하지 않습니다.
+Redis는 Refresh Token의 Server-side 상태와 만료를 관리하기 위해
+MVP Local 개발환경의 필수 Infrastructure에 포함합니다.
 
-다음과 같은 기술적 필요성이 확인된 경우에만 추가합니다.
+주요 인증 용도는 다음과 같습니다.
+
+- Refresh Token Hash 저장
+- Refresh Token TTL 관리
+- Refresh Token Rotation 시 기존 Token 폐기
+- Logout 시 Refresh Token 폐기
+
+Refresh Token 원문은 Redis에 저장하지 않습니다.
+
+Cache 및 Distributed Lock은 Redis를 사용하고 있다는 이유만으로
+자동 적용하지 않습니다.
+
+다음과 같은 별도의 기술적 필요성이 확인된 경우에만
+추가 사용을 검토합니다.
 
 - Cache
 - Distributed Lock
@@ -1837,9 +2116,17 @@ Frontend Hosting
      v
 Spring Boot Backend
      |
-     v
-MySQL
+     +------------------+
+     |                  |
+     v                  v
+MySQL                 Redis
 ```
+
+Redis는 Refresh Token의 Server-side 상태 및 TTL 관리를 위해
+운영 환경에서도 Backend가 접근 가능한 Infrastructure로 구성합니다.
+
+구체적인 Redis Hosting 방식과 AWS 서비스 선택은
+M5에서 AWS Architecture를 확정할 때 결정합니다.
 
 구체적인 AWS 서비스 조합은
 구현 상태, 비용 및 운영 복잡도를 검토한 뒤 확정합니다.
@@ -2012,7 +2299,9 @@ Cache 도입 전 다음 사항을 확인합니다.
 - 데이터 최신성 문제가 발생하지 않는지
 - Invalid / Expiration 복잡도가 과도하지 않은지
 
-Redis는 Cache 필요성이 확인된 경우에만 도입합니다.
+Redis는 Refresh Token 관리를 위해 이미 사용하지만,
+일반 Application Cache 용도로의 추가 사용은
+성능 측정을 통해 필요성이 확인된 경우에만 적용합니다.
 
 ---
 
@@ -2360,51 +2649,15 @@ Reviewer는 다음 사항을 확인합니다.
 본 문서의 기본 Architecture는 정의되었지만
 다음 세부 항목은 구현 전에 추가로 확정합니다.
 
-### 26.1 인증 및 Token
-
-- [ ] Access Token 만료시간
-- [ ] Refresh Token 만료시간
-- [ ] Refresh Token 저장 위치
-- [ ] Refresh Token Rotation 여부
-- [ ] Token 재사용 탐지 여부
-- [ ] Access Token Frontend 저장 방식
-- [ ] Refresh Token Cookie 정책
-- [ ] CSRF 대응 방식
-- [ ] 로그아웃 Token 무효화 방식
-
----
-
-### 26.2 날짜 및 시간
-
-확정:
-
-- [x] Flight 절대 시각은 UTC 기준으로 저장
-- [x] Backend 절대 시각 계산은 `Instant` 사용
-- [x] MySQL 절대 시각 Column은 `DATETIME(6)` 사용
-- [x] `DATETIME(6)`에 저장되는 절대 시각은 UTC 기준
-- [x] 날짜만 의미하는 값은 Java `LocalDate` / MySQL `DATE` 사용
-- [x] Airport Time Zone은 IANA `ZoneId` 기준으로 관리
-- [x] Airport Time Zone DB Column은 IANA ID 문자열로 저장
-- [x] JDBC / Hibernate Database Time Zone은 UTC 기준으로 구성
-- [x] 사용자 표시 시각은 Airport 현지시간 기준 24시간제 사용
-- [x] API Date / Time은 ISO-8601 Offset 포함 형식 사용
-- [x] Backend 현재 시각 Source는 주입 가능한 `Clock` 사용
-- [x] Flight `DEPARTED` Scheduled Job은 1분 주기
-- [x] Seat Hold 만료 Scheduled Job은 1분 주기
-- [x] Scheduler와 함께 Business API에서 방어적 시간 검증 수행
-
----
-
-### 26.3 Reservation / Seat
+### 26.1 Reservation / Seat
 
 - [ ] Seat 동시성 제어 최종 구현 방식
-- [x] Hold 만료 처리: 1분 Scheduled Job + Business API 방어적 만료 검증
 - [ ] Reservation Transaction 내부 Persist / Flush 순서
 - [ ] 동시성 실패 시 Error 처리 방식
 
 ---
 
-### 26.4 Passenger 정보 보호
+### 26.2 Passenger 정보 보호
 
 - [ ] 테스트용 여권번호 Database 저장 방식
 - [ ] Encryption 적용 여부
@@ -2413,7 +2666,7 @@ Reviewer는 다음 사항을 확인합니다.
 
 ---
 
-### 26.5 External Flight API
+### 26.3 External Flight API
 
 - [ ] 실제 사용할 External Flight API
 - [ ] Connection Timeout
@@ -2426,7 +2679,7 @@ Reviewer는 다음 사항을 확인합니다.
 
 ---
 
-### 26.6 AI
+### 26.4 AI
 
 - [ ] 사용할 AI Model / Provider
 - [ ] Structured Output 구체 구조
@@ -2437,7 +2690,7 @@ Reviewer는 다음 사항을 확인합니다.
 
 ---
 
-### 26.7 Infrastructure
+### 26.5 Infrastructure
 
 - [ ] AWS 세부 Architecture
 - [ ] Backend 배포 방식

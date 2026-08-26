@@ -399,12 +399,18 @@ Wing 요소를 결합한 간결한 항공 Emblem 형태를 기본 방향으로 �
 | 예약 생성 | X | O | - | - |
 | Mock 결제 | X | O | - | - |
 | 자신의 예약 조회 | X | O | - | - |
+| 비밀번호 변경 | X | O* | - | - |
 | 관리자 Dashboard | X | X | O | O |
 | Master Data 조회 | X | X | O | O |
 | Master Data 변경 | X | X | X | O |
 | Flight 관리 | X | X | O | O |
 | 예약 현황 조회 | X | X | O | O |
 | 개별 Reservation 강제 취소 | X | X | X | O |
+
+`*` 비밀번호 변경은 `LOCAL` AuthAccount를 보유한 Member에게만 제공합니다.
+
+`GOOGLE` AuthAccount만 보유하고 `LOCAL` AuthAccount가 없는 Member에게는
+비밀번호 변경 화면 또는 Action을 제공하지 않습니다.
 
 `Admin`과 `SuperAdmin`의 일반 사용자 서비스 이용 가능 여부는 인증 및 계정 설계에 따라 구현할 수 있으나,
 관리자 업무 화면의 권한 기준은 위 표를 따릅니다.
@@ -1804,7 +1810,56 @@ My Page
 
 ### 18.2 비밀번호 변경
 
-LOCAL AuthAccount를 가진 Member는 비밀번호를 변경할 수 있습니다.
+`LOCAL` AuthAccount를 가진 Member만
+비밀번호 변경 기능을 사용할 수 있습니다.
+
+`GOOGLE` AuthAccount만 보유하고
+`LOCAL` AuthAccount가 없는 Member에게는
+비밀번호 변경 메뉴 또는 Form을 제공하지 않습니다.
+
+비밀번호 변경 화면의 기본 입력 항목은 다음과 같습니다.
+
+- 현재 Password
+- 새 Password
+- 새 Password 확인
+
+기본 UI 예:
+
+```text
+비밀번호 변경
+
+현재 비밀번호
+[                         ]
+
+새 비밀번호
+[                         ]
+
+새 비밀번호 확인
+[                         ]
+
+비밀번호 조건
+
+✓ 8자 이상
+✓ 영문 대문자 최소 1자
+✓ 영문 소문자 최소 1자
+✓ 숫자 최소 1자
+✓ 특수문자 최소 1자
+✓ 허용 특수문자: ! @ # $ % ^ & *
+
+[비밀번호 변경]
+```
+
+비밀번호를 변경하려면
+현재 Password 재인증에 성공해야 합니다.
+
+현재 Password가 일치하지 않는 경우
+비밀번호 변경을 수행하지 않고 사용자에게 오류를 안내합니다.
+
+오류 안내 예:
+
+```text
+현재 비밀번호가 일치하지 않습니다.
+```
 
 새 Password는 회원가입과 동일한 비밀번호 정책을 적용합니다.
 
@@ -1815,10 +1870,23 @@ LOCAL AuthAccount를 가진 Member는 비밀번호를 변경할 수 있습니다
 - 특수문자 최소 1자
 - 허용 특수문자: `! @ # $ % ^ & *`
 
-Frontend에서도 각 조건의 충족 여부를 안내하고 검증합니다.
+Frontend에서도 사용자가 새 Password를 입력하는 동안
+각 조건의 충족 여부를 안내하고 검증합니다.
 
-구체적인 현재 Password 재인증 여부 및 API 흐름은
-`04-system-design.md`와 `05-data-api-design.md`에서 정의합니다.
+새 Password와 새 Password 확인 값이 일치하지 않는 경우
+변경 Action을 완료할 수 없습니다.
+
+비밀번호 변경에 성공하면
+성공 안내를 표시합니다.
+
+예:
+
+```text
+비밀번호가 변경되었습니다.
+```
+
+구체적인 현재 Password 검증 방식과 API Contract는
+`04-system-design.md`와 `05-data-api-design.md`를 따릅니다.
 
 ---
 
@@ -3211,6 +3279,7 @@ Hold 남은 시간
 - [ ] 왕복 결제 / 취소 / Flight 취소 정책이 Domain Policy와 동기화되어 있습니다.
 - [ ] 로그인 및 회원가입 흐름이 정의되어 있습니다.
 - [ ] Google OAuth 및 동일 Email 계정 연동 흐름이 정의되어 있습니다.
+- [ ] LOCAL 비밀번호 변경 및 현재 Password 재인증 UI 흐름이 정의되어 있습니다.
 - [ ] Seat 선택 및 Hold 흐름이 정의되어 있습니다.
 - [ ] Passenger 입력 흐름이 정의되어 있습니다.
 - [ ] Child 및 Infant UI 규칙이 정의되어 있습니다.

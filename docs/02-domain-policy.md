@@ -134,6 +134,7 @@ KOKU Airline 내부 예약 데이터와 외부 실제 항공편 데이터는 명
 - 자신의 예약 조회
 - 자신의 예약 취소
 - 회원 정보 조회
+- `LOCAL` AuthAccount를 보유한 경우 비밀번호 변경
 
 Member는 다른 사용자의 예약 정보를 조회하거나 수정할 수 없습니다.
 
@@ -244,7 +245,29 @@ Email의 원본 대소문자 형태는 별도로 보존하지 않습니다.
 * 비밀번호는 평문으로 저장하지 않습니다.
 * Spring Security `PasswordEncoder`를 사용하여 단방향 Hash 형태로 저장합니다.
 
-비밀번호 정책은 Backend에서 반드시 검증하며, Frontend에서도 동일한 조건을 사용자에게 안내하고 입력 단계에서 검증합니다.
+비밀번호 정책은 Backend에서 반드시 검증하며,
+Frontend에서도 동일한 조건을 사용자에게 안내하고 입력 단계에서 검증합니다.
+
+#### 4.4.1 비밀번호 변경
+
+비밀번호 변경은 `LOCAL` AuthAccount를 보유한
+인증된 Member에게만 제공합니다.
+
+비밀번호를 변경하려면
+현재 비밀번호 재인증에 성공해야 합니다.
+
+현재 비밀번호가 일치하지 않는 경우
+비밀번호 변경을 허용하지 않습니다.
+
+새 비밀번호는 본 절의 비밀번호 정책을
+동일하게 만족해야 합니다.
+
+`GOOGLE` AuthAccount만 보유하고
+`LOCAL` AuthAccount가 존재하지 않는 Member에게는
+LOCAL 비밀번호 변경 기능을 제공하지 않습니다.
+
+구체적인 인증 처리 방식과 API Contract는
+`04-system-design.md`와 `05-data-api-design.md`에서 정의합니다.
 
 ### 4.5 Google OAuth
 

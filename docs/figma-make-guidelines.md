@@ -114,6 +114,7 @@ Responsive 구현 과정에서 중간 Width가 심각하게 깨지지 않도록 
 - 외부 실제 항공편 검색 결과
 - AI 항공편 검색
 - My Page
+- 비밀번호 변경
 - Admin Dashboard
 - Admin / SuperAdmin 관리 화면
 
@@ -382,6 +383,11 @@ Flight를 처음부터 다시 검색해야 하는 흐름을 만들지 않습니�
 - Mock 결제
 - 자신의 Reservation 조회/취소
 - AI 항공편 검색 사용
+- `LOCAL` AuthAccount를 보유한 경우 비밀번호 변경
+
+`GOOGLE` AuthAccount만 보유하고
+`LOCAL` AuthAccount가 없는 Member에게는
+비밀번호 변경 메뉴 또는 Action을 제공하지 않습니다.
 
 ### 9.3 Admin
 
@@ -1474,9 +1480,83 @@ My Page에는 다음 영역을 포함합니다.
 
 ### 24.1 비밀번호 변경
 
-LOCAL AuthAccount를 가진 Member는 비밀번호를 변경할 수 있습니다.
+Figma Make는 비밀번호 변경 UI를
+`LOCAL` AuthAccount를 보유한 Member에게만 제공합니다.
+
+`GOOGLE` AuthAccount만 보유하고
+`LOCAL` AuthAccount가 없는 Member에게는
+비밀번호 변경 메뉴, Form 또는 CTA를 생성하지 않습니다.
+
+비밀번호 변경 화면에는 최소 다음 입력 항목을 포함합니다.
+
+- 현재 비밀번호
+- 새 비밀번호
+- 새 비밀번호 확인
+
+기본 구성 예:
+
+```text
+비밀번호 변경
+
+현재 비밀번호
+[                         ]
+
+새 비밀번호
+[                         ]
+
+새 비밀번호 확인
+[                         ]
+
+비밀번호 조건
+
+✓ 8자 이상
+✓ 영문 대문자 최소 1자
+✓ 영문 소문자 최소 1자
+✓ 숫자 최소 1자
+✓ 특수문자 최소 1자
+✓ 허용 특수문자: ! @ # $ % ^ & *
+
+[비밀번호 변경]
+```
+
+비밀번호 변경에는
+현재 Password 재인증이 반드시 필요합니다.
+
+Figma Make는 현재 Password 입력 없이
+새 Password만 입력하여 즉시 변경하는 UI를 생성하지 않습니다.
+
+현재 Password가 일치하지 않는 경우에는
+변경 실패 상태를 표현합니다.
+
+예:
+
+```text
+현재 비밀번호가 일치하지 않습니다.
+```
 
 새 Password에는 회원가입과 동일한 Password 정책을 적용합니다.
+
+- 8자 이상
+- 영문 대문자 최소 1자
+- 영문 소문자 최소 1자
+- 숫자 최소 1자
+- 특수문자 최소 1자
+- 허용 특수문자: `! @ # $ % ^ & *`
+
+새 Password와 새 Password 확인 값이 일치하지 않는 경우
+변경 Action을 완료할 수 없는 상태를 표현합니다.
+
+비밀번호 변경 성공 시에는
+명확한 성공 Feedback을 제공합니다.
+
+예:
+
+```text
+비밀번호가 변경되었습니다.
+```
+
+구체적인 인증 처리 방식과 API Contract는
+`04-system-design.md`와 `05-data-api-design.md`를 따릅니다.
 
 ### 24.2 Reservation 목록
 
@@ -1664,9 +1744,10 @@ Figma Make는 요청받은 화면 단위로 생성합니다.
 9. 예약 완료
 10. Reservation 상세
 11. My Page
-12. 외부 실제 항공편
-13. AI 항공편 검색
-14. Admin 화면
+12. 비밀번호 변경
+13. 외부 실제 항공편
+14. AI 항공편 검색
+15. Admin 화면
 
 KOKU Flight 검색 결과와 예약 화면을 생성할 때는
 `ONE_WAY`와 `ROUND_TRIP`의 화면 상태를 모두 고려합니다.

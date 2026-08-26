@@ -519,6 +519,71 @@ PasswordEncoder 결과만 저장합니다.
 
 Password Hash는 API Response에 포함하지 않습니다.
 
+LOCAL AuthAccount의 Password를 변경하려면
+현재 Password 재인증을 반드시 수행합니다.
+
+기본 처리:
+
+```text
+현재 Password
+        ↓
+PasswordEncoder 검증
+        ↓
+새 Password 정책 검증
+        ↓
+새 Password Hash 저장
+```
+
+현재 Password 검증에 실패한 경우
+Password를 변경하지 않습니다.
+
+`GOOGLE` AuthAccount만 보유하고
+`LOCAL` AuthAccount가 존재하지 않는 Member에게는
+LOCAL Password 변경 API를 제공하지 않습니다.
+
+---
+
+### 5.5 Refresh Token Server-side 저장
+
+Refresh Token은 MySQL의 영속 Domain Entity로 저장하지 않습니다.
+
+`04-system-design.md`의 Token 정책에 따라
+Refresh Token의 Server-side 상태는 Redis에서 관리합니다.
+
+Refresh Token 원문은 Redis에 저장하지 않습니다.
+
+논리적인 저장 정보는 다음과 같습니다.
+
+```text
+Refresh Token 식별 정보
+Member 식별 정보
+Refresh Token Hash
+TTL
+```
+
+Refresh Token의 원문은
+Client의 HttpOnly / Secure Cookie로만 전달합니다.
+
+Redis에는 Refresh Token 검증에 필요한
+Hash 및 최소한의 식별 정보만 저장합니다.
+
+TTL은 Refresh Token의 유효기간과 동일한
+**7일**을 적용합니다.
+
+```text
+Refresh Token TTL
+→ 7일
+```
+
+Access Token 재발급 시 Refresh Token Rotation을 수행하므로
+기존 Refresh Token의 Redis 저장 정보는 폐기하고
+새 Refresh Token에 대응하는 Hash 정보를 저장합니다.
+
+Logout 시에도 해당 Refresh Token의
+Redis 저장 정보를 삭제합니다.
+
+Refresh Token Hash는 API Response에 포함하지 않습니다.
+
 ---
 
 ## 6. Airport
@@ -2170,34 +2235,167 @@ Request:
 }
 ```
 
-Token Response 구조는
-`04-system-design.md`의 JWT 정책 확정 후 결정합니다.
+처리:
+
+1. Email 정규화
+2. LOCAL AuthAccount 조회
+3. Password 검증
+4. Member 상태 검증
+5. Access Token 발급
+6. Refresh Token 발급
+7. Refresh Token Hash를 Redis에 저장
+8. Refresh Token Cookie 설정
+9. CSRF Token Cookie 설정
+
+Access Token의 유효기간은 **30분**입니다.
+
+Access Token은 Response Body를 통해 전달하고,
+Frontend Memory에서 관리합니다.
+
+Response 예:
+
+```json
+{
+  "accessToken": "<Access Token>",
+  "tokenType": "Bearer",
+  "expiresIn": 1800
+}
+```
+
+Refresh Token은 Response Body에 포함하지 않습니다.
+
+Refresh Token은 다음 속성을 가진 Cookie로 전달합니다.
+
+```text
+HttpOnly = true
+Secure = true
+SameSite = 적용
+Path = 인증 관련 Endpoint 범위
+TTL = 7일
+```
+
+CSRF Token은 Refresh Token과 별도의 Cookie로 전달하며,
+Frontend에서 CSRF 보호 요청 Header를 구성할 수 있도록
+JavaScript에서 읽을 수 있어야 합니다.
+
+Password, Password Hash, Refresh Token Hash는
+Response Body에 포함하지 않습니다.
 
 ---
 
 ### 25.3 Token 재발급
 
-초안 Endpoint:
-
 ```text
 POST /api/v1/auth/refresh
 ```
 
-Request / Cookie 구조는
-Refresh Token 저장 방식이 확정된 이후 정의합니다.
+Refresh Token은 Request Body가 아니라
+HttpOnly / Secure Cookie를 통해 전달합니다.
+
+CSRF 보호를 위해
+CSRF Token을 Request Header에 함께 전달합니다.
+
+예:
+
+```text
+Cookie
+refresh_token=<Refresh Token>
+csrf_token=<CSRF Token>
+
+Header
+X-CSRF-TOKEN: <CSRF Token>
+```
+
+Backend는 다음 순서로 요청을 검증합니다.
+
+```text
+CSRF 검증
+        ↓
+Refresh Token Signature / 만료시간 검증
+        ↓
+Refresh Token Hash 계산
+        ↓
+Redis 저장 정보와 비교
+        ↓
+기존 Refresh Token 폐기
+        ↓
+새 Access Token 발급
+        ↓
+새 Refresh Token 발급
+        ↓
+새 Refresh Token Hash Redis 저장
+```
+
+Access Token 재발급 성공 시
+Refresh Token Rotation을 적용합니다.
+
+기존 Refresh Token은 재사용할 수 없습니다.
+
+새 Access Token은 Response Body로 반환합니다.
+
+Response 예:
+
+```json
+{
+  "accessToken": "<New Access Token>",
+  "tokenType": "Bearer",
+  "expiresIn": 1800
+}
+```
+
+새 Refresh Token은
+새로운 HttpOnly / Secure Cookie로 전달합니다.
+
+Refresh Token 원문 또는 Hash를
+Response Body에 포함하지 않습니다.
 
 ---
 
 ### 25.4 로그아웃
 
-초안:
-
 ```text
 POST /api/v1/auth/logout
 ```
 
-Token 무효화 방식은
-`04-system-design.md` Token 정책과 함께 확정합니다.
+Logout은 Refresh Token Cookie를 사용하는 Endpoint이므로
+CSRF 보호를 적용합니다.
+
+Request에는 다음 정보가 사용됩니다.
+
+```text
+Cookie
+refresh_token=<Refresh Token>
+csrf_token=<CSRF Token>
+
+Header
+X-CSRF-TOKEN: <CSRF Token>
+```
+
+기본 처리:
+
+```text
+CSRF 검증
+        ↓
+Refresh Token 확인
+        ↓
+Redis Refresh Token 정보 삭제
+        ↓
+Refresh Token Cookie 제거
+        ↓
+CSRF Cookie 정리
+```
+
+Access Token은 Server-side Blacklist에 등록하지 않습니다.
+
+Frontend는 Logout 성공 시
+Memory에서 Access Token을 제거합니다.
+
+Refresh Token이 이미 만료되었거나
+Redis에 존재하지 않는 경우에도
+Client의 인증 Cookie 정리는 수행할 수 있어야 합니다.
+
+정상 처리 Response는 Body가 필요하지 않으므로
+`204 No Content` 사용을 기본 방향으로 합니다.
 
 ---
 
@@ -2225,14 +2423,39 @@ GET /api/v1/members/me
 
 LOCAL AuthAccount가 존재하는 Member만 사용할 수 있습니다.
 
-초안:
-
 ```text
 PATCH /api/v1/members/me/password
 ```
 
-현재 Password 재인증을 요구할지는
-인증 정책 검토 후 최종 확정합니다.
+인증된 Member만 요청할 수 있으며,
+Access Token은 `Authorization` Header를 통해 전달합니다.
+
+Request:
+
+```json
+{
+  "currentPassword": "CurrentPassword1!",
+  "newPassword": "NewPassword1!"
+}
+```
+
+처리:
+
+1. 현재 Member의 LOCAL AuthAccount 조회
+2. 현재 Password 재인증
+3. 새 Password 정책 검증
+4. 새 Password Hash 생성
+5. Password Hash 변경
+
+현재 Password 검증에 실패하면
+Password 변경을 거부합니다.
+
+`GOOGLE` AuthAccount만 존재하고
+`LOCAL` AuthAccount가 없는 Member에게는
+해당 API를 허용하지 않습니다.
+
+Password 및 Password Hash는
+Response에 포함하지 않습니다.
 
 ---
 
@@ -3100,14 +3323,19 @@ Reservation Transaction 실패
 
 ### 45.1 API에 노출하지 않는 값
 
-기본적으로 다음 값은 Client에 전달하지 않습니다.
+기본적으로 다음 값은 Client API Response Body에 전달하지 않습니다.
 
 - Password Hash
-- Refresh Token 저장값
+- Refresh Token Hash 등 Server-side 저장 정보
 - OAuth Provider Secret
 - External API Key
 - AI API Key
 - 내부 Security 정보
+
+Refresh Token 원문은
+`04-system-design.md`의 인증 정책에 따라
+HttpOnly / Secure Cookie로만 전달하며
+API Response Body에는 포함하지 않습니다.
 
 ---
 

@@ -91,7 +91,7 @@ AWS Deployment
 
 Project Plan을 기준으로 다음 Milestone을 사용합니다.
 
-#### M1 - 설계 및 초기 환경
+#### M1 - 설계 및 AI 개발환경 구축
 
 주요 목표:
 
@@ -101,30 +101,35 @@ Project Plan을 기준으로 다음 Milestone을 사용합니다.
 - System Design
 - Data & API Design
 - ERD
+- AI Harness 규칙
 - Spring Boot 초기 구성
 - React 초기 구성
-- Docker Compose
+- Docker 기반 Local 개발환경
 - GitHub Actions CI
+- AI Agent 개발 Workflow 검증
 
 ---
 
-#### M2 - 인증 및 기본 Domain
+#### M2 - 기본 기능 구현
 
 주요 목표:
 
+- 일반 회원가입
+- LOCAL 로그인 / 로그아웃
+- Google OAuth 2.0
+- Spring Security 및 JWT 기반 인증/인가
+- Access Token / Refresh Token 인증 흐름
+- Redis 기반 Refresh Token Server-side 관리
+- LOCAL 비밀번호 변경 및 현재 Password 재인증
 - Member
 - AuthAccount
-- LOCAL 로그인
-- Google OAuth
-- Spring Security
-- JWT
 - 권한 관리
-- i18n
-- Master Data 기본 구조
+- Admin / SuperAdmin 기본 Domain 관리
+- i18n 기본 구조
 
 ---
 
-#### M3 - Flight / Reservation / Payment
+#### M3 - 예약 시스템 구현
 
 주요 목표:
 
@@ -135,27 +140,34 @@ Project Plan을 기준으로 다음 Milestone을 사용합니다.
 - Seat
 - Passenger
 - Reservation
-- Mock Payment
 - Reservation Number
 - Seat Hold
-- Reservation 취소
+- KOKU 고정 운임
+- Mock Payment
+- Reservation 취소 및 Mock 환불
 - External Flight API
-- AI Flight Search
 
 ---
 
-#### M4 - 동시성 및 성능
+#### M4 - AI·성능·동시성 고도화
 
 주요 목표:
 
-- Seat 동시성 테스트
+- Seat 동시성 문제 분석
 - Lock 전략 검증
+- 동시성 Test
 - Query 분석
 - Index 검증
 - 성능 Bottleneck 분석
-- 필요 시 Cache 검토
-- 필요 시 Redis 검토
-- 부하 테스트
+- 필요한 영역의 Cache 적용 검토
+- 부하 Test
+- AI Flight Search / Recommendation
+- 핵심 Domain 내부 구조 Refactoring
+
+Redis 자체는 Refresh Token 관리를 위해 M2부터 사용합니다.
+
+Cache 또는 Distributed Lock 용도의 Redis 활용은
+각 문제의 필요성과 검증 결과에 따라 M4에서 별도로 결정합니다.
 
 ---
 
@@ -163,14 +175,19 @@ Project Plan을 기준으로 다음 Milestone을 사용합니다.
 
 주요 목표:
 
-- AWS 배포
+- AWS Infrastructure
+- 운영 환경 배포
 - CD
-- 운영 환경 설정
+- 통합 / E2E Test
 - Secret 관리
-- Monitoring
-- 통합 테스트
-- README 정리
-- Architecture 문서 최종 정리
+- Monitoring / Logging
+- 최종 버그 수정
+- README
+- Architecture 문서 정리
+- 성능 / 동시성 결과 정리
+- Troubleshooting
+- AI Agent / Harness Engineering 정리
+- 한국어 / 일본어 전체 사용자 흐름 검증
 
 ---
 
@@ -230,21 +247,43 @@ docs/04-system-design.md
 
 ```text
 초안 작성 완료
+인증 / Token 및 시간 처리 핵심 정책 확정
 일부 기술 세부사항 미확정
 ```
 
 주요 미확정 항목:
 
-- Access Token 만료시간
-- Refresh Token 만료시간
-- Refresh Token 저장 방식
-- CSRF 대응
 - Seat 동시성 최종 방식
 - External Flight API Provider
-- Cache TTL
+- Cache 적용 범위 및 TTL
 - AWS 세부 Architecture
 
-시간 처리 정책과 Scheduler 기본 주기는 확정되었습니다.
+인증 및 Token 정책은 다음과 같이 확정되었습니다.
+
+```text
+Access Token
+→ TTL 30분
+→ Authorization Bearer Header
+→ Frontend Memory
+
+Refresh Token
+→ TTL 7일
+→ HttpOnly / Secure Cookie
+→ Redis Server-side 관리
+→ 원문 저장 금지
+→ Hash 기반 저장
+→ Rotation 적용
+
+CSRF
+→ Cookie / Header 기반 검증
+→ Refresh / Logout 보호
+
+Logout
+→ Redis Refresh Token 폐기
+→ Access Token Blacklist 미사용
+```
+
+시간 처리 정책과 Scheduler 기본 주기도 확정되었습니다.
 
 ```text
 Flight 절대 시각
@@ -306,22 +345,25 @@ docs/diagrams/erd.md
 
 ```text
 Draft 작성 완료
-05-data-api-design.md 변경사항 동기화 필요
+현재 05-data-api-design.md 기준 주요 Data 구조 동기화 완료
+미확정 Data 설계 결정에 따라 추가 수정 예정
 ```
 
-현재 ERD는 기존 Data Design을 기준으로 작성되어 있으며,
-최신 `05-data-api-design.md`에서 확정된 다음 항목을
-추가로 반영해야 합니다.
+현재 ERD에는 다음 확정 사항이 반영되어 있습니다.
 
 - Date / Time Data Type
 - `deactivated_at`
-- Airport Time Zone Type
+- Airport IANA Time Zone
+- Airport IATA `VARCHAR(3)`
 - `test_passport_expiry_date`
+
+Refresh Token은 Redis에서 관리하므로
+관계형 Database Entity 또는 ERD Table로 추가하지 않습니다.
 
 ERD는 Data Design을 선행하지 않습니다.
 
 `05-data-api-design.md`를 Source of Truth로 사용하며,
-Data Design 변경 후 ERD를 동기화합니다.
+향후 Data Design 변경 시 ERD를 함께 동기화합니다.
 
 ---
 
@@ -462,15 +504,21 @@ M4 동시성 테스트 이후
 
 #### 결정
 
-Redis Cache를 초기 Architecture에 포함하지 않습니다.
+Redis는 Refresh Token의 Server-side 상태 및 TTL 관리를 위해
+MVP 인증 Infrastructure에 포함합니다.
 
-#### 도입 검토 조건
+다만 Redis를 사용하고 있다는 이유만으로
+Application Cache를 선제적으로 적용하지 않습니다.
+
+#### Cache 도입 검토 조건
 
 - External API Rate Limit
 - 반복 호출 비용
 - 높은 Latency
 - 반복 조회 Bottleneck
-- 실제 성능 테스트에서 필요성 확인
+- 실제 성능 Test에서 필요성 확인
+
+Cache는 문제와 효과를 측정할 수 있는 경우에만 적용합니다.
 
 ---
 
@@ -730,29 +778,169 @@ LOCAL Password 재인증
 
 ---
 
-### 5.5 JWT
+### 5.5 JWT 및 Token 정책
 
-현재 기본 방향:
+#### 결정
+
+MVP에서는 Access Token과 Refresh Token을 분리하여 사용합니다.
 
 ```text
 Access Token
-+
+→ 일반 인증 API 호출
+
 Refresh Token
+→ Access Token 재발급
 ```
 
-미확정:
+#### Access Token
 
-- Access Token TTL
-- Refresh Token TTL
-- Refresh Token 저장 위치
-- Rotation
-- Reuse Detection
-- Cookie Attribute
-- CSRF
-- Logout 무효화 방식
+```text
+TTL
+→ 30분
 
-해당 결정은 구현 전에
-`04-system-design.md`를 먼저 수정한 뒤 반영합니다.
+전달
+→ Authorization: Bearer <Access Token>
+
+Frontend 저장
+→ Memory
+
+Server-side Blacklist
+→ 사용하지 않음
+```
+
+Access Token에는 인증과 인가에 필요한
+최소한의 Claim만 포함합니다.
+
+Password, Password Hash, Refresh Token 등
+민감한 Credential은 포함하지 않습니다.
+
+#### Refresh Token
+
+```text
+TTL
+→ 7일
+
+Client 전달
+→ HttpOnly / Secure Cookie
+
+Server-side 저장
+→ Redis
+
+원문 저장
+→ 금지
+
+저장 값
+→ Hash 기반 검증 정보
+```
+
+Refresh Token의 Redis TTL은
+Token 유효기간과 동일한 7일을 적용합니다.
+
+#### Rotation
+
+Access Token 재발급 성공 시
+Refresh Token Rotation을 수행합니다.
+
+```text
+기존 Refresh Token 검증
+        ↓
+기존 Redis 정보 폐기
+        ↓
+새 Access Token 발급
+        ↓
+새 Refresh Token 발급
+        ↓
+새 Refresh Token Hash Redis 저장
+```
+
+기존 Refresh Token은 Rotation 이후 재사용할 수 없습니다.
+
+고도화된 Token Family 기반 Reuse Detection은
+MVP 필수 범위에는 포함하지 않습니다.
+
+#### CSRF
+
+Refresh Token을 Cookie로 전달하므로
+Refresh 및 Logout Endpoint에는 CSRF 보호를 적용합니다.
+
+```text
+CSRF Token Cookie
++
+Request Header
+```
+
+구조를 이용하여 Spring Security 기반 검증을 수행합니다.
+
+`SameSite` Cookie 정책은 추가적인 보호 계층으로 사용하며,
+CSRF Token 검증 자체를 대체하지 않습니다.
+
+#### Logout
+
+```text
+Logout
+→ CSRF 검증
+→ Redis Refresh Token 폐기
+→ Refresh Token Cookie 제거
+→ CSRF Cookie 정리
+→ Frontend Access Token 제거
+```
+
+Access Token Blacklist는 사용하지 않습니다.
+
+#### 결정 이유
+
+Access Token은 짧은 TTL을 사용하여 Stateless 인증의 장점을 유지하고,
+Refresh Token은 Server-side 상태를 관리하여
+장기 인증 Credential의 폐기와 Rotation을 통제하기 위해서입니다.
+
+Refresh Token 원문은 Redis에도 저장하지 않아
+Server 저장소가 노출될 경우의 Token 탈취 위험을 줄입니다.
+
+#### 영향 문서
+
+- `01-project-plan.md`
+- `02-domain-policy.md`
+- `03-ui-design.md`
+- `04-system-design.md`
+- `05-data-api-design.md`
+- `figma-make-guidelines.md`
+
+---
+
+### 5.6 LOCAL 비밀번호 변경
+
+#### 결정
+
+`LOCAL` AuthAccount를 보유한 Member만
+비밀번호를 변경할 수 있습니다.
+
+비밀번호 변경 시 현재 Password 재인증을 필수로 합니다.
+
+```text
+현재 Password 입력
+        ↓
+PasswordEncoder 검증
+        ↓
+새 Password 정책 검증
+        ↓
+새 Password Hash 저장
+```
+
+현재 Password 검증에 실패하면
+비밀번호를 변경하지 않습니다.
+
+`GOOGLE` AuthAccount만 보유하고
+`LOCAL` AuthAccount가 없는 Member에게는
+LOCAL 비밀번호 변경 기능을 제공하지 않습니다.
+
+#### 영향 문서
+
+- `01-project-plan.md`
+- `02-domain-policy.md`
+- `03-ui-design.md`
+- `04-system-design.md`
+- `05-data-api-design.md`
+- `figma-make-guidelines.md`
 
 ---
 
@@ -1487,7 +1675,16 @@ Passenger Data
 
 - [ ] Password 평문 저장 없음
 - [ ] Password Hash API 노출 없음
-- [ ] Token Log 출력 없음
+- [ ] LOCAL 비밀번호 변경 시 현재 Password 재인증
+- [ ] Access Token에 불필요한 개인정보 / Credential 없음
+- [ ] Access Token Frontend 장기 Storage 저장 없음
+- [ ] Refresh Token 원문 Redis 저장 없음
+- [ ] Refresh Token Hash 기반 Server-side 관리
+- [ ] Refresh Token HttpOnly / Secure Cookie 적용
+- [ ] Refresh Token Rotation 정상 동작
+- [ ] Refresh / Logout Endpoint CSRF 검증
+- [ ] Logout 시 Redis Refresh Token 폐기
+- [ ] Token / Token Hash Log 출력 없음
 - [ ] Secret Repository 포함 없음
 - [ ] Test Passport Log 출력 없음
 - [ ] 권한 Backend 검증
@@ -1567,7 +1764,7 @@ Technical Debt를 관리합니다.
 
 | ID | 영역 | 내용 | 우선순위 | 상태 |
 | --- | --- | --- | --- | --- |
-| TD-001 | Auth | JWT 세부 정책 확정 필요 | High | Open |
+| TD-001 | Auth | JWT / Refresh Token / CSRF 세부 정책 확정 | High | Resolved |
 | TD-002 | Time | UTC / Instant / ZoneId / Clock 시간 정책 확정 | High | Resolved |
 | TD-003 | Seat | 동시성 제어 방식 검증 필요 | High | Open |
 | TD-004 | Passenger | Test Passport 보호 방식 확정 필요 | Medium | Open |
@@ -1596,15 +1793,6 @@ Resolved
 미확정 항목을 추적하기 위한 요약입니다.
 
 본 절에서 정책을 직접 확정하지 않습니다.
-
-### Authentication
-
-- [ ] Access Token TTL
-- [ ] Refresh Token TTL
-- [ ] Refresh Token 저장
-- [ ] Rotation
-- [ ] CSRF
-- [ ] Logout 무효화
 
 ### Flight
 

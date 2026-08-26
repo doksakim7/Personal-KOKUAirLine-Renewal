@@ -66,6 +66,7 @@ KOKU Airline은 한국과 일본을 연결하는 가상의 항공사입니다.
 
 - 일반 회원가입 및 로그인
 - Google OAuth 2.0 기반 소셜 로그인
+- 회원 정보 조회 및 `LOCAL` 비밀번호 변경
 - 항공편 검색
 - 탑승객 정보 입력
 - 좌석 조회 및 선택
@@ -115,6 +116,8 @@ MVP에서는 영구적인 업무 데이터로 저장하지 않는 것을 기본 
 - Mock 결제
 - 예약 조회
 - 예약 취소
+- 회원 정보 조회
+- `LOCAL` AuthAccount를 보유한 경우 비밀번호 변경
 - AI 항공편 검색 및 추천
 
 ### 4.3 Admin
@@ -244,6 +247,7 @@ MVP 필수 범위에 포함하지 않습니다.
 - Google OAuth 2.0 기반 소셜 로그인
 - Member와 AuthAccount 분리 관리
 - 회원 정보 조회
+- `LOCAL` AuthAccount 비밀번호 변경
 - 회원 탈퇴
 
 ### 항공편
@@ -369,6 +373,13 @@ Google OAuth 로그인을 처음 이용하는 사용자의 경우 필요한 회�
 Member를 생성할 수 있어야 합니다.
 
 일반 로그인과 Google OAuth 로그인 모두 동일한 Member 및 권한 체계에서 처리되어야 합니다.
+
+`LOCAL` AuthAccount를 보유한 인증된 Member는
+정책에 따라 비밀번호를 변경할 수 있어야 합니다.
+
+비밀번호 변경 시 현재 비밀번호 재인증을 요구하며,
+`GOOGLE` AuthAccount만 보유하고 `LOCAL` AuthAccount가 없는 Member에게는
+LOCAL 비밀번호 변경 기능을 제공하지 않습니다.
 
 Member는 정책에 따라 회원 탈퇴를 수행할 수 있어야 합니다.
 
@@ -566,6 +577,7 @@ MVP에서 Desktop Web 사용성을 우선합니다.
 
 - Docker
 - Docker Compose
+- Redis
 - AWS
 - GitHub Actions
 
@@ -576,12 +588,19 @@ MVP에서 Desktop Web 사용성을 우선합니다.
 
 ### 향후 검토
 
-- Redis
 - Kafka
 - k6 또는 기타 부하 테스트 도구
 
-Redis와 Kafka는 성능, 캐싱, 비동기 이벤트 처리 등 실제 기술적 필요성이 확인되는 경우 도입합니다.
-불필요한 기술 사용을 피하고 도입 전후의 문제와 개선 효과를 측정합니다.
+Redis는 Refresh Token의 Server-side 상태 및 TTL 관리를 위해
+MVP 인증 Infrastructure에 포함합니다.
+
+Cache 또는 Distributed Lock 등 인증 이외의 Redis 활용은
+실제 기술적 필요성과 측정 결과가 확인된 경우에만 추가 적용합니다.
+
+Kafka는 비동기 Event 처리가 실제로 필요한 경우 도입을 검토합니다.
+
+불필요한 기술 사용을 피하고
+기술 도입 전후의 문제와 개선 효과를 측정합니다.
 
 ---
 
@@ -741,9 +760,12 @@ AI Agent가 정의된 설계와 규칙을 기반으로 독립적인 작업을 �
 주요 작업:
 
 - 일반 회원가입
-- 일반 로그인
+- 일반 로그인 / 로그아웃
 - Google OAuth 2.0 소셜 로그인
-- 인증/인가
+- Spring Security 및 JWT 기반 인증/인가
+- Access Token / Refresh Token 인증 흐름 구현
+- Redis 기반 Refresh Token Server-side 관리
+- `LOCAL` 비밀번호 변경 및 현재 비밀번호 재인증
 - Member 및 AuthAccount 관리
 - Admin 공항·노선·항공기/좌석 구성 조회
 - Admin 항공편 및 운항 일정 관리
@@ -819,6 +841,7 @@ AI Agent가 정의된 설계와 규칙을 기반으로 독립적인 작업을 �
 
 - [ ] 일반 회원가입 및 로그인이 정상 동작합니다.
 - [ ] Google OAuth 2.0 소셜 로그인이 정상 동작합니다.
+- [ ] `LOCAL` AuthAccount를 보유한 Member가 현재 비밀번호 재인증 후 비밀번호를 변경할 수 있습니다.
 - [ ] 일반 로그인과 Google OAuth 로그인이 동일한 Member 및 권한 체계로 처리됩니다.
 - [ ] 한국 ↔ 일본 KOKU Airline 항공편을 검색할 수 있습니다.
 - [ ] 편도 / 왕복 항공편을 검색할 수 있습니다.
@@ -945,7 +968,15 @@ AI Agent가 요구사항을 임의로 해석하여 기능을 확대하지 않도
 
 포트폴리오를 위해 기술을 무조건 추가하지 않습니다.
 
-Redis, Kafka 등 확장 기술은 실제 문제 또는 요구사항이 존재할 때 도입합니다.
+Redis는 Refresh Token의 Server-side 상태 및 TTL 관리라는
+명확한 인증 요구사항을 위해 사용합니다.
+
+이미 도입된 Redis를 Cache 또는 Distributed Lock 등
+다른 목적으로 확대 적용하는 것은
+실제 문제 또는 측정 가능한 필요성이 존재할 때만 결정합니다.
+
+Kafka 등 추가 Infrastructure 기술 역시
+실제 문제 또는 요구사항이 존재할 때 도입합니다.
 
 ### 15.9 AI 결과에 대한 Human Ownership
 
