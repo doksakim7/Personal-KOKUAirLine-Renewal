@@ -27,86 +27,90 @@ ERD에서도 Draft 상태로 표현합니다.
 erDiagram
 
     MEMBER {
-        BIGINT id PK
-        VARCHAR email UK
-        VARCHAR role
-        VARCHAR status
-        DATETIME created_at
-        DATETIME updated_at
+    BIGINT id PK
+    VARCHAR email UK
+    VARCHAR role
+    VARCHAR status
+    DATETIME(6) created_at
+    DATETIME(6) updated_at
     }
 
     AUTH_ACCOUNT {
-        BIGINT id PK
-        BIGINT member_id FK
-        VARCHAR provider
-        VARCHAR provider_subject
-        VARCHAR password_hash
-        DATETIME created_at
-        DATETIME updated_at
+    BIGINT id PK
+    BIGINT member_id FK
+    VARCHAR provider
+    VARCHAR provider_subject
+    VARCHAR password_hash
+    DATETIME(6) created_at
+    DATETIME(6) updated_at
     }
 
     AIRPORT {
-        BIGINT id PK
-        VARCHAR iata_code UK
-        VARCHAR country_code
-        VARCHAR timezone
-        BOOLEAN active
-        DATETIME created_at
-        DATETIME updated_at
+    BIGINT id PK
+    VARCHAR(3) iata_code UK
+    VARCHAR country_code
+    VARCHAR(50) timezone
+    BOOLEAN active
+    DATETIME(6) deactivated_at
+    DATETIME(6) created_at
+    DATETIME(6) updated_at
     }
 
     ROUTE {
-        BIGINT id PK
-        BIGINT departure_airport_id FK
-        BIGINT arrival_airport_id FK
-        BOOLEAN active
-        DATETIME created_at
-        DATETIME updated_at
+    BIGINT id PK
+    BIGINT departure_airport_id FK
+    BIGINT arrival_airport_id FK
+    BOOLEAN active
+    DATETIME(6) deactivated_at
+    DATETIME(6) created_at
+    DATETIME(6) updated_at
     }
 
     AIRCRAFT {
-        BIGINT id PK
-        VARCHAR aircraft_code
-        VARCHAR model_name
-        BOOLEAN active
-        DATETIME created_at
-        DATETIME updated_at
+    BIGINT id PK
+    VARCHAR aircraft_code
+    VARCHAR model_name
+    BOOLEAN active
+    DATETIME(6) deactivated_at
+    DATETIME(6) created_at
+    DATETIME(6) updated_at
     }
 
     AIRCRAFT_SEAT {
-        BIGINT id PK
-        BIGINT aircraft_id FK
-        VARCHAR seat_no
-        INT row_no
-        VARCHAR seat_column
-        BOOLEAN active
-        DATETIME created_at
-        DATETIME updated_at
+    BIGINT id PK
+    BIGINT aircraft_id FK
+    VARCHAR seat_no
+    INT row_no
+    VARCHAR seat_column
+    BOOLEAN active
+    DATETIME(6) deactivated_at
+    DATETIME(6) created_at
+    DATETIME(6) updated_at
     }
 
     FLIGHT {
-        BIGINT id PK
-        VARCHAR flight_number
-        BIGINT route_id FK
-        BIGINT aircraft_id FK
-        DATETIME departure_at
-        DATETIME arrival_at
-        VARCHAR status
-        VARCHAR cancellation_reason
-        DATETIME created_at
-        DATETIME updated_at
+    BIGINT id PK
+    VARCHAR flight_number
+    BIGINT route_id FK
+    BIGINT aircraft_id FK
+    DATETIME(6) departure_at
+    DATETIME(6) arrival_at
+    VARCHAR status
+    VARCHAR cancellation_reason
+    DATETIME(6) created_at
+    DATETIME(6) updated_at
     }
 
     SEAT {
-        BIGINT id PK
-        BIGINT flight_id FK
-        VARCHAR seat_no
-        INT row_no
-        VARCHAR seat_column
-        VARCHAR status
-        BIGINT held_reservation_id
-        DATETIME created_at
-        DATETIME updated_at
+    BIGINT id PK
+    BIGINT flight_id FK
+    VARCHAR seat_no
+    INT row_no
+    VARCHAR seat_column
+    VARCHAR status
+    BIGINT held_reservation_id
+    DATETIME(6) created_at
+    DATETIME(6) updated_at
     }
 
     MEMBER ||--o{ AUTH_ACCOUNT : has
@@ -122,78 +126,78 @@ erDiagram
     FLIGHT ||--o{ SEAT : has
 
     RESERVATION {
-        BIGINT id PK
-        VARCHAR reservation_no UK
-        BIGINT member_id FK
-        VARCHAR trip_type
-        VARCHAR status
-        DECIMAL total_amount
-        DATETIME hold_expires_at
-        VARCHAR cancel_reason
-        DATETIME created_at
-        DATETIME updated_at
+    BIGINT id PK
+    VARCHAR reservation_no UK
+    BIGINT member_id FK
+    VARCHAR trip_type
+    VARCHAR status
+    DECIMAL total_amount
+    DATETIME(6) hold_expires_at
+    VARCHAR cancel_reason
+    DATETIME(6) created_at
+    DATETIME(6) updated_at
     }
 
     RESERVATION_FLIGHT {
-        BIGINT id PK
-        BIGINT reservation_id FK
-        BIGINT flight_id FK
-        VARCHAR journey_role
-        INT sequence
-        DATETIME created_at
+    BIGINT id PK
+    BIGINT reservation_id FK
+    BIGINT flight_id FK
+    VARCHAR journey_role
+    INT sequence
+    DATETIME(6) created_at
     }
 
     PASSENGER {
-        BIGINT id PK
-        VARCHAR last_name
-        VARCHAR first_name
-        DATE birth_date
-        VARCHAR gender
-        VARCHAR nationality
-        VARCHAR test_passport_no
-        VARCHAR test_passport_country
-        DATE test_passport_expires_at
-        DATETIME created_at
-        DATETIME updated_at
+    BIGINT id PK
+    VARCHAR last_name
+    VARCHAR first_name
+    DATE birth_date
+    VARCHAR gender
+    VARCHAR nationality
+    VARCHAR test_passport_no
+    VARCHAR test_passport_country
+    DATE test_passport_expiry_date
+    DATETIME(6) created_at
+    DATETIME(6) updated_at
     }
 
     RESERVATION_PASSENGER {
-        BIGINT id PK
-        BIGINT reservation_id FK
-        BIGINT passenger_id FK
-        INT sequence
-        DATETIME created_at
+    BIGINT id PK
+    BIGINT reservation_id FK
+    BIGINT passenger_id FK
+    INT sequence
+    DATETIME(6) created_at
     }
 
     PASSENGER_FLIGHT {
-        BIGINT id PK
-        BIGINT reservation_id FK
-        BIGINT passenger_id FK
-        BIGINT flight_id FK
-        BIGINT seat_id FK
-        BIGINT companion_passenger_id FK
-        DATETIME created_at
+    BIGINT id PK
+    BIGINT reservation_id FK
+    BIGINT passenger_id FK
+    BIGINT flight_id FK
+    BIGINT seat_id FK
+    BIGINT companion_passenger_id FK
+    DATETIME(6) created_at
     }
 
     PAYMENT {
-        BIGINT id PK
-        BIGINT reservation_id FK
-        INT attempt_no
-        VARCHAR status
-        DECIMAL amount
-        VARCHAR idempotency_key
-        DATETIME created_at
-        DATETIME updated_at
+    BIGINT id PK
+    BIGINT reservation_id FK
+    INT attempt_no
+    VARCHAR status
+    DECIMAL amount
+    VARCHAR idempotency_key
+    DATETIME(6) created_at
+    DATETIME(6) updated_at
     }
 
     AUDIT_LOG {
-        BIGINT id PK
-        BIGINT actor_member_id FK
-        VARCHAR action_type
-        VARCHAR target_type
-        BIGINT target_id
-        VARCHAR reason
-        DATETIME created_at
+    BIGINT id PK
+    BIGINT actor_member_id FK
+    VARCHAR action_type
+    VARCHAR target_type
+    BIGINT target_id
+    VARCHAR reason
+    DATETIME(6) created_at
     }
 
     RESERVATION ||--|{ RESERVATION_FLIGHT : contains
@@ -214,6 +218,31 @@ erDiagram
 
     MEMBER ||--o{ AUDIT_LOG : performs
 ```
+
+---
+
+### 2.1 Date / Time 표기 원칙
+
+ERD의 Date / Time Type은
+`05-data-api-design.md`의 확정 정책을 따릅니다.
+
+```text
+절대 시각
+→ Java Instant
+→ MySQL DATETIME(6)
+→ UTC
+
+날짜
+→ Java LocalDate
+→ MySQL DATE
+
+Airport Time Zone
+→ IANA Zone ID
+→ VARCHAR(50)
+```
+
+`DATETIME(6)` 자체에는 Time Zone 정보가 포함되지 않으며,
+Application / JDBC / Hibernate의 시간 해석 기준을 UTC로 통일합니다.
 
 ---
 
@@ -684,11 +713,8 @@ Data Model 확정 후 추가합니다.
 다음 사항은 현재 Draft ERD에서
 최종 확정하지 않습니다.
 
-### Flight / Time
+### Flight / Aircraft
 
-- [ ] `departure_at` 실제 Database Type
-- [ ] `arrival_at` 실제 Database Type
-- [ ] Time Zone 저장 방식
 - [ ] Flight Number Composite Unique Constraint
 - [ ] Aircraft Schedule Conflict 기준
 - [ ] Turnaround Time

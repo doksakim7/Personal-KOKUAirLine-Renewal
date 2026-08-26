@@ -625,15 +625,39 @@ Hold 종료 시각은 Reservation에 포함된
 
 ### 9.3 Hold 만료 처리 방식
 
-초안에서는 다음 두 방식을 검토합니다.
+MVP에서는 다음 두 방식을 함께 사용합니다.
 
-1. API 접근 시 Lazy Expiration 검증
+1. Business API 진입 시 방어적인 Hold 만료 검증
 2. 주기적인 Scheduled Job
 
-MVP에서는 Scheduled Job을 이용한 만료 처리와
-Business API 진입 시점의 방어적 만료 검증을 함께 사용하는 방안을 우선 검토합니다.
+Seat Hold 만료 Scheduled Job은
+기본적으로 1분 주기로 실행합니다.
 
-구체적인 Scheduler 주기는 구현 단계에서 결정합니다.
+```text
+1분 주기 Scheduled Job
+        |
+        v
+만료된 PENDING Reservation 조회
+        |
+        v
+Reservation
+PENDING → CANCELLED
+
+Seat
+HELD → AVAILABLE
+
+현재 PENDING Payment가 존재하는 경우
+PENDING → CANCELLED
+```
+
+Scheduled Job 실행이 일시적으로 지연되더라도
+Business API 진입 시 Backend `Clock`을 기준으로
+Hold 만료 여부를 다시 검증합니다.
+
+따라서 Scheduler 실행 여부만으로
+Reservation 또는 Payment 가능 여부를 판단하지 않습니다.
+
+기존 `FAILED` Payment는 변경하지 않습니다.
 
 ---
 
@@ -641,51 +665,184 @@ Business API 진입 시점의 방어적 만료 검증을 함께 사용하는 방
 
 ### 10.1 기본 원칙
 
-시간 관련 Business Rule은 Backend 기준으로 판단합니다.
+시간 관련 Business Rule은 Backend 시간을 기준으로 판단합니다.
 
-예:
+Frontend Device 시간은
+Business Rule 판정 기준으로 사용하지 않습니다.
+
+현재 시각과 비교하는 대표 Business Rule:
 
 - 신규 Reservation 2시간 제한
 - Seat Hold 만료
 - Member 예약 취소 24시간 제한
-- Flight 출발 여부
-- Passenger 연령 판단
+- Flight `DEPARTED` 여부
 
-Frontend Device 시간은 Business Rule 판정 기준으로 사용하지 않습니다.
+Flight의 날짜 또는 시간대 의미가 필요한 Business Rule은
+해당 Flight의 출발 Airport Local Date / Time을 기준으로 판단합니다.
+
+대표 대상:
+
+- 운임 시간대
+- 운임 요일
+- Passenger 탑승일 기준 연령
+- ROUND_TRIP Date Rule
+- Flight 출발일
 
 ---
 
 ### 10.2 Time Zone
 
-Flight Date / Time은 Time Zone을 고려할 수 있는 구조로 설계합니다.
+각 Airport는 IANA Time Zone ID를 가집니다.
+
+MVP 기준:
+
+```text
+한국 Airport
+→ Asia/Seoul
+
+일본 Airport
+→ Asia/Tokyo
+```
 
 한국과 일본은 현재 모두 UTC+9이지만,
-시스템 구조를 특정 국가의 Time Zone에 종속시키지 않습니다.
+시스템의 시간 처리를 고정 Offset `+09:00`에 종속시키지 않습니다.
 
-Flight의 출발 / 도착 시간은 각 Airport의 Local Time 의미를 유지합니다.
+Flight의 절대 시각은 UTC 기준으로 저장합니다.
 
-Database 저장 방식은 `05-data-api-design.md`에서 확정합니다.
+Backend에서는 Flight의 절대 시각 계산과 비교에
+`Instant`를 기본으로 사용합니다.
+
+```text
+Database UTC Time
+        |
+        v
+Instant
+        |
+        + Airport ZoneId
+        |
+        v
+Airport Local Date / Time
+```
+
+Flight의 출발 / 도착 시각을 사용자에게 표시할 때는
+각 Airport의 `ZoneId`를 사용하여 현지시각으로 변환합니다.
+
+Frontend에서는 현지시각을
+24시간제 `00:00 ~ 23:59` 형식으로 표시합니다.
+
+API Date / Time은
+Offset을 포함한 ISO-8601 형식을 사용합니다.
+
+예:
+
+```text
+2026-09-10T09:30:00+09:00
+```
+
+Database의 절대 시각 Column은
+MySQL `DATETIME(6)`을 사용하고 UTC 기준 값을 저장합니다.
+
+```text
+Java
+Instant
+
+↓
+
+MySQL
+DATETIME(6)
+
+↓
+
+저장 기준
+UTC
+```
+
+`DATETIME(6)` 자체에는 Time Zone 정보가 포함되지 않으므로
+Application과 Database 사이의 시간 해석 기준을 UTC로 통일합니다.
+
+JDBC / Hibernate의 Database Time Zone도
+UTC 기준으로 구성합니다.
+
+날짜 자체만 의미하는 값은
+절대 시각과 구분하여 `LocalDate` / MySQL `DATE`를 사용합니다.
+
+구체적인 Entity별 Column Type은
+`05-data-api-design.md`를 기준으로 합니다.
 
 ---
 
-### 10.3 Backend 기준 시간
+### 10.3 Backend Clock
 
-Backend에서는 `Clock` 등 주입 가능한 시간 Source 사용을 검토합니다.
+Backend의 현재 시각 Source는
+주입 가능한 `Clock`을 사용합니다.
 
-Business Logic에서 다음과 같이 직접 호출하는 방식은 최소화합니다.
+Business Logic에서 직접 다음 호출을 사용하는 방식은
+기본 구현으로 사용하지 않습니다.
 
 ```text
 LocalDateTime.now()
 Instant.now()
 ```
 
-시간 Source를 추상화하면 다음 테스트가 쉬워집니다.
+대신 Application에서 관리하는 `Clock`을 통해
+현재 시각을 획득합니다.
 
-- 예약 2시간 전 Boundary
-- 24시간 취소 Boundary
+예:
+
+```java
+Instant now = clock.instant();
+```
+
+이를 통해 다음 Boundary를
+고정된 시간 기준으로 테스트할 수 있습니다.
+
+- 신규 Reservation 2시간 전
+- Reservation 취소 24시간 전
 - Seat Hold 만료
-- 연령 Boundary
-- Flight DEPARTED 전환
+- Passenger 연령 Boundary
+- Flight `DEPARTED` 전환
+
+운영 환경에서는 System Clock을 사용하고,
+Test에서는 Fixed Clock을 주입할 수 있도록 구성합니다.
+
+---
+
+### 10.4 시간 변환 원칙
+
+절대 시각 비교와 Airport Local Time 기반 판단을 구분합니다.
+
+절대 시각 비교:
+
+```text
+Instant ↔ Instant
+```
+
+대표 대상:
+
+- 현재 시각과 Flight 출발시각 비교
+- Hold 만료 여부
+- 취소 가능 시간
+- Flight DEPARTED 여부
+
+Airport Local Time 판단:
+
+```text
+Instant
++
+Airport ZoneId
+→
+Local Date / Time
+```
+
+대표 대상:
+
+- 운임 시간대
+- 운임 요일
+- Passenger 연령 기준 탑승일
+- ROUND_TRIP 날짜 비교
+
+Local Date / Time을
+시스템 전체의 절대 시각 저장값으로 사용하지 않습니다.
 
 ---
 
@@ -699,23 +856,41 @@ KOKU Airline은 실제 운항 시스템과 연결되지 않으므로
 MVP에서는 출발 예정 시각이 지난 `SCHEDULED` Flight를
 `DEPARTED` 상태로 처리합니다.
 
-기본 처리 방향은 다음과 같습니다.
+Flight `DEPARTED` 전환 Scheduled Job은
+기본적으로 1분 주기로 실행합니다.
 
-- Scheduled Job을 통해 출발 예정 시각이 지난 Flight를 주기적으로 확인합니다.
-- `SCHEDULED` 상태이며 출발 예정 시각이 지난 Flight를 `DEPARTED`로 변경합니다.
-- Business API에서도 현재 Backend 시간과 Flight 출발 예정 시각을 직접 검증합니다.
+```text
+1분 주기 Scheduled Job
+        |
+        v
+SCHEDULED Flight 조회
+        |
+        v
+Backend Clock과 departure_at 비교
+        |
+        v
+departure_at <= 현재 시각
+        |
+        v
+SCHEDULED → DEPARTED
+```
+
+시간 비교는 UTC 기준 `Instant`로 수행합니다.
 
 Scheduled Job 실행이 지연되더라도
-예약 생성이나 취소 가능 여부가 잘못 판단되지 않아야 합니다.
+Business API에서도 Backend `Clock`과
+Flight 출발 예정시각을 직접 비교합니다.
 
-따라서 다음과 같은 Business Rule은
-Flight 상태 값만 의존하지 않고 현재 Backend 시간도 함께 확인합니다.
+따라서 다음 Business Rule은
+Flight의 저장된 상태 값만으로 판단하지 않습니다.
 
 - 신규 Reservation 가능 여부
 - Member Reservation 취소 가능 여부
 - SuperAdmin 강제 취소 가능 여부
 
-구체적인 Scheduler 실행 주기는 구현 단계에서 확정합니다.
+Scheduler는 상태를 주기적으로 동기화하기 위한 수단이며,
+시간 기반 Business Rule의 최종 판단은
+Backend 현재 시각을 함께 사용합니다.
 
 ---
 
@@ -2201,17 +2376,29 @@ Reviewer는 다음 사항을 확인합니다.
 
 ### 26.2 날짜 및 시간
 
-- [ ] Database Date / Time 저장 기준
-- [ ] Backend `Clock` 적용 방식
-- [ ] Flight `DEPARTED` Scheduled Job 실행 주기
-- [ ] Seat Hold 만료 Scheduler 실행 주기
+확정:
+
+- [x] Flight 절대 시각은 UTC 기준으로 저장
+- [x] Backend 절대 시각 계산은 `Instant` 사용
+- [x] MySQL 절대 시각 Column은 `DATETIME(6)` 사용
+- [x] `DATETIME(6)`에 저장되는 절대 시각은 UTC 기준
+- [x] 날짜만 의미하는 값은 Java `LocalDate` / MySQL `DATE` 사용
+- [x] Airport Time Zone은 IANA `ZoneId` 기준으로 관리
+- [x] Airport Time Zone DB Column은 IANA ID 문자열로 저장
+- [x] JDBC / Hibernate Database Time Zone은 UTC 기준으로 구성
+- [x] 사용자 표시 시각은 Airport 현지시간 기준 24시간제 사용
+- [x] API Date / Time은 ISO-8601 Offset 포함 형식 사용
+- [x] Backend 현재 시각 Source는 주입 가능한 `Clock` 사용
+- [x] Flight `DEPARTED` Scheduled Job은 1분 주기
+- [x] Seat Hold 만료 Scheduled Job은 1분 주기
+- [x] Scheduler와 함께 Business API에서 방어적 시간 검증 수행
 
 ---
 
 ### 26.3 Reservation / Seat
 
 - [ ] Seat 동시성 제어 최종 구현 방식
-- [ ] Hold 만료 처리 세부 방식
+- [x] Hold 만료 처리: 1분 Scheduled Job + Business API 방어적 만료 검증
 - [ ] Reservation Transaction 내부 Persist / Flush 순서
 - [ ] 동시성 실패 시 Error 처리 방식
 

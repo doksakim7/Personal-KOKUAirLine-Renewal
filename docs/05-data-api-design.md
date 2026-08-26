@@ -170,21 +170,81 @@ KOKU-20260821-A7F3K9
 
 ---
 
-### 3.2 생성 / 수정 시각
+### 3.2 공통 Date / Time Column
 
-필요한 Entity는 다음 Audit Timestamp를 가질 수 있습니다.
+절대 시각을 나타내는 Timestamp는
+Backend에서 Java `Instant`를 사용합니다.
 
-- `created_at`
-- `updated_at`
+MySQL에서는 `DATETIME(6)`을 사용하고
+UTC 기준 값을 저장합니다.
+
+기본 Mapping:
+
+```text
+Java Instant
+→ MySQL DATETIME(6)
+→ UTC
+```
+
+필요한 Entity는 다음 Audit Timestamp를 가집니다.
+
+```text
+created_at
+→ Instant
+→ DATETIME(6)
+→ UTC
+
+updated_at
+→ Instant
+→ DATETIME(6)
+→ UTC
+```
 
 삭제 대신 비활성화 정책을 사용하는 Master Data는
-필요한 경우 다음 값도 가질 수 있습니다.
+다음 값을 사용합니다.
 
-- `active`
-- `deactivated_at`
+```text
+active
+→ BOOLEAN
 
-구체적인 공통 BaseEntity 구조는
-Backend 구현 시 확정합니다.
+deactivated_at
+→ Instant
+→ DATETIME(6)
+→ UTC
+→ 활성 상태에서는 NULL
+```
+
+본 프로젝트에서는 범용 `deleted_at` 기반 Soft Delete를 사용하지 않습니다.
+
+Master Data는:
+
+```text
+active
++
+deactivated_at
+```
+
+으로 비활성화 상태와 시각을 관리합니다.
+
+Member, Reservation, Payment 등
+명시적인 Lifecycle 상태를 가지는 Domain은
+범용 `deleted_at` 대신 각 Domain의 상태 값을 사용합니다.
+
+날짜 자체만 의미하는 값은
+절대 시각과 구분합니다.
+
+```text
+Java LocalDate
+→ MySQL DATE
+```
+
+대표 대상:
+
+- Passenger `birth_date`
+- Test Passport 만료일
+
+JDBC / Hibernate의 Database Time Zone은
+UTC 기준으로 구성합니다.
 
 ---
 
@@ -218,18 +278,66 @@ Ordinal 저장은 기본안으로 사용하지 않습니다.
 
 ### 3.4 Soft Delete / 비활성화
 
-Domain Policy상 물리적 삭제를 사용하지 않는 Master Data는
-`active` 등 명시적인 활성 상태를 관리합니다.
+본 프로젝트에서는 모든 Entity에 공통 `deleted_at`을 두는
+범용 Soft Delete 구조를 사용하지 않습니다.
+
+Domain의 Lifecycle에 따라
+비활성화 또는 상태 전이를 명시적으로 사용합니다.
+
+Master Data는 다음 구조를 사용합니다.
+
+```text
+active
++
+deactivated_at
+```
 
 대상:
 
 - `Airport`
 - `Route`
 - `Aircraft`
-- Aircraft Seat 구성
+- `AircraftSeat`
+
+Master Data 비활성화 시:
+
+```text
+active
+true → false
+
+deactivated_at
+NULL → 비활성화 시점
+```
+
+`deactivated_at`은:
+
+```text
+Java Instant
+→ MySQL DATETIME(6)
+→ UTC
+```
+
+기준으로 저장합니다.
+
+다시 활성화 기능을 구현하는 경우
+`active = true`로 변경하고
+`deactivated_at = NULL`로 복원하는 것을 기본 원칙으로 합니다.
+
+Member는 물리적으로 삭제하지 않고:
+
+```text
+Member.status
+ACTIVE → WITHDRAWN
+```
+
+상태 전이를 사용합니다.
+
+Reservation, Payment, Flight 등
+명시적인 상태 Lifecycle을 가지는 Domain 역시
+범용 `deleted_at` 대신 각 Domain의 상태 Enum을 사용합니다.
 
 과거 Reservation 또는 Flight와 연결된 Data는
-참조 무결성을 위해 임의로 삭제하지 않습니다.
+참조 무결성과 이력 보존을 위해 임의로 물리 삭제하지 않습니다.
 
 ---
 
@@ -449,9 +557,27 @@ iata_code
 country_code
 timezone
 active
+deactivated_at
 created_at
 updated_at
 ```
+
+`timezone`은 IANA Time Zone ID 문자열을 저장합니다.
+
+```text
+Java Business Logic
+→ ZoneId
+
+Database
+→ VARCHAR(50)
+
+예:
+Asia/Seoul
+Asia/Tokyo
+```
+
+Database에 UTC Offset `+09:00` 자체를
+Airport Time Zone 식별자로 저장하지 않습니다.
 
 ---
 
@@ -475,22 +601,51 @@ UNIQUE(airport.iata_code)
 
 IATA Code는 대문자 영문 3자리 형식을 사용합니다.
 
+Database Column은 다음 형식을 사용합니다.
+
+```text
+iata_code
+→ VARCHAR(3)
+```
+
+IATA Code는 정확히 영문 대문자 3자리이므로
+가변적인 길이를 허용하지 않습니다.
+
 ---
 
 ### 6.4 Time Zone
 
-Airport는 향후 Time Zone 처리 확장을 위해
-Time Zone 정보를 표현할 수 있어야 합니다.
+각 Airport는 IANA Time Zone ID를 저장합니다.
+
+MVP 지원 Airport의 Time Zone:
+
+```text
+한국 Airport
+→ Asia/Seoul
+
+일본 Airport
+→ Asia/Tokyo
+```
+
+한국과 일본은 현재 모두 UTC+9이지만,
+시스템의 시간 처리를 고정 Offset `+09:00`에 의존하지 않습니다.
+
+Flight의 출발 / 도착 시각을 사용자에게 표시하거나
+Local Date / Time 기준 Business Rule을 판단할 때는
+해당 Airport의 `timezone`을 사용합니다.
 
 예:
 
 ```text
-Asia/Seoul
-Asia/Tokyo
+ICN
+→ Asia/Seoul
+
+NRT
+→ Asia/Tokyo
 ```
 
-실제 Date / Time Database 저장 방식은
-`04-system-design.md`의 미확정 시간 정책과 함께 최종 결정합니다.
+Database의 시간값은 UTC 기준으로 저장하고,
+Airport의 `timezone`을 이용하여 Local Date / Time으로 변환합니다.
 
 ---
 
@@ -514,6 +669,7 @@ id
 departure_airport_id
 arrival_airport_id
 active
+deactivated_at
 created_at
 updated_at
 ```
@@ -577,6 +733,7 @@ id
 aircraft_code
 model_name
 active
+deactivated_at
 created_at
 updated_at
 ```
@@ -612,6 +769,7 @@ seat_no
 row_no
 seat_column
 active
+deactivated_at
 created_at
 updated_at
 ```
@@ -727,18 +885,91 @@ KO205
 
 동일한 운항 기준에서 중복되지 않도록 보호합니다.
 
-정확한 Unique Constraint는
-Date / Time 저장 기준을 확정한 후 최종 결정합니다.
+정확한 Composite Unique Constraint는
+Flight Number의 운항일 중복 판정 기준을 확정한 후
+본 문서에서 별도로 정의합니다.
 
 ---
 
 ### 10.4 Flight Date / Time
 
-`departure_at`, `arrival_at`은
-Time Zone을 고려할 수 있는 방식으로 저장합니다.
+Flight의 절대 시각은 UTC 기준으로 저장합니다.
 
-구체적인 Java Type 및 Database Type은
-`04-system-design.md` 시간 정책 확정 후 최종 결정합니다.
+Backend에서는 시간 계산과 비교를 위해
+Java `Instant`를 사용합니다.
+
+Database에서는 MySQL `DATETIME(6)`을 사용합니다.
+
+```text
+departure_at
+→ Java Instant
+→ MySQL DATETIME(6)
+→ UTC
+
+arrival_at
+→ Java Instant
+→ MySQL DATETIME(6)
+→ UTC
+```
+
+`DATETIME(6)` 자체에는 Time Zone 정보가 저장되지 않으므로
+Application / JDBC / Hibernate의 Database Time Zone을
+UTC 기준으로 통일합니다.
+
+Airport는 별도로 IANA Time Zone ID를 가집니다.
+
+예:
+
+```text
+ICN
+→ Asia/Seoul
+
+NRT
+→ Asia/Tokyo
+```
+
+Flight의 Local Date / Time이 필요한 경우:
+
+```text
+Instant
++
+Airport ZoneId
+→
+Local Date / Time
+```
+
+방식으로 계산합니다.
+
+사용자에게 전달하는 API Date / Time은
+Offset을 포함한 ISO-8601 형식을 사용합니다.
+
+예:
+
+```text
+2026-09-10T09:30:00+09:00
+```
+
+Frontend에서는 한국 / 일본 Airport의 현지시각을
+24시간제 `00:00 ~ 23:59` 형식으로 표시합니다.
+
+시간대에 따른 Business Rule은
+해당 Flight의 출발 Airport Local Date / Time을 기준으로 판단합니다.
+
+예:
+
+- 운임 시간대
+- 운임 요일
+- Passenger 탑승일 기준 연령
+- ROUND_TRIP Date Rule
+- Flight 출발일
+
+단, 다음과 같은 현재 시각과의 비교는
+Backend `Clock`을 기준으로 수행합니다.
+
+- 신규 Reservation 2시간 제한
+- Seat Hold 만료
+- Reservation 취소 24시간 제한
+- Flight `DEPARTED` 여부
 
 항상 다음 조건을 만족해야 합니다.
 
@@ -999,15 +1230,19 @@ Payment 상태를 통해 환불 이력을 표현합니다.
 `PENDING` Reservation은
 Seat Hold 만료시각을 가져야 합니다.
 
-초안:
-
 ```text
 hold_expires_at
+→ Java Instant
+→ MySQL DATETIME(6)
+→ UTC
 ```
 
 Hold 만료시각은
 Domain Policy에 따라 최대 1시간이며,
 Reservation에 포함된 가장 빠른 Flight 출발 예정시각을 초과할 수 없습니다.
+
+Hold 만료 여부는
+Backend `Clock`의 현재 `Instant`와 비교하여 판단합니다.
 
 ---
 
@@ -1136,10 +1371,26 @@ gender
 nationality
 test_passport_no
 test_passport_country
-test_passport_expires_at
+test_passport_expiry_date
 created_at
 updated_at
 ```
+
+날짜 Column Type:
+
+```text
+birth_date
+→ Java LocalDate
+→ MySQL DATE
+
+test_passport_expiry_date
+→ Java LocalDate
+→ MySQL DATE
+```
+
+Passenger의 생년월일과 Test Passport 만료일은
+특정 순간의 절대 시각이 아니라 날짜 자체를 의미하므로
+`Instant` 또는 `DATETIME(6)`을 사용하지 않습니다.
 
 ---
 
@@ -2927,17 +3178,7 @@ Schema 변경 이력을 Repository에서 관리합니다.
 다음 사항은
 `04-system-design.md` 또는 실제 구현 검토 후 확정합니다.
 
-### 47.1 시간
-
-- [ ] `departure_at` Database Type
-- [ ] `arrival_at` Database Type
-- [ ] UTC 저장 여부
-- [ ] Offset / Zone 저장 방식
-- [ ] `hold_expires_at` Type
-
----
-
-### 47.2 Flight / Aircraft
+### 47.1 Flight / Aircraft
 
 - [ ] 동일 Aircraft 운항 충돌의 정확한 시간 구간 기준
 - [ ] Turnaround Time 적용 여부
@@ -2945,7 +3186,7 @@ Schema 변경 이력을 Repository에서 관리합니다.
 
 ---
 
-### 47.3 Seat
+### 47.2 Seat
 
 - [ ] Aircraft Seat 통로 표현 방식
 - [ ] Flight Seat 생성 시점
@@ -2954,7 +3195,7 @@ Schema 변경 이력을 Repository에서 관리합니다.
 
 ---
 
-### 47.4 Passenger
+### 47.3 Passenger
 
 - [ ] Gender Enum 상세 값
 - [ ] Nationality 저장 규칙
@@ -2964,7 +3205,7 @@ Schema 변경 이력을 Repository에서 관리합니다.
 
 ---
 
-### 47.5 Reservation
+### 47.4 Reservation
 
 - [ ] Reservation Number Collision 재시도 횟수
 - [ ] `ReservationFlight` 실제 Entity 여부
@@ -2974,7 +3215,7 @@ Schema 변경 이력을 Repository에서 관리합니다.
 
 ---
 
-### 47.6 Payment
+### 47.5 Payment
 
 - [ ] Idempotency Header 최종 이름
 - [ ] 동일 Key + 다른 Body 요청 처리
@@ -2982,7 +3223,7 @@ Schema 변경 이력을 Repository에서 관리합니다.
 
 ---
 
-### 47.7 API
+### 47.6 API
 
 - [ ] `/api/v1` Version Prefix 최종 적용 여부
 - [ ] 공통 Success Response Wrapper 여부
@@ -2992,7 +3233,7 @@ Schema 변경 이력을 Repository에서 관리합니다.
 
 ---
 
-### 47.8 External / AI
+### 47.7 External / AI
 
 - [ ] 실제 External Flight API Provider
 - [ ] External Flight DTO 최종 Field

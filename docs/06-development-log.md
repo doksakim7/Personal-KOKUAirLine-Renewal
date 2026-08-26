@@ -239,12 +239,32 @@ docs/04-system-design.md
 - Refresh Token 만료시간
 - Refresh Token 저장 방식
 - CSRF 대응
-- 시간 저장 기준
 - Seat 동시성 최종 방식
-- Scheduler 주기
 - External Flight API Provider
 - Cache TTL
 - AWS 세부 Architecture
+
+시간 처리 정책과 Scheduler 기본 주기는 확정되었습니다.
+
+```text
+Flight 절대 시각
+→ UTC
+
+Backend 절대 시각
+→ Instant
+
+Airport Time Zone
+→ IANA ZoneId
+
+Backend 현재 시각
+→ Clock
+
+Flight DEPARTED Scheduler
+→ 1분
+
+Seat Hold 만료 Scheduler
+→ 1분
+```
 
 ---
 
@@ -264,7 +284,6 @@ Entity 관계 및 API 기본 구조 정의
 
 주요 미확정 항목:
 
-- Date / Time 실제 Database Type
 - Flight Number Composite Unique
 - Aircraft Schedule Conflict 기준
 - Seat Lock 방식
@@ -287,13 +306,22 @@ docs/diagrams/erd.md
 
 ```text
 Draft 작성 완료
-05-data-api-design.md 기준 시각화
+05-data-api-design.md 변경사항 동기화 필요
 ```
+
+현재 ERD는 기존 Data Design을 기준으로 작성되어 있으며,
+최신 `05-data-api-design.md`에서 확정된 다음 항목을
+추가로 반영해야 합니다.
+
+- Date / Time Data Type
+- `deactivated_at`
+- Airport Time Zone Type
+- `test_passport_expiry_date`
 
 ERD는 Data Design을 선행하지 않습니다.
 
-`05-data-api-design.md` 변경 후
-ERD를 함께 수정합니다.
+`05-data-api-design.md`를 Source of Truth로 사용하며,
+Data Design 변경 후 ERD를 동기화합니다.
 
 ---
 
@@ -458,6 +486,170 @@ Kafka를 MVP 기본 Architecture에 포함하지 않습니다.
 Business Requirement가 존재하지 않기 때문입니다.
 
 실제 비동기 Event 분리가 필요해진 경우에만 검토합니다.
+
+---
+
+### 4.8 시간 처리 정책 확정
+
+#### 결정
+
+Flight와 Reservation에서 사용하는 절대 시각은
+UTC 기준으로 저장합니다.
+
+Backend의 절대 시각 계산 및 비교는
+Java `Instant`를 기본으로 사용합니다.
+
+각 Airport는 IANA Time Zone ID를 가집니다.
+
+MVP 기준:
+
+```text
+한국 Airport
+→ Asia/Seoul
+
+일본 Airport
+→ Asia/Tokyo
+```
+
+Backend의 현재 시각은
+주입 가능한 `Clock`을 사용합니다.
+
+#### 시간 사용 구분
+
+절대 시각 비교:
+
+```text
+Instant ↔ Instant
+```
+
+대표 대상:
+
+- 신규 Reservation 2시간 제한
+- Seat Hold 만료
+- Reservation 취소 24시간 제한
+- Flight `DEPARTED` 여부
+
+Airport Local Date / Time 판단:
+
+```text
+Instant
++
+Airport ZoneId
+→
+Local Date / Time
+```
+
+대표 대상:
+
+- 운임 시간대
+- 운임 요일
+- Passenger 탑승일 기준 연령
+- ROUND_TRIP Date Rule
+- Flight 출발일
+
+#### API / Frontend
+
+API Date / Time은
+Offset을 포함한 ISO-8601 형식을 사용합니다.
+
+예:
+
+```text
+2026-09-10T09:30:00+09:00
+```
+
+Frontend에서는 Airport 현지시각을
+24시간제 `00:00 ~ 23:59` 형식으로 표시합니다.
+
+#### Scheduler
+
+다음 Scheduled Job은
+MVP에서 기본 1분 주기로 실행합니다.
+
+```text
+Seat Hold 만료
+→ 1분
+
+Flight DEPARTED 전환
+→ 1분
+```
+
+Scheduled Job 실행 여부만으로
+시간 기반 Business Rule을 판단하지 않습니다.
+
+Business API 진입 시에도
+Backend `Clock`을 기준으로 방어적 검증을 수행합니다.
+
+#### 결정 이유
+
+한국과 일본은 현재 모두 UTC+9이지만
+시스템을 고정 Offset에 종속시키지 않고,
+시간 계산과 Time Zone 표현을 명확하게 분리하기 위해서입니다.
+
+또한 `Clock`을 주입하여
+시간 Boundary Test를 안정적으로 수행할 수 있도록 합니다.
+
+#### 영향 문서
+
+- `04-system-design.md`
+- `05-data-api-design.md`
+- `docs/diagrams/erd.md`
+
+#### Database Type
+
+시간 관련 Database Type도 함께 확정합니다.
+
+Application과 Database 사이의 시간 해석 기준도
+UTC로 통일하며,
+JDBC / Hibernate의 Database Time Zone을 UTC 기준으로 구성합니다.
+
+```text
+절대 시각
+Java Instant
+→ MySQL DATETIME(6)
+→ UTC
+
+날짜
+Java LocalDate
+→ MySQL DATE
+
+Airport Time Zone
+IANA Zone ID
+→ MySQL VARCHAR(50)
+```
+
+대표 Mapping:
+
+```text
+departure_at
+arrival_at
+hold_expires_at
+created_at
+updated_at
+deactivated_at
+
+→ Instant
+→ DATETIME(6)
+→ UTC
+
+birth_date
+test_passport_expiry_date
+
+→ LocalDate
+→ DATE
+```
+
+범용 `deleted_at`은 사용하지 않습니다.
+
+Master Data 비활성화는:
+
+```text
+active
++
+deactivated_at
+```
+
+구조를 사용합니다.
 
 ---
 
@@ -633,10 +825,27 @@ Commit
 1시간
 ```
 
-Backend 시간이 최종 기준입니다.
+Hold 만료 판단은 Backend `Clock`이 최종 기준입니다.
+
+`hold_expires_at`은
+UTC 기준 절대 시각으로 저장합니다.
+
+Seat Hold 만료 Scheduled Job은
+1분 주기로 실행합니다.
+
+또한 Business API 진입 시에도
+방어적으로 Hold 만료 여부를 검증합니다.
+
+```text
+Scheduled Job
+1분 주기
++
+Business API 방어 검증
+```
 
 Frontend Countdown은
-사용자 안내 목적으로만 사용합니다.
+사용자 안내 목적으로만 사용하며
+Business Rule의 최종 판단 기준으로 사용하지 않습니다.
 
 ---
 
@@ -1359,12 +1568,13 @@ Technical Debt를 관리합니다.
 | ID | 영역 | 내용 | 우선순위 | 상태 |
 | --- | --- | --- | --- | --- |
 | TD-001 | Auth | JWT 세부 정책 확정 필요 | High | Open |
-| TD-002 | Time | Database Time 저장 기준 확정 필요 | High | Open |
+| TD-002 | Time | UTC / Instant / ZoneId / Clock 시간 정책 확정 | High | Resolved |
 | TD-003 | Seat | 동시성 제어 방식 검증 필요 | High | Open |
 | TD-004 | Passenger | Test Passport 보호 방식 확정 필요 | Medium | Open |
 | TD-005 | External | Flight API Provider 확정 필요 | High | Open |
 | TD-006 | AI | Structured Output Contract 확정 필요 | Medium | Open |
 | TD-007 | Infra | AWS 세부 Architecture 확정 필요 | Medium | Open |
+| TD-008 | Time | MySQL Date / Time Column Type 확정 | Low | Resolved |
 
 Technical Debt가 해결되면
 관련 설계 문서를 수정한 뒤 상태를 변경합니다.
@@ -1395,14 +1605,6 @@ Resolved
 - [ ] Rotation
 - [ ] CSRF
 - [ ] Logout 무효화
-
-### Time
-
-- [ ] Database Time Type
-- [ ] UTC / Zone 저장 기준
-- [ ] Backend Clock 적용
-- [ ] DEPARTED Scheduler
-- [ ] Hold Scheduler
 
 ### Flight
 
