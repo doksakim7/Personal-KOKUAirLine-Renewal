@@ -277,7 +277,7 @@ MVP 필수 범위에 포함하지 않습니다.
 - Passenger별 선택 Seat의 SeatClass를 운임에 반영
 - 동일 Reservation에서도 Passenger마다 서로 다른 SeatClass 선택 가능
 - `ROUND_TRIP`에서는 동일 Passenger가 출국 / 귀국 Flight에서 서로 다른 SeatClass 선택 가능
-- 예약 시작 성공 시 선택한 모든 좌석을 1시간 임시 점유(Hold)
+- 예약 시작 성공 시 선택한 모든 좌석을 최대 1시간이며, Reservation에 포함된 가장 이른 Flight 출발 시각을 넘지 않도록 임시 점유(Hold)
 - Hold 만료 시 Reservation 취소 및 HELD Seat 자동 반환
 
 ### 예약
@@ -834,7 +834,7 @@ AI Agent가 정의된 설계와 규칙을 기반으로 독립적인 작업을 �
 - Mock 결제
 - 실제 항공편 API 연동
 - 예약 및 결제 통합 테스트
-- 좌석 1시간 Hold 및 만료 처리
+- 좌석 최대 1시간 Hold 및 가장 이른 Flight 출발 시각을 고려한 만료 처리
 - Mock 결제 최대 3회 시도 및 실패 처리
 - 예약 취소 및 Mock 전액 환불
 - Reservation 번호 생성 및 중복 방지
@@ -904,7 +904,7 @@ AI Agent가 정의된 설계와 규칙을 기반으로 독립적인 작업을 �
 - [ ] Admin은 항공편 및 운항 일정을 관리할 수 있습니다.
 - [ ] Admin과 SuperAdmin은 정책에 따라 Flight별 Seat의 운영상 판매 가능 / 불가 상태를 관리할 수 있습니다.
 - [ ] SuperAdmin은 핵심 Master Data를 관리할 수 있습니다.
-- [ ] 선택된 좌석은 1시간 동안 Hold되고 만료 시 정상 반환됩니다.
+- [ ] 선택된 좌석은 최대 1시간이며 가장 이른 Flight 출발 시각을 넘지 않도록 Hold되고, 만료 시 정상 반환됩니다.
 - [ ] 하나의 예약에 대해 Mock 결제는 최대 3회까지만 시도할 수 있습니다.
 - [ ] 결제 3회 실패 시 예약 취소 및 좌석 반환이 정상 처리됩니다.
 - [ ] 편도 및 왕복 Reservation의 취소 가능 조건이 Domain Policy에 따라 정상 적용되며,

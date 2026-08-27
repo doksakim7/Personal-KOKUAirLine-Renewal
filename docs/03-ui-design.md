@@ -1357,7 +1357,8 @@ Frontend는 SeatClass 배율을 이용하여
 
 ### 13.3 Reservation 시작
 
-MVP에서 Seat Hold 시간은 1시간입니다.
+MVP에서 Seat Hold 시간은 최대 1시간이며,
+Reservation에 포함된 Flight 중 가장 이른 출발 시각을 넘지 않습니다.
 
 사용자가 Seat가 필요한 모든 Passenger의 좌석 선택을 완료한 후 예약을 시작하면
 Backend에서 다음 처리를 수행합니다.

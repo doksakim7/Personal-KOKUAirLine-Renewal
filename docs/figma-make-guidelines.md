@@ -833,7 +833,9 @@ Frontend가 자체적으로 최종 금액을 계산하거나 확정하는 UI를 
 
 ### 11.3 Hold 규칙
 
-* Seat Hold 시간은 `1시간`입니다.
+* Seat Hold 시간은 최대 `1시간`입니다.
+* 실제 Hold 만료 시각은 `PENDING` Reservation 생성 시 Backend가 결정합니다.
+* Hold 만료 시각은 Reservation에 포함된 Flight 중 가장 이른 출발 시각을 넘지 않습니다.
 * Hold Countdown UI를 표시합니다.
 * Countdown은 사용자 안내용입니다.
 * 실제 Hold 만료 여부는 Backend 시간을 기준으로 판단합니다.
