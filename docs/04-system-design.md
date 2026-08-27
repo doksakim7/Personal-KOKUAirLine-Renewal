@@ -76,7 +76,9 @@ Backend는 다음 책임을 가집니다.
 
 - 인증 및 인가
 - Domain Policy 검증
-- KOKU Airline Flight 관리
+- KOKU Airline Flight 및 운항 일정 관리
+- 운항 일정 기반 미래 Flight 자동 생성
+- Aircraft 운항 충돌 및 Turnaround 검증
 - 운임 계산
 - Passenger Validation
 - Seat 상태 관리
@@ -1105,9 +1107,320 @@ Local Date / Time을
 
 ---
 
-## 11. Flight 상태 처리
+## 11. Flight / Aircraft 운항 처리
 
-### 11.1 `DEPARTED` 전환
+### 11.1 Flight Number 중복 기준
+
+같은 Flight Number는 서로 다른 운항일에 반복 사용할 수 있습니다.
+
+예:
+
+```text
+2026-09-01 KO101
+2026-09-02 KO101
+2026-09-03 KO101
+```
+
+Flight Number의 중복 여부는
+해당 Flight의 출발 Airport 현지 Date를 기준으로 판단합니다.
+
+논리적인 Unique 기준은 다음과 같습니다.
+
+```text
+flight_number
++
+departure Airport Local Date
+```
+
+출발 Airport Local Date는
+`departure_at`을 해당 Airport의 `ZoneId`로 변환하여 계산합니다.
+
+```text
+departure_at
+    |
+    v
+Instant
+    |
+    + Airport ZoneId
+    |
+    v
+departureLocalDate
+```
+
+Application에서는 Flight 생성 전에 중복을 검증하고,
+Database 수준의 구체적인 Unique 보호 방식은
+`05-data-api-design.md`에서 정의합니다.
+
+성수기 임시 증편은
+기존 Flight와 같은 Flight Number를 중복 사용하지 않고
+별도의 Flight Number를 사용합니다.
+
+---
+
+### 11.2 Aircraft 운항 충돌
+
+동일 Aircraft는 동시에 둘 이상의 Flight에 배정할 수 없습니다.
+
+MVP에서는 Flight 간 최소 Turnaround Time을
+고정 `60분`으로 사용합니다.
+
+동일 Aircraft의 연속 Flight는 다음 조건을 만족해야 합니다.
+
+```text
+previousFlight.arrival_at
++
+60 minutes
+<=
+nextFlight.departure_at
+```
+
+시간 비교는 UTC 기준 `Instant`로 수행합니다.
+
+예:
+
+```text
+Flight A arrival_at
+→ 10:00
+
+Turnaround
+→ 60분
+
+Flight B departure_at
+→ 11:00 이후 가능
+```
+
+Aircraft 충돌 검증 대상은 다음과 같습니다.
+
+- 운항 일정 기반 Flight 자동 생성
+- Admin 또는 SuperAdmin의 Flight 수동 생성
+- Aircraft 변경
+- departure_at 변경
+- arrival_at 변경
+
+`CANCELLED` Flight는
+향후 Aircraft Schedule Conflict 계산에서 제외합니다.
+
+구체적인 조회 Query, Index 및 Database 구조는
+`05-data-api-design.md`에서 정의합니다.
+
+공항별 또는 Aircraft별 가변 Turnaround Time은
+MVP 범위에 포함하지 않습니다.
+
+---
+
+### 11.3 운항 일정 기반 Flight 자동 생성
+
+KOKU Airline의 정규 Flight는
+반복 운항 일정의 정보를 기준으로 실제 `Flight` Row를 생성합니다.
+
+기본 구조는 다음과 같습니다.
+
+```text
+운항 일정
+- Flight Number
+- Route
+- 운항 요일
+- 출발 / 도착 Local Time
+- 기본 Aircraft
+- 활성 여부
+
+        |
+        v
+
+Flight Generation Service
+
+        |
+        v
+
+실제 Flight
+```
+
+운항 일정 자체는 반복 규칙이고,
+사용자 검색 및 Reservation의 대상은
+자동 생성된 실제 `Flight`입니다.
+
+구체적인 운항 일정 Entity 및 Database 구조는
+`05-data-api-design.md`에서 정의합니다.
+
+#### 11.3.1 자동 생성 범위
+
+MVP에서는 현재 시점을 기준으로
+미래 Flight가 항상 세 번째 다음 Calendar Month의 마지막 날까지
+존재하도록 유지합니다.
+
+예:
+
+```text
+현재 Date
+→ 2026-08-26
+
+보장할 마지막 운항 Date
+→ 2026-11-30
+```
+
+다음 달에 진입하면 범위를 앞으로 이동합니다.
+
+```text
+2026-09 진입
+
+→ 2026-12-31까지 Flight 확보
+```
+
+따라서 본 문서에서 말하는 `3개월`은
+단순히 현재 시각부터 `90일`을 계산하는 방식이 아니라,
+
+```text
+현재 Month
++
+세 번째 다음 Calendar Month의 말일
+```
+
+까지 Flight를 확보하는 Rolling Window를 의미합니다.
+
+Flight 생성 대상 Date는
+각 운항 일정의 출발 Airport Local Date를 기준으로 판단합니다.
+
+---
+
+#### 11.3.2 Scheduler
+
+Flight 자동 생성 Scheduled Job은
+MVP에서 `하루 1회` 실행합니다.
+
+정확한 실행 시각은 운영 Configuration으로 관리하며
+Business Rule로 고정하지 않습니다.
+
+기본 처리 흐름은 다음과 같습니다.
+
+```text
+Daily Scheduler
+        |
+        v
+활성 운항 일정 조회
+        |
+        v
+각 운항 일정의 생성 필요 범위 계산
+        |
+        v
+기존 Flight 존재 여부 확인
+        |
+        +-- 존재
+        |      ↓
+        |    Skip
+        |
+        +-- 없음
+               ↓
+       Aircraft Conflict 검증
+               ↓
+          Flight 생성
+```
+
+Scheduler 실행이 서버 중단 등으로 누락되더라도
+다음 실행에서 전체 필요한 범위를 다시 확인합니다.
+
+따라서 자동 생성은 특정 날짜의 Scheduler가
+정상 실행되었다는 사실에 의존하지 않고,
+누락된 Flight를 보정할 수 있는 구조로 구현합니다.
+
+---
+
+#### 11.3.3 중복 생성 방지
+
+Flight 자동 생성은 Idempotent하게 동작해야 합니다.
+
+이미 동일 운항일의 Flight가 존재하면
+동일한 Flight를 다시 생성하지 않습니다.
+
+기존 Flight가 다음 상태여도
+이미 생성된 Flight로 취급합니다.
+
+```text
+SCHEDULED
+CANCELLED
+DEPARTED
+```
+
+특히 Admin 또는 SuperAdmin이
+운영상 Flight를 `CANCELLED` 처리한 경우에도
+Scheduler가 동일 Flight를 다시 생성하지 않습니다.
+
+Flight 존재 여부 판단은
+11.1 Flight Number 중복 기준과
+`05-data-api-design.md`의 Data Constraint를 따릅니다.
+
+---
+
+### 11.4 운항 일정 변경과 수동 Flight 수정
+
+운항 일정은
+앞으로 생성될 Flight의 Template으로 사용합니다.
+
+운항 일정이 수정되더라도
+이미 생성된 기존 Flight를 자동 수정하지 않습니다.
+
+```text
+운항 일정 수정
+        |
+        +-- 이미 생성된 Flight
+        |      → 변경하지 않음
+        |
+        +-- 이후 새로 생성되는 Flight
+               → 변경된 일정 적용
+```
+
+이는 기존 Flight에 Reservation이 연결되어 있거나
+운영자가 별도의 조정을 수행했을 가능성이 있기 때문입니다.
+
+이미 생성된 Flight를 변경해야 하는 경우
+Admin 또는 SuperAdmin이 별도의 Flight 수정 기능을 사용합니다.
+
+관리자가 기존 Flight에 직접 적용한 변경은
+자동 생성 규칙보다 우선합니다.
+
+```text
+Admin 수동 Flight 변경
+>
+운항 일정 Template
+>
+자동 생성 Scheduler
+```
+
+따라서 Scheduler는 이미 존재하는 Flight의 다음 정보를
+운항 일정 값으로 다시 덮어쓰지 않습니다.
+
+- Flight Number
+- Route
+- departure_at
+- arrival_at
+- Aircraft
+- Flight Status
+
+자동 생성되는 Flight에는
+운항 일정에 지정된 기본 Aircraft를 배정합니다.
+
+Admin 또는 SuperAdmin은 출발 전 `SCHEDULED` Flight의
+Aircraft를 변경할 수 있습니다.
+
+Aircraft를 변경하는 경우에도
+11.2의 `60분 Turnaround Time`을 포함한
+Aircraft Schedule Conflict 검증을 반드시 수행합니다.
+
+Reservation이 존재하는 Flight의 핵심 정보 수정 제한은
+`02-domain-policy.md`의 Flight 수정 정책을 따릅니다.
+
+성수기 임시 증편은
+Admin 또는 SuperAdmin이 별도의 Flight Number로 수동 생성할 수 있습니다.
+
+비성수기 또는 운영상 필요가 없는 Flight는
+물리 삭제보다 `CANCELLED` 상태 전환을 우선합니다.
+
+물리 삭제 허용 여부와 Reservation 존재 여부 검증의
+구체적인 Data/API 규칙은
+`05-data-api-design.md`에서 정의합니다.
+
+---
+
+### 11.5 `DEPARTED` 전환
 
 KOKU Airline은 실제 운항 시스템과 연결되지 않으므로
 실제 항공기의 출발 Event를 전달받지 않습니다.
@@ -2431,10 +2744,22 @@ Log에서 확인할 수 있어야 합니다.
 
 - Seat Hold 만료 처리
 - Flight `DEPARTED` 상태 전환
+- 운항 일정 기반 Flight 자동 생성
 
-Scheduler 실패가 발생해도
-Business API에서 방어적 검증을 수행하여
-잘못된 상태 변경을 최소화합니다.
+Scheduler 실행 결과에서는 가능한 경우 다음 정보를 확인할 수 있어야 합니다.
+
+- 실행 성공 / 실패
+- 처리한 운항 일정 수
+- 신규 생성 Flight 수
+- 이미 존재하여 Skip한 Flight 수
+- Aircraft Conflict 등으로 생성하지 못한 Flight 수
+
+Scheduler 실패가 발생한 경우에도
+Flight 자동 생성 Job은 다음 실행 시 필요한 전체 범위를 다시 확인하여
+누락된 Flight를 보정할 수 있어야 합니다.
+
+Seat Hold 및 `DEPARTED` 관련 시간 기반 Business Rule은
+기존 정책에 따라 Business API에서도 방어적으로 검증합니다.
 
 ---
 
@@ -2729,6 +3054,19 @@ MVP System Design이 완료된 것으로 판단합니다.
 - [ ] Seat Hold 만료 Transaction이 정의되어 있습니다.
 - [ ] Seat 동시성 처리 방향이 정의되어 있습니다.
 - [ ] 동시성 테스트 방향이 정의되어 있습니다.
+
+### Flight / Aircraft
+
+- [ ] Flight Number의 운항일 중복 기준이 정의되어 있습니다.
+- [ ] 출발 Airport Local Date 계산 기준이 정의되어 있습니다.
+- [ ] Aircraft Schedule Conflict 검증 방식이 정의되어 있습니다.
+- [ ] MVP Turnaround Time 60분 정책이 정의되어 있습니다.
+- [ ] 운항 일정 기반 Flight 자동 생성 구조가 정의되어 있습니다.
+- [ ] Flight 자동 생성 Rolling Window가 정의되어 있습니다.
+- [ ] Flight 자동 생성 Scheduler와 누락 보정 방식이 정의되어 있습니다.
+- [ ] CANCELLED Flight 재생성 방지 원칙이 정의되어 있습니다.
+- [ ] 운항 일정 변경이 기존 Flight를 덮어쓰지 않는 원칙이 정의되어 있습니다.
+- [ ] Admin 수동 Flight 수정이 자동 생성보다 우선하는 원칙이 정의되어 있습니다.
 
 ### Time
 

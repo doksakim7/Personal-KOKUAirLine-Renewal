@@ -404,6 +404,7 @@ Wing 요소를 결합한 간결한 항공 Emblem 형태를 기본 방향으로 �
 | Master Data 조회 | X | X | O | O |
 | Master Data 변경 | X | X | X | O |
 | Flight 관리 | X | X | O | O |
+| 운항 일정 관리 | X | X | O | O |
 | 예약 현황 조회 | X | X | O | O |
 | 개별 Reservation 강제 취소 | X | X | X | O |
 
@@ -2357,6 +2358,7 @@ PENDING/CONFIRMED Reservation 존재 → [수정] 숨김 또는 비활성화
 ```
 
 ---
+
 ### 25.2 Flight 취소
 
 아래의 기본 Flight 취소 흐름은 편도 Reservation을 기준으로 합니다.
@@ -2485,6 +2487,62 @@ MVP에서는 왕복 Reservation에서도
 
 UI에서는 Flight 취소가 왕복 여정 전체에 미치는 영향을
 Confirmation UI에서 명확하게 안내합니다.
+
+---
+
+### 25.3 운항 일정 관리
+
+Admin과 SuperAdmin은
+정규 Flight 자동 생성에 사용하는 운항 일정을 관리할 수 있습니다.
+
+운항 일정 관리 화면에서는 최소 다음 정보를 제공합니다.
+
+- Flight Number
+- Route
+- 운항 요일
+- 출발 Local Time
+- 도착 Local Time
+- 기본 Aircraft
+- 활성 상태
+
+주요 Action:
+
+- 운항 일정 목록 조회
+- 운항 일정 상세 조회
+- 운항 일정 생성
+- 운항 일정 수정
+- 운항 일정 활성 / 비활성 상태 관리
+
+운항 일정 생성 또는 수정 시:
+
+- 활성 Route만 선택할 수 있습니다.
+- 활성 Aircraft만 기본 Aircraft로 선택할 수 있습니다.
+- 하나 이상의 운항 요일을 선택해야 합니다.
+
+운항 일정 수정은
+이미 생성된 기존 Flight를 자동 변경하지 않습니다.
+
+```text
+기존 생성 Flight
+→ 변경 없음
+
+향후 생성 Flight
+→ 변경된 운항 일정 적용
+```
+
+따라서 UI에서도 운항 일정 수정 시 다음 안내를 제공합니다.
+
+```text
+운항 일정 변경사항은
+이미 생성된 항공편에는 적용되지 않으며,
+앞으로 새로 생성되는 항공편부터 적용됩니다.
+```
+
+운항 일정을 비활성화하더라도
+이미 생성된 Flight를 자동 취소하거나 삭제하지 않습니다.
+
+기존 Flight의 운항을 중단해야 하는 경우
+별도의 Flight 취소 기능을 사용합니다.
 
 ---
 

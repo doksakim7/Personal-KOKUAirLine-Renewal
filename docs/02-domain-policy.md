@@ -680,12 +680,38 @@ KOKU Airline의 편명은 다음 형식을 사용합니다.
 
 숫자 영역은 MVP 기준 `100 ~ 999` 범위를 사용합니다.
 
-편명은 KOKU Airline의 운항편을 식별하기 위한 번호이며,
-같은 편명이 서로 다른 운항일에 반복해서 사용될 수 있습니다.
+편명은 반복 운항을 나타낼 수 있으므로
+같은 편명을 서로 다른 운항일에 반복해서 사용할 수 있습니다.
 
-동일한 날짜 및 운항 기준에서 동일한 편명이 중복되지 않도록 관리합니다.
+예:
 
-편명 번호 생성 및 중복 검증의 구체적인 구현 방식은 데이터 및 시스템 설계에서 정의합니다.
+```text
+2026-09-01 KO101
+2026-09-02 KO101
+2026-09-03 KO101
+```
+
+동일한 편명의 중복 여부는
+해당 Flight의 출발 Airport 현지 Date를 기준으로 판단합니다.
+
+다음 조합은 하나의 Flight만 존재할 수 있습니다.
+
+```text
+flight_number
++
+departure Airport Local Date
+```
+
+즉, 같은 출발 Airport 현지 Date에
+동일한 편명을 둘 이상의 Flight에 사용할 수 없습니다.
+
+성수기 등 운영상 임시 증편이 필요한 경우에는
+기존 Flight와 동일한 편명을 중복 사용하지 않고
+별도의 편명을 사용합니다.
+
+구체적인 Database Unique Constraint와
+Local Date 계산 방식은
+`04-system-design.md`와 `05-data-api-design.md`에서 정의합니다.
 
 ### 9.3 운항 시간
 
@@ -695,11 +721,203 @@ KOKU Airline의 편명은 다음 형식을 사용합니다.
 
 ### 9.4 항공기 배정
 
-하나의 운항 일정에는 하나의 항공기가 배정됩니다.
+각 Flight에는 하나의 Aircraft를 배정합니다.
 
-같은 시간대에 동일 항공기를 복수의 운항 일정에 배정하지 않도록 검증이 필요합니다.
+자동 생성되는 Flight에는
+해당 운항 일정에서 지정한 기본 Aircraft를 배정합니다.
 
-세부 충돌 판단 규칙은 추후 정의합니다.
+Admin 또는 SuperAdmin은 운영상 필요한 경우
+출발 전 `SCHEDULED` Flight의 Aircraft를 변경할 수 있습니다.
+
+단, Aircraft를 배정하거나 변경할 때는
+동일 Aircraft의 다른 Flight와 운항 일정이 충돌하지 않아야 합니다.
+
+비활성화된 Aircraft는
+새로운 Flight 또는 운항 일정에 배정할 수 없습니다.
+
+Reservation이 존재하는 Flight의 Aircraft 변경은
+9.5.1 Flight 수정 제한 정책을 따릅니다.
+
+구체적인 Aircraft 충돌 검증 방식은
+9.4.1 Aircraft 운항 충돌 정책을 따릅니다.
+
+#### 9.4.1 Aircraft 운항 충돌
+
+동일 Aircraft는 동시에 둘 이상의 Flight를 운항할 수 없습니다.
+
+또한 하나의 Flight가 도착한 직후
+즉시 다음 Flight에 투입하지 않습니다.
+
+MVP에서는 모든 Aircraft에
+고정 `60분`의 Turnaround Time을 적용합니다.
+
+따라서 동일 Aircraft의 연속 Flight는
+다음 조건을 만족해야 합니다.
+
+```text
+이전 Flight arrival_at
++
+60분 Turnaround Time
+<=
+다음 Flight departure_at
+```
+
+예:
+
+```text
+Flight A 도착
+10:00
+
+Turnaround
+60분
+
+다음 Flight의 가장 빠른 출발 가능 시각
+11:00
+```
+
+위 조건을 만족하지 않으면
+동일 Aircraft를 다음 Flight에 배정할 수 없습니다.
+
+Aircraft 충돌 검증은 다음 경우 모두 적용합니다.
+
+- Flight 자동 생성
+- Admin 또는 SuperAdmin의 Flight 수동 생성
+- Aircraft 변경
+- 출발 예정 시각 변경
+- 도착 예정 시각 변경
+
+`CANCELLED` 상태의 Flight는
+향후 Aircraft 운항 충돌 계산에서 제외합니다.
+
+공항별 또는 Aircraft 기종별로 서로 다른 Turnaround Time을 적용하는 기능은
+MVP 범위에 포함하지 않고 향후 개선사항으로 남깁니다.
+
+구체적인 시간 비교 및 동시성 처리 방식은
+`04-system-design.md`와 `05-data-api-design.md`에서 정의합니다.
+
+#### 9.4.2 Flight 자동 생성 및 운항 일정
+
+KOKU Airline의 정규 Flight는
+반복 운항 일정을 기준으로 자동 생성합니다.
+
+운항 일정은 반복적으로 운항할 Flight의 기준 정보를 표현합니다.
+
+MVP에서는 최소한 다음 운영 정보를 기준으로 합니다.
+
+- 편명
+- Route
+- 운항 요일
+- 출발 / 도착 현지시각
+- 기본 Aircraft
+- 활성 여부
+
+구체적인 Entity 및 Column 구조는
+`05-data-api-design.md`에서 정의합니다.
+
+##### Flight 자동 생성 범위
+
+사용자가 미래 Flight를 지속적으로 조회할 수 있도록
+현재 시점을 기준으로 향후 `3개월` 범위의 Flight를 유지합니다.
+
+예:
+
+```text
+현재
+2026년 8월
+
+자동 생성 대상
+→ 2026년 11월까지
+```
+
+새로운 월에 진입하면
+자동 생성 범위도 함께 앞으로 이동합니다.
+
+예:
+
+```text
+2026년 9월 진입
+
+→ 2026년 12월 Flight까지 확보
+```
+
+자동 생성 작업은 정기적으로 실행하여
+필요한 범위에 누락된 Flight가 있는지 확인합니다.
+
+서버 중단 등의 이유로 특정 실행 시점에
+Flight 생성이 수행되지 않았더라도
+다음 실행 시 누락된 Flight를 다시 확인하여 생성할 수 있어야 합니다.
+
+구체적인 Scheduler 실행 주기와
+3개월 범위 계산 방식은
+`04-system-design.md`에서 정의합니다.
+
+##### 중복 생성 방지
+
+자동 생성 과정에서는
+이미 존재하는 Flight를 중복 생성하지 않습니다.
+
+이미 생성된 Flight가 `CANCELLED` 상태인 경우에도
+해당 운항일의 Flight는 이미 생성된 것으로 취급하며
+Scheduler가 동일 Flight를 다시 생성하지 않습니다.
+
+Flight 중복 여부는 9.2 편명 정책을 따릅니다.
+
+##### 운항 일정 변경
+
+Admin 또는 SuperAdmin이
+운항 일정을 수정한 경우
+변경 내용은 원칙적으로 앞으로 새로 생성되는 Flight에 적용합니다.
+
+이미 생성된 기존 Flight는
+운항 일정 변경만으로 자동 수정하지 않습니다.
+
+기존 Flight를 변경해야 하는 경우에는
+Admin 또는 SuperAdmin이 해당 Flight를 별도로 수정합니다.
+
+따라서 운항 일정 변경으로
+이미 생성된 Flight의 다음 정보가 자동으로 덮어써지지 않습니다.
+
+- 편명
+- Route
+- 출발 / 도착 예정 시각
+- Aircraft
+- 운항 상태
+
+관리자가 기존 Flight에 적용한 수동 변경은
+자동 생성 작업보다 우선합니다.
+
+##### 성수기 및 비성수기 운영
+
+Admin 또는 SuperAdmin은
+수요 및 운영 상황에 따라 자동 생성된 Flight를 조정할 수 있습니다.
+
+성수기에는:
+
+- 정규 운항 외 임시 Flight 추가 가능
+- 임시 Flight에는 별도의 편명 사용
+- Aircraft 충돌 및 Turnaround 규칙 적용
+
+비성수기 또는 운영상 운항이 불필요한 경우에는:
+
+- 출발 전 Flight를 `CANCELLED` 처리 가능
+- Flight 취소 시 9.6 Flight 취소 정책 적용
+
+일반적인 운영 조정에서는
+Flight를 물리적으로 삭제하기보다 `CANCELLED` 상태로 관리하는 것을 원칙으로 합니다.
+
+단, 다음 조건을 모두 만족하는 잘못 생성된 Flight는
+제한적으로 물리 삭제할 수 있습니다.
+
+- `SCHEDULED` 상태
+- 아직 출발하지 않음
+- 연결된 `PENDING` 또는 `CONFIRMED` Reservation이 없음
+- 운영 이력 보존이 필요하지 않은 잘못 생성된 Flight
+
+Reservation이 한 번이라도 연결된 Flight는
+물리적으로 삭제하지 않습니다.
+
+`CANCELLED` Flight 역시
+자동 생성 작업에 의해 다시 생성되지 않습니다.
 
 ### 9.5 예약 가능 시간
 

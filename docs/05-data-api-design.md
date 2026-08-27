@@ -62,6 +62,7 @@ MVP의 핵심 Domain Entity는 다음과 같습니다.
 - `Airport`
 - `Route`
 - `Aircraft`
+- `FlightSchedule`
 - `Flight`
 - `Seat`
 - `Passenger`
@@ -80,6 +81,7 @@ Domain Policy에서 정의된 Canonical Term을 유지합니다.
 초안:
 
 - `AircraftSeat`
+- `FlightScheduleDay`
 - `ReservationFlight`
 - `ReservationPassenger`
 - `PassengerFlight`
@@ -123,11 +125,19 @@ Airport
   |
   +----< Route >---- Airport
               |
+              +----< FlightSchedule
+              |        |
+              |        +----< FlightScheduleDay
+              |        |
+              |        +----< Flight
+              |
               +----< Flight
 
 Aircraft
   |
   +----< AircraftSeat
+  |
+  +----< FlightSchedule
   |
   +----< Flight
              |
@@ -298,6 +308,7 @@ deactivated_at
 - `Route`
 - `Aircraft`
 - `AircraftSeat`
+- `FlightSchedule`
 
 Master Data 비활성화 시:
 
@@ -909,9 +920,11 @@ KOKU Airline 내부 항공편입니다.
 flight
 --------------------------------
 id
+flight_schedule_id
 flight_number
 route_id
 aircraft_id
+departure_local_date
 departure_at
 arrival_at
 status
@@ -919,6 +932,34 @@ cancellation_reason
 created_at
 updated_at
 ```
+
+`flight_schedule_id`는 운항 일정에서 자동 생성된 Flight가
+어떤 `FlightSchedule`로부터 생성되었는지 식별합니다.
+
+```text
+자동 생성 Flight
+→ flight_schedule_id = 해당 FlightSchedule ID
+
+Admin 수동 생성 Flight
+→ flight_schedule_id = NULL
+```
+
+`departure_local_date`는
+Flight Number 중복 방지와 자동 생성 Idempotency를 위해 저장합니다.
+
+```text
+departure_at
++
+Route의 departure Airport ZoneId
+        ↓
+departure_local_date
+```
+
+Java에서는 `LocalDate`,
+MySQL에서는 `DATE`를 사용합니다.
+
+`departure_local_date`는 Client가 임의로 전달하여 저장하는 값이 아니라
+Backend가 `departure_at`과 출발 Airport의 `ZoneId`를 기준으로 계산합니다.
 
 상태:
 
@@ -946,13 +987,40 @@ KO205
 ```
 
 같은 Flight Number는
-서로 다른 운항일에 재사용할 수 있습니다.
+서로 다른 운항일에 반복해서 사용할 수 있습니다.
 
-동일한 운항 기준에서 중복되지 않도록 보호합니다.
+Flight Number 중복 여부는
+출발 Airport의 Local Date를 기준으로 판단합니다.
 
-정확한 Composite Unique Constraint는
-Flight Number의 운항일 중복 판정 기준을 확정한 후
-본 문서에서 별도로 정의합니다.
+Database에서는 다음 Composite Unique Constraint를 적용합니다.
+
+```text
+UNIQUE(
+    flight_number,
+    departure_local_date
+)
+```
+
+예:
+
+```text
+2026-09-01 KO101
+→ 가능
+
+2026-09-02 KO101
+→ 가능
+
+2026-09-01 KO101
+→ 중복이므로 불가
+```
+
+`departure_local_date`는
+`departure_at`과 출발 Airport의 IANA `ZoneId`를 이용하여
+Backend에서 계산한 값을 저장합니다.
+
+성수기 임시 증편은
+같은 Local Date에 기존 Flight와 같은 Flight Number를 사용하지 않고
+별도의 Flight Number를 사용합니다.
 
 ---
 
@@ -1046,14 +1114,288 @@ departure_at < arrival_at
 
 ### 10.5 Aircraft 일정 충돌
 
-동일 Aircraft를
-동시에 겹치는 Flight에 배정할 수 없습니다.
+동일 Aircraft는
+운항 시간이 충돌하는 둘 이상의 Flight에 배정할 수 없습니다.
 
-정확한 시간 구간 충돌 기준과
-Turnaround Time 적용 여부는 아직 확정하지 않습니다.
+MVP에서는 모든 Aircraft에
+고정 `60분`의 Turnaround Time을 적용합니다.
 
-해당 정책이 확정되면
-Application Validation과 필요한 Database / Query 구조를 정의합니다.
+동일 Aircraft의 연속 Flight는 다음 조건을 만족해야 합니다.
+
+```text
+previousFlight.arrival_at
++
+60 minutes
+<=
+nextFlight.departure_at
+```
+
+시간 비교는 UTC 기준 Java `Instant`로 수행합니다.
+
+Aircraft 충돌 검증에서는
+`CANCELLED` Flight를 제외합니다.
+
+Application에서 후보 Flight와 충돌하는 기존 Flight가 존재하는지
+검증할 때의 논리 조건은 다음과 같습니다.
+
+```text
+same aircraft
+AND status != CANCELLED
+AND existing flight != current flight
+AND
+NOT (
+    existing.arrival_at + 60분 <= candidate.departure_at
+    OR
+    candidate.arrival_at + 60분 <= existing.departure_at
+)
+```
+
+위 조건에 해당하는 기존 Flight가 하나라도 존재하면
+Aircraft 배정을 거부합니다.
+
+충돌 검증은 최소 다음 작업에 적용합니다.
+
+- FlightSchedule 기반 Flight 자동 생성
+- Admin / SuperAdmin Flight 수동 생성
+- Aircraft 변경
+- `departure_at` 변경
+- `arrival_at` 변경
+
+Database의 단순 Unique Constraint만으로
+시간 범위 충돌 전체를 보호하기 어렵기 때문에
+Aircraft Schedule Conflict는 Application Validation을 기본으로 합니다.
+
+조회 성능을 위해 다음 Index를 우선 검토합니다.
+
+```text
+flight(
+    aircraft_id,
+    status,
+    departure_at,
+    arrival_at
+)
+```
+
+실제 Index 구성은 Query와 `EXPLAIN` 결과를 기준으로 조정합니다.
+
+---
+
+### 10.6 FlightSchedule
+
+`FlightSchedule`은 KOKU Airline의 반복 운항 Template을 나타냅니다.
+
+특정 날짜의 실제 예약 대상은 `FlightSchedule`이 아니라
+이를 기준으로 생성된 `Flight`입니다.
+
+주요 Column 초안:
+
+```text
+flight_schedule
+--------------------------------
+id
+flight_number
+route_id
+default_aircraft_id
+departure_local_time
+arrival_local_time
+arrival_day_offset
+active
+deactivated_at
+created_at
+updated_at
+```
+
+Column 의미:
+
+- `flight_number`: 자동 생성할 Flight Number
+- `route_id`: 운항 Route
+- `default_aircraft_id`: 자동 생성 시 기본 Aircraft
+- `departure_local_time`: 출발 Airport 현지 출발시각
+- `arrival_local_time`: 도착 Airport 현지 도착시각
+- `arrival_day_offset`: 출발 Local Date 대비 도착 Local Date 차이
+- `active`: 자동 생성 사용 여부
+- `deactivated_at`: 비활성화 시각
+
+시간 Column은 다음 형식을 사용합니다.
+
+```text
+departure_local_time
+→ Java LocalTime
+→ MySQL TIME
+
+arrival_local_time
+→ Java LocalTime
+→ MySQL TIME
+```
+
+`arrival_day_offset`는 MVP에서 다음 값을 사용합니다.
+
+```text
+0
+→ 출발 Local Date와 같은 Date에 도착
+
+1
+→ 다음 Local Date에 도착
+```
+
+FlightSchedule 자체의 Local Time은
+Route에 연결된 각 Airport의 `ZoneId`와 결합하여
+실제 Flight의 `departure_at`, `arrival_at`을 계산합니다.
+
+자동 생성된 Flight는 다음 관계를 가집니다.
+
+```text
+FlightSchedule 1 : N Flight
+```
+
+운항 일정 변경은 이미 생성된 Flight를 수정하지 않습니다.
+
+따라서 `Flight`에는 생성 당시 확정된 다음 값을 독립적으로 저장합니다.
+
+- `flight_number`
+- `route_id`
+- `aircraft_id`
+- `departure_local_date`
+- `departure_at`
+- `arrival_at`
+
+`FlightSchedule` 수정 후에는
+앞으로 새로 생성되는 Flight부터 변경된 값을 사용합니다.
+
+---
+
+#### 10.6.1 FlightScheduleDay
+
+하나의 FlightSchedule은
+하나 이상의 운항 요일을 가질 수 있습니다.
+
+Supporting Table 초안:
+
+```text
+flight_schedule_day
+--------------------------------
+flight_schedule_id
+day_of_week
+```
+
+`day_of_week`은 다음 Canonical Enum 값을 사용합니다.
+
+```text
+MONDAY
+TUESDAY
+WEDNESDAY
+THURSDAY
+FRIDAY
+SATURDAY
+SUNDAY
+```
+
+동일 FlightSchedule에 같은 요일을 중복 등록할 수 없습니다.
+
+```text
+UNIQUE(
+    flight_schedule_id,
+    day_of_week
+)
+```
+
+---
+
+### 10.7 Flight 자동 생성 Data 규칙
+
+Flight 자동 생성 Scheduler는
+`active = true`인 FlightSchedule을 조회합니다.
+
+MVP의 자동 생성 범위는
+현재 Month를 기준으로 세 번째 다음 Calendar Month의 마지막 날까지입니다.
+
+예:
+
+```text
+2026-08-26 실행
+→ 2026-11-30까지 확보
+
+2026-09-01 실행
+→ 2026-12-31까지 확보
+```
+
+Scheduler는 하루 1회 실행하며,
+실행할 때마다 전체 필요한 범위를 다시 확인합니다.
+
+자동 생성 Flight에는
+FlightSchedule의 `default_aircraft_id`를 사용합니다.
+
+생성 전 반드시 다음을 검증합니다.
+
+```text
+Flight Number / Local Date 중복
+Route 활성 상태
+Aircraft 활성 상태
+Aircraft Schedule Conflict
+Turnaround 60분
+```
+
+FlightSchedule에서 자동 생성된 Flight는
+다음 Constraint로 같은 Schedule / Local Date에
+둘 이상의 Flight가 생성되지 않도록 보호합니다.
+
+```text
+UNIQUE(
+    flight_schedule_id,
+    departure_local_date
+)
+```
+
+`flight_schedule_id`가 `NULL`인 Admin 수동 생성 Flight에는
+위 Schedule 기반 Unique Constraint가 적용되지 않습니다.
+
+MySQL의 Unique Constraint는 `NULL` 값을 서로 동일한 값으로 취급하지 않으므로
+수동 Flight를 여러 건 저장할 수 있습니다.
+
+모든 Flight에는 별도로 다음 Constraint도 적용합니다.
+
+```text
+UNIQUE(
+    flight_number,
+    departure_local_date
+)
+```
+
+따라서 다음 두 종류의 중복을 각각 방지합니다.
+
+```text
+FlightSchedule + Local Date
+→ Scheduler 중복 생성 방지
+
+Flight Number + Local Date
+→ 동일 운항일 Flight Number 중복 방지
+```
+
+이미 생성된 Flight가 다음 상태여도
+해당 FlightSchedule / Local Date는 이미 생성된 것으로 처리합니다.
+
+```text
+SCHEDULED
+CANCELLED
+DEPARTED
+```
+
+따라서 `CANCELLED` Flight를
+Scheduler가 다시 생성하지 않습니다.
+
+FlightSchedule 수정 시에도
+이미 존재하는 Flight를 UPDATE하지 않습니다.
+
+```text
+기존 Flight
+→ 유지
+
+향후 새로 생성되는 Flight
+→ 변경된 FlightSchedule 적용
+```
+
+Admin 또는 SuperAdmin이 기존 Flight를 수동 수정한 경우에도
+Scheduler가 해당 Flight를 다시 덮어쓰지 않습니다.
 
 ---
 
@@ -1976,6 +2318,15 @@ route(departure_airport_id, arrival_airport_id)
 aircraft_seat(aircraft_id, seat_no)
     UNIQUE
 
+flight_schedule_day(flight_schedule_id, day_of_week)
+    UNIQUE
+
+flight(flight_schedule_id, departure_local_date)
+    UNIQUE
+
+flight(flight_number, departure_local_date)
+    UNIQUE
+
 seat(flight_id, seat_no)
     UNIQUE
 
@@ -2029,6 +2380,13 @@ route(departure_airport_id, arrival_airport_id)
 flight(route_id, departure_at)
 flight(aircraft_id, departure_at)
 flight(status, departure_at)
+
+flight_schedule(active)
+flight_schedule(route_id)
+flight_schedule(default_aircraft_id)
+flight(flight_schedule_id, departure_local_date)
+flight(flight_number, departure_local_date)
+flight(aircraft_id, status, departure_at, arrival_at)
 
 seat(flight_id, status)
 
@@ -2948,6 +3306,26 @@ POST  /api/v1/admin/flights
 PATCH /api/v1/admin/flights/{flightId}
 ```
 
+Flight 생성 또는 핵심 운항정보 수정 시 Backend는 다음을 검증합니다.
+
+- Flight Number + Departure Local Date 중복
+- Route 활성 상태
+- Aircraft 활성 상태
+- Aircraft Schedule Conflict
+- 60분 Turnaround Time
+- `departure_at < arrival_at`
+
+`departure_local_date`는 Request에서 직접 신뢰하지 않고
+Backend가 Route의 출발 Airport `ZoneId`를 기준으로 계산합니다.
+
+Admin이 수동 생성한 Flight는:
+
+```text
+flight_schedule_id = NULL
+```
+
+로 저장합니다.
+
 기존 PENDING 또는 CONFIRMED Reservation이 연결된 Flight의
 핵심 운항정보 변경 제한을 적용합니다.
 
@@ -2971,6 +3349,101 @@ Request:
 
 처리한 Admin / SuperAdmin 정보와
 대상 Flight, 시각 및 사유를 Audit Log로 기록합니다.
+
+---
+
+### 35.4 Flight 물리 삭제
+
+일반적인 운영 변경에서는
+Flight를 물리 삭제하지 않고 `CANCELLED` 처리를 우선합니다.
+
+잘못 생성된 Flight에 한하여
+다음 API를 제한적으로 제공합니다.
+
+```text
+DELETE /api/v1/admin/flights/{flightId}
+```
+
+다음 조건을 모두 만족해야 합니다.
+
+- Flight 상태가 `SCHEDULED`
+- 아직 출발하지 않음
+- `flight_schedule_id = NULL`
+- 해당 Flight와 연결된 Reservation이 한 번도 존재하지 않음
+- 운영 이력 보존이 필요한 Flight가 아님
+
+즉, MVP에서 물리 삭제는
+Admin 또는 SuperAdmin이 직접 생성한 잘못된 Flight에만 허용합니다.
+
+FlightSchedule을 기준으로 자동 생성된 Flight는
+물리 삭제하지 않고 `CANCELLED` 상태로 관리합니다.
+
+이는 자동 생성 Flight를 물리 삭제한 뒤
+Daily Scheduler가 동일 운항일의 Flight를 다시 생성하는 상황을 방지하기 위함입니다.
+
+다음과 같은 Reservation 관계가 하나라도 존재하면
+현재 Reservation 상태와 관계없이 삭제할 수 없습니다.
+
+```text
+ReservationFlight
+→ 해당 flight_id 존재
+```
+
+즉 과거에 `PENDING`, `CONFIRMED`, `CANCELLED` 상태의
+Reservation과 연결된 이력이 있는 Flight도 물리 삭제하지 않습니다.
+
+조건을 만족하지 않으면
+삭제 요청을 거부하고 필요한 경우 Flight 취소 기능을 사용합니다.
+
+---
+
+### 35.5 FlightSchedule 관리 API
+
+Admin과 SuperAdmin은
+정규 Flight 자동 생성에 사용하는 FlightSchedule을 관리할 수 있습니다.
+
+초안:
+
+```text
+GET   /api/v1/admin/flight-schedules
+GET   /api/v1/admin/flight-schedules/{scheduleId}
+POST  /api/v1/admin/flight-schedules
+PATCH /api/v1/admin/flight-schedules/{scheduleId}
+```
+
+FlightSchedule 생성 / 수정 Request에는
+최소 다음 정보를 사용할 수 있습니다.
+
+```text
+flightNumber
+routeId
+defaultAircraftId
+operatingDays
+departureLocalTime
+arrivalLocalTime
+arrivalDayOffset
+active
+```
+
+FlightSchedule 변경은
+이미 생성된 Flight를 일괄 UPDATE하지 않습니다.
+
+```text
+기존 Flight
+→ 변경 없음
+
+향후 생성 Flight
+→ 변경된 Schedule 적용
+```
+
+FlightSchedule을 비활성화하면
+향후 자동 Flight 생성을 중단합니다.
+
+이미 생성되어 있는 Flight는
+자동 취소하거나 삭제하지 않습니다.
+
+기존 Flight의 운항을 중단해야 하는 경우
+각 Flight에 대해 별도의 Flight 취소 정책을 적용합니다.
 
 ---
 
@@ -3406,15 +3879,7 @@ Schema 변경 이력을 Repository에서 관리합니다.
 다음 사항은
 `04-system-design.md` 또는 실제 구현 검토 후 확정합니다.
 
-### 47.1 Flight / Aircraft
-
-- [ ] 동일 Aircraft 운항 충돌의 정확한 시간 구간 기준
-- [ ] Turnaround Time 적용 여부
-- [ ] Flight Number 중복 기준의 정확한 Composite Constraint
-
----
-
-### 47.2 Seat
+### 47.1 Seat
 
 - [ ] Aircraft Seat 통로 표현 방식
 - [ ] Flight Seat 생성 시점
@@ -3423,7 +3888,7 @@ Schema 변경 이력을 Repository에서 관리합니다.
 
 ---
 
-### 47.3 Passenger
+### 47.2 Passenger
 
 - [ ] Gender Enum 상세 값
 - [ ] Nationality 저장 규칙
@@ -3433,7 +3898,7 @@ Schema 변경 이력을 Repository에서 관리합니다.
 
 ---
 
-### 47.4 Reservation
+### 47.3 Reservation
 
 - [ ] Reservation Number Collision 재시도 횟수
 - [ ] `ReservationFlight` 실제 Entity 여부
@@ -3443,7 +3908,7 @@ Schema 변경 이력을 Repository에서 관리합니다.
 
 ---
 
-### 47.5 Payment
+### 47.4 Payment
 
 - [ ] Idempotency Header 최종 이름
 - [ ] 동일 Key + 다른 Body 요청 처리
@@ -3451,7 +3916,7 @@ Schema 변경 이력을 Repository에서 관리합니다.
 
 ---
 
-### 47.6 API
+### 47.5 API
 
 - [ ] `/api/v1` Version Prefix 최종 적용 여부
 - [ ] 공통 Success Response Wrapper 여부
@@ -3461,7 +3926,7 @@ Schema 변경 이력을 Repository에서 관리합니다.
 
 ---
 
-### 47.7 External / AI
+### 47.6 External / AI
 
 - [ ] 실제 External Flight API Provider
 - [ ] External Flight DTO 최종 Field
@@ -3575,6 +4040,8 @@ MVP Data & API Design이 완료된 것으로 판단합니다.
 - [ ] Infant Companion 표현 방식이 정의되어 있습니다.
 - [ ] Reservation과 Payment 관계가 정의되어 있습니다.
 - [ ] Audit Log 구조가 정의되어 있습니다.
+- [ ] FlightSchedule과 Flight 관계가 정의되어 있습니다.
+- [ ] FlightSchedule의 운항 요일 구조가 정의되어 있습니다.
 
 ### Constraint
 
@@ -3585,6 +4052,10 @@ MVP Data & API Design이 완료된 것으로 판단합니다.
 - [ ] Reservation 번호 Unique가 정의되어 있습니다.
 - [ ] Payment Idempotency Unique가 정의되어 있습니다.
 - [ ] 필요한 Foreign Key가 정의되어 있습니다.
+- [ ] Flight Number + Departure Local Date Unique가 정의되어 있습니다.
+- [ ] FlightSchedule + Departure Local Date 중복 생성 방지가 정의되어 있습니다.
+- [ ] FlightSchedule 운항 요일 중복 방지가 정의되어 있습니다.
+- [ ] Aircraft Schedule Conflict Validation 구조가 정의되어 있습니다.
 
 ### Reservation
 
@@ -3623,6 +4094,8 @@ MVP Data & API Design이 완료된 것으로 판단합니다.
 - [ ] External Flight API Contract가 정의되어 있습니다.
 - [ ] AI Flight Search API Contract가 정의되어 있습니다.
 - [ ] Error Response Contract가 정의되어 있습니다.
+- [ ] Admin FlightSchedule 관리 API가 정의되어 있습니다.
+- [ ] 제한적인 Flight 물리 삭제 API 조건이 정의되어 있습니다.
 
 ### Security / Boundary
 

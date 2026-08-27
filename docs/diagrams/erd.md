@@ -88,11 +88,32 @@ erDiagram
     DATETIME(6) updated_at
     }
 
-    FLIGHT {
+    FLIGHT_SCHEDULE {
     BIGINT id PK
     VARCHAR flight_number
     BIGINT route_id FK
+    BIGINT default_aircraft_id FK
+    TIME departure_local_time
+    TIME arrival_local_time
+    INT arrival_day_offset
+    BOOLEAN active
+    DATETIME(6) deactivated_at
+    DATETIME(6) created_at
+    DATETIME(6) updated_at
+    }
+
+    FLIGHT_SCHEDULE_DAY {
+    BIGINT flight_schedule_id FK
+    VARCHAR day_of_week
+    }
+
+        FLIGHT {
+    BIGINT id PK
+    BIGINT flight_schedule_id FK
+    VARCHAR flight_number
+    BIGINT route_id FK
     BIGINT aircraft_id FK
+    DATE departure_local_date
     DATETIME(6) departure_at
     DATETIME(6) arrival_at
     VARCHAR status
@@ -119,9 +140,15 @@ erDiagram
     AIRPORT ||--o{ ROUTE : departure
     AIRPORT ||--o{ ROUTE : arrival
 
+        ROUTE ||--o{ FLIGHT_SCHEDULE : defines
     ROUTE ||--o{ FLIGHT : contains
+
     AIRCRAFT ||--o{ AIRCRAFT_SEAT : configures
+    AIRCRAFT ||--o{ FLIGHT_SCHEDULE : default_for
     AIRCRAFT ||--o{ FLIGHT : assigned_to
+
+    FLIGHT_SCHEDULE ||--|{ FLIGHT_SCHEDULE_DAY : operates_on
+    FLIGHT_SCHEDULE o|--o{ FLIGHT : generates
 
     FLIGHT ||--o{ SEAT : has
 
@@ -321,7 +348,24 @@ UNIQUE(
 
 ---
 
-### 3.4 Route - Flight
+### 3.4 Route - FlightSchedule
+
+```text
+Route 1 : N FlightSchedule
+```
+
+하나의 FlightSchedule은
+하나의 Route를 기준으로 반복 운항합니다.
+
+FlightSchedule은 실제 예약 대상 Flight가 아니라
+향후 Flight를 자동 생성하기 위한 운항 Template입니다.
+
+비활성화된 Route는
+새로운 FlightSchedule에 사용할 수 없습니다.
+
+---
+
+### 3.5 Route - Flight
 
 ```text
 Route 1 : N Flight
@@ -336,7 +380,7 @@ KOKU Airline 내부 항공편입니다.
 
 ---
 
-### 3.5 Aircraft - AircraftSeat
+### 3.6 Aircraft - AircraftSeat
 
 ```text
 Aircraft 1 : N AircraftSeat
@@ -356,7 +400,89 @@ UNIQUE(
 
 ---
 
-### 3.6 Aircraft - Flight
+### 3.7 Aircraft - FlightSchedule
+
+```text
+Aircraft 1 : N FlightSchedule
+```
+
+FlightSchedule은 자동 생성 Flight에 사용할
+기본 Aircraft를 참조합니다.
+
+`default_aircraft_id`는
+Flight 생성 시 초기 Aircraft 배정값으로 사용되며,
+이미 생성된 Flight의 Aircraft를 자동 변경하지 않습니다.
+
+---
+
+### 3.8 FlightSchedule - FlightScheduleDay / Flight
+
+FlightSchedule은 반복 운항 규칙을 나타냅니다.
+
+```text
+Route
+   |
+   v
+FlightSchedule
+   |
+   +----< FlightScheduleDay
+   |
+   +----< Flight
+```
+
+하나의 FlightSchedule은
+하나 이상의 운항 요일을 가집니다.
+
+```text
+FlightSchedule 1 : N FlightScheduleDay
+```
+
+운항 요일 값:
+
+```text
+MONDAY
+TUESDAY
+WEDNESDAY
+THURSDAY
+FRIDAY
+SATURDAY
+SUNDAY
+```
+
+동일 FlightSchedule에
+같은 요일을 중복 등록할 수 없습니다.
+
+```text
+UNIQUE(
+    flight_schedule_id,
+    day_of_week
+)
+```
+
+FlightSchedule에서 자동 생성된 Flight는
+해당 Schedule을 참조합니다.
+
+```text
+FlightSchedule 1 : N Flight
+```
+
+단, Admin 또는 SuperAdmin이 직접 생성한 Flight는
+FlightSchedule을 참조하지 않을 수 있습니다.
+
+```text
+자동 생성 Flight
+→ flight_schedule_id = FlightSchedule ID
+
+수동 생성 Flight
+→ flight_schedule_id = NULL
+```
+
+FlightSchedule의 변경은
+이미 생성된 Flight의 값을 자동 변경하지 않습니다.
+
+---
+
+### 3.9 Aircraft - Flight
 
 ```text
 Aircraft 1 : N Flight
@@ -364,14 +490,33 @@ Aircraft 1 : N Flight
 
 하나의 Flight에는 하나의 Aircraft가 배정됩니다.
 
-동일 Aircraft의 Flight 운항 시간이 겹치지 않아야 합니다.
+자동 생성 Flight는
+FlightSchedule의 `default_aircraft_id`를 기본값으로 사용합니다.
 
-정확한 충돌 시간 기준과 Turnaround Time은
-아직 확정하지 않습니다.
+Admin 또는 SuperAdmin은
+출발 전 `SCHEDULED` Flight의 Aircraft를 변경할 수 있습니다.
+
+동일 Aircraft의 Flight는
+MVP 기준 고정 `60분`의 Turnaround Time을 포함하여
+운항 일정이 충돌하지 않아야 합니다.
+
+```text
+previous Flight arrival_at
++
+60 minutes
+<=
+next Flight departure_at
+```
+
+`CANCELLED` Flight는
+Aircraft Schedule Conflict 계산에서 제외합니다.
+
+이 충돌 규칙은 단순 Database Unique Constraint가 아니라
+Application Validation으로 보호합니다.
 
 ---
 
-### 3.7 Flight - Seat
+### 3.10 Flight - Seat
 
 ```text
 Flight 1 : N Seat
@@ -687,6 +832,15 @@ route(departure_airport_id, arrival_airport_id)
 aircraft_seat(aircraft_id, seat_no)
     UNIQUE
 
+flight_schedule_day(flight_schedule_id, day_of_week)
+    UNIQUE
+
+flight(flight_schedule_id, departure_local_date)
+    UNIQUE
+
+flight(flight_number, departure_local_date)
+    UNIQUE
+
 seat(flight_id, seat_no)
     UNIQUE
 
@@ -712,12 +866,6 @@ Data Model 확정 후 추가합니다.
 
 다음 사항은 현재 Draft ERD에서
 최종 확정하지 않습니다.
-
-### Flight / Aircraft
-
-- [ ] Flight Number Composite Unique Constraint
-- [ ] Aircraft Schedule Conflict 기준
-- [ ] Turnaround Time
 
 ### Seat
 

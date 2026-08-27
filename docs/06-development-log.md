@@ -136,6 +136,7 @@ Project Plan을 기준으로 다음 Milestone을 사용합니다.
 - Airport
 - Route
 - Aircraft
+- FlightSchedule
 - Flight
 - Seat
 - Passenger
@@ -323,8 +324,6 @@ Entity 관계 및 API 기본 구조 정의
 
 주요 미확정 항목:
 
-- Flight Number Composite Unique
-- Aircraft Schedule Conflict 기준
 - Seat Lock 방식
 - Reservation Mapping Entity 최종 형태
 - Passport Encryption / Masking
@@ -356,6 +355,14 @@ Draft 작성 완료
 - Airport IANA Time Zone
 - Airport IATA `VARCHAR(3)`
 - `test_passport_expiry_date`
+- `FlightSchedule`
+- `FlightScheduleDay`
+- Flight의 `flight_schedule_id`
+- Flight의 `departure_local_date`
+- Flight Number + Departure Local Date Unique
+- FlightSchedule + Departure Local Date 중복 생성 방지
+- Aircraft 기본 배정 관계
+- Aircraft Turnaround Time 60분
 
 Refresh Token은 Redis에서 관리하므로
 관계형 Database Entity 또는 ERD Table로 추가하지 않습니다.
@@ -622,6 +629,31 @@ Flight DEPARTED 전환
 → 1분
 ```
 
+Flight 자동 생성 Scheduler는
+위의 1분 주기 Scheduler와 별도로 동작합니다.
+
+```text
+FlightSchedule 기반 Flight 자동 생성
+→ 하루 1회
+```
+
+자동 생성 Scheduler는 실행할 때마다
+현재 필요한 Rolling Window 전체를 다시 확인하여
+누락된 Flight를 보정합니다.
+
+MVP의 자동 생성 범위는
+현재 Month를 기준으로 세 번째 다음 Calendar Month의 마지막 날까지입니다.
+
+예:
+
+```text
+2026-08-26
+→ 2026-11-30까지 Flight 확보
+
+2026-09-01
+→ 2026-12-31까지 Flight 확보
+```
+
 Scheduled Job 실행 여부만으로
 시간 기반 Business Rule을 판단하지 않습니다.
 
@@ -698,6 +730,183 @@ deactivated_at
 ```
 
 구조를 사용합니다.
+
+---
+
+### 4.9 Flight / Aircraft 운항 정책 확정
+
+#### 결정
+
+KOKU Airline의 반복 운항 일정과
+날짜별 실제 Flight를 분리합니다.
+
+```text
+FlightSchedule
+→ 반복 운항 Template
+
+Flight
+→ 특정 운항일의 실제 예약 대상
+```
+
+FlightSchedule은 다음 정보를 기준으로
+향후 Flight를 자동 생성합니다.
+
+- Flight Number
+- Route
+- 운항 요일
+- 출발 / 도착 Local Time
+- 기본 Aircraft
+- 활성 여부
+
+운항 요일은 `FlightScheduleDay`로 분리합니다.
+
+#### Flight Number
+
+같은 Flight Number는
+서로 다른 운항일에 반복 사용할 수 있습니다.
+
+중복 기준:
+
+```text
+flight_number
++
+departure_local_date
+```
+
+`departure_local_date`는
+출발 Airport의 `ZoneId`를 기준으로 Backend에서 계산합니다.
+
+Database 보호:
+
+```text
+UNIQUE(
+    flight_number,
+    departure_local_date
+)
+```
+
+#### Flight 자동 생성
+
+FlightSchedule 기반 Flight는
+현재 Month에서 세 번째 다음 Calendar Month의 마지막 날까지
+자동 생성하여 유지합니다.
+
+```text
+2026-08
+→ 2026-11 말일까지
+
+2026-09
+→ 2026-12 말일까지
+```
+
+자동 생성 Scheduler는 하루 1회 실행하며
+매 실행 시 필요한 전체 범위를 다시 확인합니다.
+
+따라서 서버 중단 등으로
+이전 Scheduler 실행이 누락되더라도
+다음 실행에서 누락 Flight를 보정할 수 있습니다.
+
+Scheduler 중복 생성 방지를 위해:
+
+```text
+UNIQUE(
+    flight_schedule_id,
+    departure_local_date
+)
+```
+
+를 사용합니다.
+
+`CANCELLED` Flight도 이미 생성된 Flight로 취급하므로
+Scheduler가 동일 운항일 Flight를 다시 생성하지 않습니다.
+
+#### FlightSchedule 변경
+
+FlightSchedule 변경은
+이미 생성된 Flight를 자동 수정하지 않습니다.
+
+```text
+기존 생성 Flight
+→ 유지
+
+향후 생성 Flight
+→ 변경된 FlightSchedule 적용
+```
+
+Admin 또는 SuperAdmin이 기존 Flight를 직접 수정한 경우
+수동 수정 결과가 자동 생성 규칙보다 우선합니다.
+
+```text
+Admin 수동 변경
+>
+FlightSchedule Template
+>
+자동 생성 Scheduler
+```
+
+#### Aircraft 배정
+
+FlightSchedule에는
+자동 생성 Flight에 사용할 기본 Aircraft를 지정합니다.
+
+자동 생성 시 해당 Aircraft를 초기 배정하며,
+Admin 또는 SuperAdmin은 출발 전 `SCHEDULED` Flight의
+Aircraft를 변경할 수 있습니다.
+
+#### Aircraft Schedule Conflict
+
+동일 Aircraft에는
+고정 `60분`의 Turnaround Time을 적용합니다.
+
+```text
+previousFlight.arrival_at
++
+60 minutes
+<=
+nextFlight.departure_at
+```
+
+시간 비교는 UTC 기준 `Instant`로 수행합니다.
+
+`CANCELLED` Flight는
+Aircraft Schedule Conflict 계산에서 제외합니다.
+
+Aircraft Conflict는 단순 Unique Constraint가 아니라
+Application Validation으로 보호합니다.
+
+#### 성수기 / 비성수기 운영
+
+Admin 또는 SuperAdmin은
+운영상 필요한 경우 별도의 Flight Number를 사용하여
+임시 Flight를 수동 생성할 수 있습니다.
+
+비성수기 또는 운항 중단이 필요한 경우에는
+Flight를 `CANCELLED` 처리합니다.
+
+FlightSchedule 기반 자동 생성 Flight는
+물리 삭제하지 않습니다.
+
+물리 삭제는 다음 조건을 만족하는
+관리자 수동 생성 Flight에만 제한적으로 허용합니다.
+
+```text
+flight_schedule_id = NULL
++
+SCHEDULED
++
+미출발
++
+Reservation 연결 이력 없음
++
+운영 이력 보존이 필요한 Flight가 아님
+```
+
+#### 영향 문서
+
+- `02-domain-policy.md`
+- `04-system-design.md`
+- `05-data-api-design.md`
+- `docs/diagrams/erd.md`
 
 ---
 
@@ -854,9 +1063,6 @@ Refresh Token Rotation을 수행합니다.
 ```
 
 기존 Refresh Token은 Rotation 이후 재사용할 수 없습니다.
-
-고도화된 Token Family 기반 Reuse Detection은
-MVP 필수 범위에는 포함하지 않습니다.
 
 #### CSRF
 
@@ -1772,6 +1978,7 @@ Technical Debt를 관리합니다.
 | TD-006 | AI | Structured Output Contract 확정 필요 | Medium | Open |
 | TD-007 | Infra | AWS 세부 Architecture 확정 필요 | Medium | Open |
 | TD-008 | Time | MySQL Date / Time Column Type 확정 | Low | Resolved |
+| TD-009 | Flight | Flight Number / Aircraft Conflict / Turnaround / 자동 생성 정책 확정 | High | Resolved |
 
 Technical Debt가 해결되면
 관련 설계 문서를 수정한 뒤 상태를 변경합니다.
@@ -1793,12 +2000,6 @@ Resolved
 미확정 항목을 추적하기 위한 요약입니다.
 
 본 절에서 정책을 직접 확정하지 않습니다.
-
-### Flight
-
-- [ ] Flight Number Unique 기준
-- [ ] Aircraft Conflict 기준
-- [ ] Turnaround Time
 
 ### Seat
 

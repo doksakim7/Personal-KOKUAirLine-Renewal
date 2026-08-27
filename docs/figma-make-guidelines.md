@@ -395,6 +395,7 @@ Flight를 처음부터 다시 검색해야 하는 흐름을 만들지 않습니�
 
 - 운영 데이터 조회
 - Flight 관리
+- 운항 일정 관리
 - Reservation 현황 조회
 
 제한:
@@ -1436,6 +1437,51 @@ Reservation이 존재하지 않는 `SCHEDULED` Flight는 수정할 수 있습니
 * Flight Number
 
 운항을 중단해야 하는 경우 Flight 취소 Action을 사용합니다.
+
+---
+
+### 22.2 운항 일정 관리
+
+Admin과 SuperAdmin은
+정규 Flight 자동 생성에 사용하는 운항 일정을 관리할 수 있습니다.
+
+운항 일정 화면에는 최소 다음 정보를 표현합니다.
+
+- Flight Number
+- Route
+- 운항 요일
+- 출발 Local Time
+- 도착 Local Time
+- 기본 Aircraft
+- 활성 상태
+
+운항 일정 생성 / 수정 UI에서는:
+
+- 활성 Route만 선택 가능
+- 활성 Aircraft만 기본 Aircraft로 선택 가능
+- 하나 이상의 운항 요일 선택 필요
+
+운항 일정 수정 시
+이미 생성된 Flight가 자동 변경되는 것처럼 표현하지 않습니다.
+
+다음 의미를 사용자에게 명확하게 전달합니다.
+
+```text
+기존 생성 Flight
+→ 유지
+
+향후 새로 생성되는 Flight
+→ 변경된 운항 일정 적용
+```
+
+운항 일정 비활성화도
+기존 Flight의 자동 취소 또는 삭제로 표현하지 않습니다.
+
+기존 Flight를 중단해야 하는 경우에는
+별도의 Flight 취소 Action을 사용합니다.
+
+Figma Make는
+FlightSchedule 변경으로 기존 Flight가 일괄 수정되는 UI를 생성하지 않습니다.
 
 ---
 
