@@ -207,6 +207,7 @@ erDiagram
     BIGINT flight_id FK
     BIGINT seat_id FK
     BIGINT companion_passenger_id FK
+    DECIMAL(15,0) fare_amount
     DATETIME(6) created_at
     }
 
@@ -685,6 +686,19 @@ Reservation.hold_expires_at
 
 ### 4.1 Reservation - ReservationFlight
 
+Reservation과 Flight의 관계는
+명시적인 `ReservationFlight` Entity로 관리합니다.
+
+```text
+Reservation 1 : N ReservationFlight
+Flight      1 : N ReservationFlight
+```
+
+각 `ReservationFlight`는
+별도의 `BIGINT id`를 단일 Primary Key로 사용합니다.
+
+Composite Primary Key는 사용하지 않습니다.
+
 Reservation은 하나 이상의 Flight를 포함합니다.
 
 ```text
@@ -709,61 +723,117 @@ Reservation
        sequence = 2
 ```
 
-하나의 Reservation에 동일 Flight가
-중복 연결될 수 없습니다.
+`ReservationFlight`에는 다음 Unique Constraint를 적용합니다.
 
 ```text
 UNIQUE(
   reservation_id,
   flight_id
 )
+
+UNIQUE(
+  reservation_id,
+  journey_role
+)
+
+UNIQUE(
+  reservation_id,
+  sequence
+)
 ```
 
-`ReservationFlight`의 최종 JPA Entity 여부는
-Data Design 확정 과정에서 결정합니다.
+따라서 하나의 Reservation 안에서:
+
+- 동일 Flight 중복
+- 동일 `journey_role` 중복
+- 동일 `sequence` 중복
+
+을 허용하지 않습니다.
+
+`ONE_WAY` / `ROUND_TRIP`에 따른 정확한 Flight 개수와
+Journey Role / Sequence 조합은
+Application Validation으로 추가 보호합니다.
 
 ---
 
 ### 4.2 Reservation - ReservationPassenger
 
-하나의 Reservation은
-한 명 이상의 Passenger를 포함합니다.
+Reservation과 Passenger의 관계는
+명시적인 `ReservationPassenger` Entity로 관리합니다.
 
 ```text
 Reservation 1 : N ReservationPassenger
 Passenger   1 : N ReservationPassenger
 ```
 
-Reservation 내부에서 동일 Passenger를
-중복 연결하지 않습니다.
+각 `ReservationPassenger`는
+별도의 `BIGINT id`를 단일 Primary Key로 사용합니다.
+
+Composite Primary Key는 사용하지 않습니다.
+
+하나의 Reservation에는
+한 명 이상의 Passenger가 포함됩니다.
+
+다음 Unique Constraint를 적용합니다.
 
 ```text
 UNIQUE(
   reservation_id,
   passenger_id
 )
+
+UNIQUE(
+  reservation_id,
+  sequence
+)
 ```
+
+따라서 동일 Reservation 안에서
+동일 Passenger 또는 동일 Passenger 순서를
+중복 사용할 수 없습니다.
 
 `ROUND_TRIP`에서도 Passenger 자체를
 출국 / 귀국별로 별도로 생성하지 않습니다.
 
-동일 Passenger 구성을 두 Flight에 공통으로 사용합니다.
+동일 Passenger 구성을 두 Flight에 공통으로 사용하고,
+Flight별 속성은 `PassengerFlight`에서 관리합니다.
 
 ---
 
 ### 4.3 PassengerFlight
 
 `PassengerFlight`는
+명시적인 JPA Entity로 구현하며,
 Passenger의 Flight별 예약 속성을 표현합니다.
+
+각 `PassengerFlight`는
+별도의 `BIGINT id`를 단일 Primary Key로 사용합니다.
+
+Composite Primary Key는 사용하지 않습니다.
+
+기본 관계:
+
+```text
+PassengerFlight
+├─ Reservation
+├─ Passenger
+├─ Flight
+├─ Seat (nullable)
+├─ Companion Passenger (nullable)
+└─ fare_amount
+```
+
+`PassengerFlight`는
+`reservation_id`를 통해 Reservation을 직접 참조합니다.
 
 필요한 이유:
 
 ```text
 Passenger
   |
-  +-- Flight A → Adult / Seat 1A
+  +-- Flight A → Seat 1A / 확정 운임 A
   |
-  +-- Flight B → Adult / Seat 3C
+  +-- Flight B → Seat 3C / 확정 운임 B
 ```
 
 또는 연령 Boundary가 있는 경우:
@@ -779,14 +849,65 @@ Passenger
 따라서 다음 정보는 Flight별로 관리합니다.
 
 - Seat
+- Passenger / Flight별 확정 운임
 - Infant Companion
 - Flight별 Adult / Child / Infant Validation
+
+Passenger / Flight별 최종 확정 운임은:
+
+```text
+PassengerFlight.fare_amount
+→ DECIMAL(15,0)
+```
+
+으로 Snapshot 저장합니다.
+
+`Reservation.total_amount`는
+해당 Reservation에 속한 모든
+`PassengerFlight.fare_amount`의 합계입니다.
+
+SeatClass는 `PassengerFlight`에
+별도 Column으로 중복 저장하지 않습니다.
+
+```text
+Seat.seat_class
+```
+
+를 해당 Passenger / Flight의 SeatClass 기준으로 사용합니다.
 
 Adult / Child / Infant 값을
 Passenger Table에 고정 상태로 저장하지 않습니다.
 
 각 Flight의 탑승일과 Passenger의 `birth_date`를 기준으로
 Backend에서 계산합니다.
+
+동일 Reservation에서
+동일 Passenger와 동일 Flight를 중복 연결할 수 없습니다.
+
+```text
+UNIQUE(
+  reservation_id,
+  passenger_id,
+  flight_id
+)
+```
+
+또한 `PassengerFlight`의 Passenger와 Flight는
+반드시 동일 Reservation에 포함되어 있어야 합니다.
+
+```text
+Passenger
+→ 동일 Reservation의 ReservationPassenger에 존재
+
+Flight
+→ 동일 Reservation의 ReservationFlight에 존재
+```
+
+Membership 정합성은
+Application / Service Layer에서 검증합니다.
+
+Database에서는 복잡한 Composite Foreign Key 대신
+일반 FK와 핵심 Unique Constraint를 사용합니다.
 
 ---
 
@@ -813,6 +934,22 @@ seat_id = NULL
 
 동일 시점의 Seat 중복 확보는
 Seat 상태와 Transaction / 동시성 제어를 통해 방지합니다.
+
+`passenger_flight.seat_id`가 존재하는 경우
+해당 Seat는 반드시 같은 `PassengerFlight.flight_id`가 가리키는
+Flight에 속해야 합니다.
+
+```text
+PassengerFlight.flight_id
+=
+Seat.flight_id
+```
+
+이 정합성은 Application / Service Layer에서 검증합니다.
+
+취소된 과거 Reservation의 Mapping 이력을 유지하므로
+`passenger_flight.seat_id` 자체에는
+전역 Unique Constraint를 적용하지 않습니다.
 
 ---
 
@@ -983,15 +1120,27 @@ reservation.reservation_no
 reservation_flight(reservation_id, flight_id)
     UNIQUE
 
+reservation_flight(reservation_id, journey_role)
+    UNIQUE
+
+reservation_flight(reservation_id, sequence)
+    UNIQUE
+
 reservation_passenger(reservation_id, passenger_id)
+    UNIQUE
+
+reservation_passenger(reservation_id, sequence)
+    UNIQUE
+
+passenger_flight(reservation_id, passenger_id, flight_id)
     UNIQUE
 
 payment(reservation_id, idempotency_key)
     UNIQUE
 ```
 
-추가 Composite Unique Constraint는
-Data Model 확정 후 추가합니다.
+추가 Constraint가 필요한 미확정 Domain은
+8장의 항목을 기준으로 추후 반영합니다.
 
 ---
 
@@ -1003,13 +1152,6 @@ Data Model 확정 후 추가합니다.
 ### Seat
 
 - [ ] `AircraftSeat`의 통로 표현 방식
-
-### Reservation Mapping
-
-- [ ] `ReservationFlight`의 최종 JPA Entity 여부
-- [ ] `ReservationPassenger`의 최종 JPA Entity 여부
-- [ ] `PassengerFlight`의 최종 JPA Entity 여부
-- [ ] Mapping Entity별 추가 Constraint
 
 ### Passenger
 

@@ -738,7 +738,25 @@ Seat 상태 및 Hold 가능 여부 검증
 PENDING Reservation 생성
 + Reservation 번호 발급
 + Hold 만료시각 설정
-+ SeatClass 반영 최종 결제 예정 금액 확정
+        |
+        v
+ReservationFlight 생성
+        |
+        v
+ReservationPassenger 생성
+        |
+        v
+PassengerFlight 생성
+        |
+        v
+Passenger / Flight Membership 정합성 검증
+        |
+        v
+Passenger / Flight별
+최종 운임 계산 및 Snapshot 저장
+        |
+        v
+Reservation.total_amount 확정
         |
         v
 선택한 모든 Seat
@@ -748,6 +766,21 @@ AVAILABLE → HELD
         v
 전체 Transaction Commit
 ```
+
+Reservation Mapping은
+`PENDING` Reservation 생성과 별개의 후속 작업으로 처리하지 않습니다.
+
+다음 Mapping 생성은 모두 동일한 Reservation 시작 Transaction에 포함합니다.
+
+- `ReservationFlight`
+- `ReservationPassenger`
+- `PassengerFlight`
+
+Mapping 생성 또는 Membership 검증 중 하나라도 실패하면
+Reservation 생성과 Seat Hold를 포함한 전체 Transaction을 Rollback합니다.
+
+따라서 정상적으로 생성된 `PENDING` Reservation이
+불완전한 Flight / Passenger Mapping을 가진 상태로 남는 것을 허용하지 않습니다.
 
 Seat 확보를 위한 Database Lock은
 선택한 Seat Row에만 적용합니다.
@@ -779,6 +812,24 @@ seat_id ASC
 
 즉, 편도와 왕복 모두
 Seat 확보는 All-or-Nothing을 보장합니다.
+
+`PENDING` Reservation 생성이 Commit된 이후에는
+MVP에서 Reservation Mapping을 수정하지 않습니다.
+
+불변 대상으로 보는 예약 구성은 다음과 같습니다.
+
+- `ReservationFlight`
+- `ReservationPassenger`
+- `PassengerFlight`
+- Passenger별 Flight Seat 연결
+- Passenger / Flight별 확정 운임
+
+예약 구성을 변경해야 하는 경우에는
+기존 `PENDING` Reservation을 취소하고
+새로운 Reservation을 시작합니다.
+
+Mock Payment 실패 후 재시도하는 경우에는
+기존 Mapping과 확정 운임을 그대로 사용합니다.
 
 구체적인 Repository Query,
 Entity Persist / Flush 순서 및 Database Column은
@@ -819,7 +870,29 @@ SUCCESS → REFUNDED
 
 Seat
 RESERVED → AVAILABLE
+
+ReservationFlight
+→ 유지
+
+ReservationPassenger
+→ 유지
+
+PassengerFlight
+→ 유지
 ```
+
+Reservation 취소는
+예약 구성 Mapping을 삭제하는 Operation이 아닙니다.
+
+취소 이후에도 다음 정보를 과거 예약 이력으로 보존합니다.
+
+- Reservation에 포함되었던 Flight
+- Reservation에 포함되었던 Passenger
+- Passenger와 Flight의 연결
+- Passenger / Flight별 확정 운임
+
+Seat의 현재 판매 가능 상태는 취소 정책에 따라 반환하지만,
+Reservation Mapping Row 자체는 삭제하지 않습니다.
 
 `ROUND_TRIP`에서는 출국 / 귀국 Flight를 포함한
 Reservation 전체를 하나의 취소 단위로 처리합니다.
@@ -890,6 +963,128 @@ Admin 또는 SuperAdmin이 수동 생성한 Flight 모두
 
 구체적인 Entity Persist 순서와 Batch Insert 여부는
 `05-data-api-design.md`에서 정의합니다.
+
+---
+
+### 7.7 Reservation Mapping 구현 원칙
+
+MVP에서는 다음 관계를 단순 `@ManyToMany`로 구현하지 않습니다.
+
+```text
+Reservation ↔ Flight
+Reservation ↔ Passenger
+Passenger ↔ Flight
+```
+
+각 관계는 명시적인 Mapping Entity를 사용합니다.
+
+```text
+ReservationFlight
+ReservationPassenger
+PassengerFlight
+```
+
+각 Mapping Entity는 별도의 단일 식별자를 가지는 Entity로 구현합니다.
+
+```text
+BIGINT id
+```
+
+Composite Primary Key는 사용하지 않습니다.
+
+`PassengerFlight`는 Reservation을 직접 참조합니다.
+
+논리적인 관계:
+
+```text
+PassengerFlight
+├─ Reservation
+├─ Passenger
+├─ Flight
+├─ Seat (nullable)
+└─ Passenger / Flight별 확정 운임
+```
+
+SeatClass는 `PassengerFlight`에 중복 저장하지 않습니다.
+
+Passenger가 선택한 Seat의:
+
+```text
+Seat.seat_class
+```
+
+를 해당 Passenger / Flight의 SeatClass 기준으로 사용합니다.
+
+Passenger / Flight별 최종 운임은
+Reservation 생성 시 Snapshot으로 저장하고
+이후 Payment 재시도에서도 다시 계산하지 않습니다.
+
+구체적인 Column, Foreign Key 및 Unique Constraint는
+`05-data-api-design.md`에서 정의합니다.
+
+---
+
+#### 7.7.1 Membership 정합성
+
+`PassengerFlight`를 생성할 때
+해당 Passenger와 Flight가 모두 동일 Reservation에 속하는지 검증합니다.
+
+```text
+Passenger
+→ ReservationPassenger에 존재
+
+Flight
+→ ReservationFlight에 존재
+```
+
+위 Membership 검증은
+Application / Service Layer에서 수행합니다.
+
+Database에서는 Foreign Key와 핵심 Unique Constraint를 사용하여
+기본적인 참조 및 중복 정합성을 함께 보호합니다.
+
+MVP에서는 Membership 자체를 복잡한 Composite Foreign Key로
+모두 강제하지 않습니다.
+
+---
+
+#### 7.7.2 JPA Cascade 및 삭제 정책
+
+Reservation Mapping은
+예약 이력을 보존해야 하는 데이터입니다.
+
+따라서 Mapping Collection에:
+
+```text
+orphanRemoval = true
+```
+
+를 사용하지 않습니다.
+
+또한 Reservation과 Mapping Entity 사이의 관계에서
+Mapping 이력을 자동 삭제할 수 있는
+`CascadeType.REMOVE`를 사용하지 않습니다.
+
+특히 다음 Entity로 삭제 Cascade가 전파되어서는 안 됩니다.
+
+- `Flight`
+- `Passenger`
+- `Seat`
+
+Reservation 취소는 Entity 삭제가 아니라
+Reservation 상태 전이와 Seat 반환으로 처리합니다.
+
+```text
+Reservation
+→ CANCELLED
+
+Mapping Entity
+→ 유지
+```
+
+필요한 Persist Cascade 사용 여부는
+실제 Aggregate 생성 편의성과 명시성을 고려해 결정할 수 있지만,
+삭제 Cascade는 사용하지 않는 것을 기본 원칙으로 합니다.
 
 ---
 
@@ -1842,11 +2037,29 @@ Reservation 시작 시에는
 실제 Passenger별 선택 SeatClass를 반영하여
 최종 결제 예정 금액을 계산합니다.
 
-`PENDING` Reservation 생성 시 확정된 금액은
-이후 Payment 재시도에서 다시 계산하지 않습니다.
+`PENDING` Reservation 생성 시
+Passenger / Flight별 최종 운임을 Snapshot으로 확정합니다.
+
+각 Passenger / Flight별 확정 운임은
+해당 `PassengerFlight`에 보존합니다.
+
+```text
+PassengerFlight
+→ Passenger / Flight별 최종 확정 운임
+
+Reservation
+→ 모든 PassengerFlight 확정 운임의 합계
+```
+
+`Reservation.total_amount`는
+각 Passenger / Flight별 최종 확정 운임의 합계로 계산합니다.
+
+`PENDING` Reservation 생성 이후에는
+Passenger / Flight별 확정 운임과
+`Reservation.total_amount`를 Payment 재시도 과정에서 다시 계산하지 않습니다.
 
 구체적인 금액 Column Type과 Scale,
-금액 Snapshot 저장 구조는
+Column Name 및 Database Constraint는
 `05-data-api-design.md`에서 정의합니다.
 
 ---

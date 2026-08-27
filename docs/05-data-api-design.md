@@ -76,9 +76,7 @@ Domain Policy에서 정의된 Canonical Term을 유지합니다.
 ###  2.2 지원 관계 모델
 
 핵심 Entity 사이의 관계를 표현하기 위해
-다음과 같은 Supporting Model 또는 Mapping Table을 사용할 수 있습니다.
-
-초안:
+다음 Supporting Model 및 Mapping Entity를 사용합니다.
 
 - `AircraftSeat`
 - `FlightScheduleDay`
@@ -90,9 +88,19 @@ Domain Policy에서 정의된 Canonical Term을 유지합니다.
 이들은 핵심 Domain을 새롭게 추가하기 위한 개념이 아니라
 기존 Domain Policy를 관계형 Database에 표현하기 위한 기술적 모델입니다.
 
-실제 JPA Entity로 구현할지,
-단순 Join Table 또는 별도 Entity로 구현할지는
-각 관계의 추가 속성 필요 여부를 기준으로 결정합니다.
+Reservation 관련 다음 세 관계는
+단순 Join Table 또는 `@ManyToMany`로 구현하지 않습니다.
+
+```text
+ReservationFlight
+ReservationPassenger
+PassengerFlight
+```
+
+세 모델 모두 명시적인 JPA Entity로 구현하며,
+각 Entity는 별도의 `BIGINT id`를 Primary Key로 사용합니다.
+
+Composite Primary Key는 사용하지 않습니다.
 
 ---
 
@@ -1964,6 +1972,60 @@ Backend `Clock`의 현재 `Instant`와 비교하여 판단합니다.
 
 ---
 
+### 12.7 Reservation Mapping Lifecycle
+
+`PENDING` Reservation 생성 Transaction에서
+다음 Mapping Entity를 함께 생성합니다.
+
+```text
+ReservationFlight
+ReservationPassenger
+PassengerFlight
+```
+
+정상 Commit 이후에는
+MVP에서 Reservation Mapping을 수정하지 않습니다.
+
+다음 예약 구성은 생성 당시 Snapshot으로 유지합니다.
+
+- Reservation에 포함된 Flight
+- Reservation에 포함된 Passenger
+- Passenger와 Flight의 연결
+- Passenger별 Flight Seat 연결
+- Passenger / Flight별 확정 운임
+
+예약 구성을 변경해야 하는 경우에는:
+
+```text
+기존 PENDING Reservation
+→ CANCELLED
+
+HELD Seat
+→ AVAILABLE
+
+새로운 Reservation
+→ 다시 생성
+```
+
+방식을 사용합니다.
+
+Reservation이 `CANCELLED` 상태가 되어도
+다음 Mapping Row를 물리적으로 삭제하지 않습니다.
+
+```text
+ReservationFlight
+ReservationPassenger
+PassengerFlight
+```
+
+취소 이후에도 예약 당시의 구성과
+Passenger / Flight별 확정 운임을 과거 이력으로 유지합니다.
+
+따라서 Reservation 취소를 이유로
+Mapping Entity에 대한 자동 삭제를 수행하지 않습니다.
+
+---
+
 ## 13. Reservation과 Flight 관계
 
 ### 13.1 필요성
@@ -1978,10 +2040,8 @@ Backend `Clock`의 현재 `Instant`와 비교하여 판단합니다.
 
 ### 13.2 ReservationFlight
 
-Reservation과 Flight의 관계를 표현하기 위해
-`ReservationFlight` Supporting Model을 사용합니다.
-
-초안:
+Reservation과 Flight의 관계는
+명시적인 `ReservationFlight` Entity로 표현합니다.
 
 ```text
 reservation_flight
@@ -1994,12 +2054,32 @@ sequence
 created_at
 ```
 
-`journey_role` 초안:
+Primary Key:
+
+```text
+id
+→ BIGINT
+→ 단일 Primary Key
+```
+
+Composite Primary Key는 사용하지 않습니다.
+
+`journey_role`은 다음 Canonical Enum을 사용합니다.
 
 ```text
 OUTBOUND
 RETURN
 ```
+
+관계:
+
+```text
+Reservation 1 : N ReservationFlight
+Flight      1 : N ReservationFlight
+```
+
+`ReservationFlight`는 단순 연결 Table이 아니라
+Reservation 내부에서 Flight의 역할과 순서를 표현하는 Mapping Entity입니다.
 
 ---
 
@@ -2046,20 +2126,69 @@ Flight마다 별도의 Reservation 번호를 만들지 않습니다.
 
 ### 13.5 Constraint
 
-하나의 Reservation 안에서
-동일 Flight가 중복 연결되지 않도록 보호합니다.
+`ReservationFlight`에는 다음 Unique Constraint를 적용합니다.
 
-초안:
+#### 동일 Flight 중복 방지
 
 ```text
 UNIQUE(
-  reservation_id,
-  flight_id
+    reservation_id,
+    flight_id
 )
 ```
 
-`ROUND_TRIP`의 정확한 Flight 개수와 Journey Role Validation은
-Application에서 Domain Policy에 따라 검증합니다.
+하나의 Reservation에
+동일 Flight를 두 번 연결할 수 없습니다.
+
+#### Journey Role 중복 방지
+
+```text
+UNIQUE(
+    reservation_id,
+    journey_role
+)
+```
+
+하나의 Reservation에서 동일 Journey Role을
+둘 이상 가질 수 없습니다.
+
+예:
+
+```text
+OUTBOUND 2개
+→ 불가
+
+RETURN 2개
+→ 불가
+```
+
+#### Sequence 중복 방지
+
+```text
+UNIQUE(
+    reservation_id,
+    sequence
+)
+```
+
+동일 Reservation 안에서
+Flight 순서를 중복 사용할 수 없습니다.
+
+`ONE_WAY`와 `ROUND_TRIP`의 정확한 Flight 개수,
+Journey Role과 Sequence 조합은
+Application에서 Domain Policy에 따라 추가 검증합니다.
+
+```text
+ONE_WAY
+→ OUTBOUND
+→ sequence = 1
+
+ROUND_TRIP
+→ OUTBOUND / sequence = 1
+→ RETURN   / sequence = 2
+```
+
+Database Constraint와 Application Validation을 함께 사용합니다.
 
 ---
 
@@ -2214,21 +2343,23 @@ API Masking 방식은 아직 확정하지 않습니다.
 
 ### 16.1 역할
 
-Reservation과 Passenger의 관계를 표현합니다.
+Reservation과 Passenger의 관계는
+명시적인 `ReservationPassenger` Entity로 표현합니다.
 
 하나의 Reservation은
 한 명 이상의 Passenger를 가질 수 있습니다.
-
-초안:
 
 ```text
 Reservation 1 : N ReservationPassenger
 Passenger   1 : N ReservationPassenger
 ```
 
+`ReservationPassenger`는
+Reservation 내부 Passenger 구성과 순서를 표현합니다.
+
 ---
 
-### 16.2 주요 Column 초안
+### 16.2 주요 Column
 
 ```text
 reservation_passenger
@@ -2240,17 +2371,51 @@ sequence
 created_at
 ```
 
-Reservation 안에서 동일 Passenger의
-중복 연결을 허용하지 않는 것을 기본 방향으로 합니다.
+Primary Key:
 
-초안:
+```text
+id
+→ BIGINT
+→ 단일 Primary Key
+```
+
+Composite Primary Key는 사용하지 않습니다.
+
+---
+
+### 16.3 Constraint
+
+하나의 Reservation에
+동일 Passenger를 중복 연결할 수 없습니다.
 
 ```text
 UNIQUE(
-  reservation_id,
-  passenger_id
+    reservation_id,
+    passenger_id
 )
 ```
+
+Reservation 내부 Passenger 순서도
+중복되지 않아야 합니다.
+
+```text
+UNIQUE(
+    reservation_id,
+    sequence
+)
+```
+
+따라서 동일 Reservation 안에서:
+
+```text
+Passenger 중복
+→ 불가
+
+Passenger sequence 중복
+→ 불가
+```
+
+를 Database Constraint로 보호합니다.
 
 ---
 
@@ -2273,7 +2438,9 @@ Flight별 예약 속성을 별도 관계로 표현하는 방안을 사용합니�
 
 ---
 
-### 17.2 주요 Column 초안
+### 17.2 주요 Column
+
+`PassengerFlight`는 명시적인 JPA Entity로 구현합니다.
 
 ```text
 passenger_flight
@@ -2284,8 +2451,74 @@ passenger_id
 flight_id
 seat_id
 companion_passenger_id
+fare_amount
 created_at
 ```
+
+Primary Key:
+
+```text
+id
+→ BIGINT
+→ 단일 Primary Key
+```
+
+Composite Primary Key는 사용하지 않습니다.
+
+관계:
+
+```text
+PassengerFlight
+├─ reservation_id → Reservation
+├─ passenger_id   → Passenger
+├─ flight_id      → Flight
+├─ seat_id        → Seat (nullable)
+└─ companion_passenger_id → Passenger (nullable)
+```
+
+`PassengerFlight.reservation_id`는
+Reservation을 직접 참조합니다.
+
+`seat_id`는 Seat가 필요하지 않은 Passenger를 고려하여
+Nullable FK로 사용합니다.
+
+`companion_passenger_id`의 최종 Constraint와 Validation 구조는
+Passenger / Passport 설계에서 최종 확정합니다.
+
+`PassengerFlight`에는 SeatClass를 별도 Column으로 저장하지 않습니다.
+
+Passenger가 선택한 Seat의:
+
+```text
+Seat.seat_class
+```
+
+를 해당 Passenger / Flight의 SeatClass 기준으로 사용합니다.
+
+Passenger / Flight별 최종 확정 운임은
+`fare_amount`에 Snapshot으로 저장합니다.
+
+```text
+PassengerFlight.fare_amount
+
+Java
+→ BigDecimal
+
+MySQL
+→ DECIMAL(15, 0)
+```
+
+최종 운임은 Application 전체의 운임 반올림 정책에 따라:
+
+```text
+scale(0, RoundingMode.HALF_UP)
+```
+
+이 적용된 값입니다.
+
+`Reservation.total_amount`는
+해당 Reservation에 속한 모든
+`PassengerFlight.fare_amount`의 합계입니다.
 
 ---
 
@@ -2354,6 +2587,75 @@ Child의 Seat는
 Domain Policy상 인접 Seat 조건을 만족해야 합니다.
 
 이 Validation은 Application / Domain Logic에서 수행합니다.
+
+---
+
+### 17.7 Membership 및 Constraint
+
+하나의 `PassengerFlight`는
+반드시 동일 Reservation에 포함된 Passenger와 Flight를 연결해야 합니다.
+
+Application에서는 생성 전에 다음 Membership을 검증합니다.
+
+```text
+Passenger
+→ 동일 reservation_id의 ReservationPassenger에 존재
+
+Flight
+→ 동일 reservation_id의 ReservationFlight에 존재
+```
+
+Membership 전체를 복잡한 Composite Foreign Key로
+Database에서 강제하지 않습니다.
+
+대신 Database에서는:
+
+```text
+Foreign Key
++
+Unique Constraint
+```
+
+로 기본 참조 및 중복 정합성을 보호하고,
+Reservation Membership은 Application / Service Layer에서 검증합니다.
+
+동일 Reservation에서 동일 Passenger와 동일 Flight의
+중복 연결을 허용하지 않습니다.
+
+```text
+UNIQUE(
+    reservation_id,
+    passenger_id,
+    flight_id
+)
+```
+
+따라서 동일 Passenger가
+같은 Reservation의 같은 Flight에
+둘 이상의 `PassengerFlight` Row를 가질 수 없습니다.
+
+또한 `seat_id`가 존재하는 경우
+해당 Seat가 `flight_id`가 가리키는 Flight에 속하는지
+Application에서 반드시 검증합니다.
+
+구체적인 Foreign Key는 다음 방향을 사용합니다.
+
+```text
+reservation_id
+→ reservation.id
+
+passenger_id
+→ passenger.id
+
+flight_id
+→ flight.id
+
+seat_id
+→ seat.id
+
+companion_passenger_id
+→ passenger.id
+```
 
 ---
 
@@ -4410,9 +4712,6 @@ Schema 변경 이력을 Repository에서 관리합니다.
 ### 47.3 Reservation
 
 - [ ] Reservation Number Collision 재시도 횟수
-- [ ] `ReservationFlight` 실제 Entity 여부
-- [ ] `ReservationPassenger` 실제 Entity 여부
-- [ ] `PassengerFlight` 실제 Entity 여부
 - [ ] Cancellation Reason 상세 코드 구조
 
 ---

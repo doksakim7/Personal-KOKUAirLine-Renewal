@@ -1688,7 +1688,24 @@ MVP에서는 귀국 Flight의 출발 Date가
 단, Passenger의 연령 구분과 Seat 배정은
 각 Flight의 탑승일 및 Seat 구성에 따라 Flight별로 판단합니다.
 
-구체적인 Reservation과 Flight의 Database 관계 및 Mapping 방식은
+Reservation과 Flight의 관계는
+`ReservationFlight`를 통해 명시적으로 관리합니다.
+
+`ReservationFlight`는 단순 연결뿐 아니라
+Reservation 내부에서 Flight의 역할과 순서를 표현합니다.
+
+```text
+ONE_WAY
+→ OUTBOUND
+
+ROUND_TRIP
+→ OUTBOUND
+→ RETURN
+```
+
+동일 Reservation에 동일 Flight를 중복 연결하지 않습니다.
+
+구체적인 Entity 구조와 Database Constraint는
 `05-data-api-design.md`에서 정의합니다.
 
 ---
@@ -1747,8 +1764,16 @@ Reservation 생성 전에 예약에 포함할 Passenger 정보를 입력합니�
 
 Passenger 정보 입력은 Seat 선택 및 `PENDING` Reservation 생성 전에 완료되어야 합니다.
 
-다만 Passenger 정보의 실제 저장 시점과
-Reservation과 Passenger의 구체적인 데이터 관계는
+Reservation과 Passenger의 관계는
+`ReservationPassenger`를 통해 명시적으로 관리합니다.
+
+하나의 Reservation에 동일 Passenger를
+중복 연결하지 않습니다.
+
+Reservation 내부 Passenger의 순서를
+일관되게 유지할 수 있어야 합니다.
+
+구체적인 Entity 구조와 Database Constraint는
 `05-data-api-design.md`에서 정의합니다.
 
 `CONFIRMED` Reservation은 반드시 한 명 이상의 Passenger를 포함해야 합니다.
@@ -1762,6 +1787,65 @@ Passenger 자체를 출국편과 귀국편별로 별도로 다시 입력하지 �
 
 단, Passenger의 연령 구분, Seat 필요 여부 및 Seat 배정은
 각 Flight별로 독립적으로 판단합니다.
+
+---
+
+#### 11.4.1 Passenger와 Flight의 예약 관계
+
+Passenger의 Flight별 예약 정보는
+`PassengerFlight`를 통해 명시적으로 관리합니다.
+
+`PassengerFlight`는 최소한 다음 관계를 표현합니다.
+
+```text
+Reservation
++
+Passenger
++
+Flight
+```
+
+Seat가 필요한 Passenger는
+해당 Flight의 Seat와 연결됩니다.
+
+Passenger와 Flight의 조합에 따라 달라지는 정보는
+Passenger 자체나 Reservation 전체에 고정하지 않습니다.
+
+대표적으로 다음 정보가 Flight별로 달라질 수 있습니다.
+
+- Seat
+- SeatClass에 따른 최종 운임
+- Infant Companion
+- Flight 탑승일 기준 연령 판단 결과
+
+Passenger가 선택한 Seat의 SeatClass는
+Flight별 `Seat`에 보존된 SeatClass를 기준으로 사용합니다.
+
+`PassengerFlight`에 동일한 SeatClass 값을
+별도로 중복 저장하지 않습니다.
+
+Passenger / Flight별 최종 확정 운임은
+Reservation 생성 당시의 예약 이력을 보존하기 위해 유지합니다.
+
+하나의 `PassengerFlight`는
+반드시 동일 Reservation에 포함된 Passenger와 Flight의 조합이어야 합니다.
+
+즉:
+
+```text
+Passenger
+→ 해당 Reservation에 포함되어 있어야 함
+
+Flight
+→ 해당 Reservation에 포함되어 있어야 함
+```
+
+이 Membership 정합성은 반드시 검증해야 합니다.
+
+구체적인 Entity 구조,
+운임 저장 방식,
+Database Constraint 및 검증 구현 방식은
+`04-system-design.md`와 `05-data-api-design.md`에서 정의합니다.
 
 ---
 
@@ -1823,6 +1907,33 @@ Reservation에 포함된 Flight의 선택 Seat 중 하나라도 확보에 실패
 - 선택한 Seat 중 일부만 확보하는 Partial Success를 허용하지 않습니다.
 
 즉, 모든 Seat 확보 성공 또는 전체 실패(All-or-Nothing)를 원칙으로 합니다.
+
+`PENDING` Reservation 생성이 정상적으로 완료된 이후에는
+해당 Reservation의 예약 구성을 변경하지 않습니다.
+
+MVP에서 생성 후 변경하지 않는 대상은 다음과 같습니다.
+
+- Reservation에 포함된 Flight
+- Reservation에 포함된 Passenger
+- Passenger와 Flight의 연결
+- Passenger에게 배정된 Seat
+- 해당 Passenger / Flight의 확정 운임
+
+따라서 생성된 `PENDING` Reservation에서
+Flight, Passenger 또는 Seat 구성을 직접 교체하는 기능을 제공하지 않습니다.
+
+예약 구성을 변경해야 하는 경우에는:
+
+```text
+기존 PENDING Reservation 취소
+→ HELD Seat 반환
+→ 새로운 Reservation 시작
+```
+
+방식을 사용합니다.
+
+Mock Payment 실패 후 재시도하는 경우에는
+기존 Reservation Mapping과 확정 운임을 그대로 유지합니다.
 
 구체적인 Transaction 및 동시성 제어 구현 방식은
 시스템 및 데이터 설계에서 정의합니다.
@@ -2423,9 +2534,29 @@ MVP에서는 왕복 Reservation의 일부 Flight만 강제 취소하거나
 
 예약과 결제는 삭제 대상이 아니라 상태 전이를 통해 관리합니다.
 
-예약 취소 시 예약 데이터를 삭제하지 않고 `CANCELLED` 상태로 변경합니다.
+예약 취소 시 Reservation을 물리적으로 삭제하지 않고
+`CANCELLED` 상태로 변경합니다.
 
-결제 데이터 또한 처리 결과 및 이력 보존을 위해 물리적으로 삭제하지 않습니다.
+Reservation이 `CANCELLED` 상태가 되더라도
+예약 당시의 구성과 이력을 보존하기 위해
+다음 Mapping 데이터는 삭제하지 않습니다.
+
+- `ReservationFlight`
+- `ReservationPassenger`
+- `PassengerFlight`
+
+Passenger / Flight별 확정 운임 등
+예약 당시 확정된 이력 데이터도 함께 유지합니다.
+
+Seat의 현재 예약 가능 상태는 취소 정책에 따라 반환할 수 있지만,
+과거 Reservation Mapping 자체를 삭제하여
+예약 이력을 제거하지 않습니다.
+
+결제 데이터 또한 처리 결과 및 이력 보존을 위해
+물리적으로 삭제하지 않습니다.
+
+구체적인 Entity 삭제 정책과 JPA Mapping 방식은
+`04-system-design.md`와 `05-data-api-design.md`에서 정의합니다.
 
 ---
 

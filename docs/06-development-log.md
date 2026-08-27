@@ -362,7 +362,6 @@ Entity 관계 및 API 기본 구조 정의
 주요 미확정 항목:
 
 - `AircraftSeat`의 통로 표현 방식
-- Reservation Mapping Entity 최종 형태
 - Passport Encryption / Masking
 - Payment SUCCESS Database 보호 방식
 - API Error 상세 Mapping
@@ -394,6 +393,38 @@ Payment.amount
 Seat 경쟁
 → HTTP 409
 → SEAT_NOT_AVAILABLE
+```
+
+Reservation Mapping 관련 Data 정책도 확정되었습니다.
+
+```text
+ReservationFlight
+→ 명시적 JPA Entity
+→ BIGINT 단일 Primary Key
+
+ReservationPassenger
+→ 명시적 JPA Entity
+→ BIGINT 단일 Primary Key
+
+PassengerFlight
+→ 명시적 JPA Entity
+→ BIGINT 단일 Primary Key
+→ Reservation 직접 참조
+→ Passenger / Flight별 fare_amount Snapshot 저장
+
+Composite Primary Key
+→ 사용하지 않음
+
+PassengerFlight.seat_class
+→ 별도 저장하지 않음
+→ Seat.seat_class 사용
+
+Membership
+→ Application / Service Layer 검증
+
+Database
+→ Foreign Key
+→ 핵심 Unique Constraint
 ```
 
 ---
@@ -435,6 +466,14 @@ Draft 작성 완료
 - `Payment.amount` → `DECIMAL(15,0)`
 - Flight 생성과 Seat Snapshot 생성 Transaction
 - Aircraft 변경 시 Seat Snapshot 재생성 정책
+- `ReservationFlight` 명시적 Entity
+- `ReservationPassenger` 명시적 Entity
+- `PassengerFlight` 명시적 Entity
+- Reservation Mapping Entity별 `BIGINT` 단일 Primary Key
+- `PassengerFlight.reservation_id`
+- `PassengerFlight.fare_amount` → `DECIMAL(15,0)`
+- Reservation Mapping 핵심 Unique Constraint
+- `PassengerFlight` Membership Application Validation
 
 Refresh Token은 Redis에서 관리하므로
 관계형 Database Entity 또는 ERD Table로 추가하지 않습니다.
@@ -483,53 +522,219 @@ KOKU Airline Reservation Transaction과 연결하지 않기 위해서입니다.
 #### 결정
 
 Reservation에 단일 `flight_id`를 저장하지 않고
-`ReservationFlight` Mapping 구조를 사용합니다.
+명시적인 `ReservationFlight` Entity를 사용합니다.
 
 ```text
 ONE_WAY
-Reservation → Flight 1개
+Reservation
+→ ReservationFlight
+→ OUTBOUND Flight 1개
 
 ROUND_TRIP
-Reservation → Flight 2개
+Reservation
+→ ReservationFlight
+→ OUTBOUND Flight
+→ RETURN Flight
+```
+
+`ReservationFlight`는 단순 Join Table이 아니라
+Reservation 내부에서 Flight의 역할과 순서를 표현합니다.
+
+```text
+journey_role
+sequence
+```
+
+각 Mapping Row는:
+
+```text
+BIGINT id
+→ 단일 Primary Key
+```
+
+를 사용하며 Composite Primary Key는 사용하지 않습니다.
+
+Database에서는 다음 중복을 방지합니다.
+
+```text
+UNIQUE(reservation_id, flight_id)
+
+UNIQUE(reservation_id, journey_role)
+
+UNIQUE(reservation_id, sequence)
 ```
 
 #### 이유
 
 왕복 Reservation을 하나의 Reservation Number와
-하나의 Payment 단위로 관리하기 위해서입니다.
+하나의 Payment 단위로 관리하면서도
+출국 / 귀국 Flight를 명확하게 구분하기 위해서입니다.
+
+또한 단순 `@ManyToMany` 대신 Mapping Entity를 사용하면
+여정 역할과 순서 등 관계 자체의 속성을 명확하게 관리할 수 있습니다.
 
 #### 상태
 
 ```text
-Mapping 구조는 채택
-최종 JPA Entity 구현 방식은 미확정
+ReservationFlight
+→ 명시적 JPA Entity 확정
+
+Primary Key
+→ BIGINT id
+
+Composite Primary Key
+→ 미사용
 ```
+
+#### 영향 문서
+
+- `02-domain-policy.md`
+- `04-system-design.md`
+- `05-data-api-design.md`
+- `docs/diagrams/erd.md`
 
 ---
 
-### 4.3 PassengerFlight 도입
+### 4.3 ReservationPassenger / PassengerFlight Mapping 확정
 
 #### 결정
 
-Passenger의 Flight별 속성을
-`PassengerFlight` 구조로 분리합니다.
+Reservation과 Passenger의 관계는
+명시적인 `ReservationPassenger` Entity로 관리합니다.
 
-#### 이유
+```text
+Reservation
+→ ReservationPassenger
+→ Passenger
+```
 
-ROUND_TRIP에서 같은 Passenger라도
-Flight 탑승일에 따라 다음 정보가 달라질 수 있기 때문입니다.
+Passenger의 Flight별 예약 속성은
+명시적인 `PassengerFlight` Entity로 관리합니다.
 
-- Adult / Child / Infant 구분
+```text
+PassengerFlight
+├─ Reservation
+├─ Passenger
+├─ Flight
+├─ Seat (nullable)
+├─ Companion Passenger (nullable)
+└─ fare_amount
+```
+
+세 Reservation Mapping Entity 모두:
+
+```text
+ReservationFlight
+ReservationPassenger
+PassengerFlight
+
+→ BIGINT id 단일 Primary Key
+→ Composite Primary Key 미사용
+→ @ManyToMany 미사용
+```
+
+#### ReservationPassenger
+
+동일 Reservation에
+동일 Passenger 또는 동일 순서를 중복 연결하지 않습니다.
+
+```text
+UNIQUE(reservation_id, passenger_id)
+
+UNIQUE(reservation_id, sequence)
+```
+
+#### PassengerFlight
+
+동일 Reservation에서
+동일 Passenger와 동일 Flight의 중복 Mapping을 허용하지 않습니다.
+
+```text
+UNIQUE(
+    reservation_id,
+    passenger_id,
+    flight_id
+)
+```
+
+`PassengerFlight`는 Reservation을 직접 참조합니다.
+
+Passenger와 Flight는 모두
+해당 Reservation에 포함되어 있어야 합니다.
+
+```text
+Passenger
+→ ReservationPassenger에 존재
+
+Flight
+→ ReservationFlight에 존재
+```
+
+Membership 정합성은
+Application / Service Layer에서 검증합니다.
+
+Database에서는 복잡한 Composite Foreign Key 대신
+일반 Foreign Key와 핵심 Unique Constraint를 사용합니다.
+
+#### Flight별 속성
+
+ROUND_TRIP에서는 같은 Passenger라도
+Flight에 따라 다음 정보가 달라질 수 있습니다.
+
+- Adult / Child / Infant 판단
 - Seat 필요 여부
 - Seat 배정
+- SeatClass
+- 최종 운임
 - Infant Companion
+
+Passenger / Flight별 최종 확정 운임은:
+
+```text
+PassengerFlight.fare_amount
+→ BigDecimal
+→ DECIMAL(15,0)
+```
+
+으로 Snapshot 저장합니다.
+
+SeatClass는 `PassengerFlight`에 중복 저장하지 않고:
+
+```text
+Seat.seat_class
+```
+
+를 기준으로 사용합니다.
+
+`Reservation.total_amount`는
+각 `PassengerFlight.fare_amount`의 합계입니다.
 
 #### 상태
 
 ```text
-Data Model 초안 채택
-최종 JPA Mapping은 구현 전 재검토
+ReservationFlight
+→ 확정
+
+ReservationPassenger
+→ 확정
+
+PassengerFlight
+→ 확정
+
+Reservation Mapping 구조
+→ 설계 완료
 ```
+
+Infant Companion의 세부 Constraint와
+연령 정보 저장 구조는
+Passenger / Passport 설계에서 별도로 확정합니다.
+
+#### 영향 문서
+
+- `02-domain-policy.md`
+- `04-system-design.md`
+- `05-data-api-design.md`
+- `docs/diagrams/erd.md`
 
 ---
 
@@ -1421,9 +1626,16 @@ Reservation Number 생성
         ↓
 hold_expires_at 확정
         ↓
-Reservation / Flight / Passenger Mapping 생성
+ReservationFlight 생성
         ↓
-Passenger / Flight별 선택 SeatClass 기준 운임 계산
+ReservationPassenger 생성
+        ↓
+PassengerFlight 생성
+        ↓
+Passenger / Flight Membership 정합성 검증
+        ↓
+Passenger / Flight별 선택 SeatClass 기준
+최종 운임 계산 및 fare_amount Snapshot 저장
         ↓
 Reservation.total_amount 확정
         ↓
@@ -1458,9 +1670,31 @@ Backend `SeatClassFarePolicy`를 기준으로 계산합니다.
 Reservation의 최종 금액은
 반올림이 완료된 Passenger / Flight별 운임의 합계입니다.
 
-구체적인 Reservation Mapping Entity의
-Persist / Flush 순서는
-Reservation Mapping 설계 및 실제 JPA 구현 시 최종 확정합니다.
+`ReservationFlight`,
+`ReservationPassenger`,
+`PassengerFlight` 생성은
+모두 동일한 Reservation 시작 Transaction 안에서 처리합니다.
+
+Mapping 생성 또는 Membership 검증에 실패하면:
+
+```text
+Reservation 생성
++
+Mapping 생성
++
+Seat Hold
+
+→ 전체 Rollback
+```
+
+합니다.
+
+따라서 정상 Commit된 `PENDING` Reservation에
+불완전한 Reservation Mapping이 남는 것을 허용하지 않습니다.
+
+세부적인 JPA `persist` / `flush` 호출 순서는
+구현 단계의 내부 최적화 사항으로 두되,
+위 Transaction Boundary와 원자성은 변경하지 않습니다.
 
 ---
 
@@ -1581,6 +1815,96 @@ Seat RELEASE
 ```
 
 기존 FAILED Payment는 삭제하지 않습니다.
+
+---
+
+### 6.6 Reservation Mapping Lifecycle
+
+#### 생성
+
+Reservation Mapping은
+`PENDING` Reservation 생성 Transaction에서 함께 생성합니다.
+
+```text
+Reservation
++
+ReservationFlight
++
+ReservationPassenger
++
+PassengerFlight
++
+Seat Hold
+
+→ 하나의 Transaction
+```
+
+#### 생성 후 변경
+
+정상적으로 Commit된 `PENDING` Reservation의
+예약 구성은 MVP에서 변경하지 않습니다.
+
+불변 대상으로 보는 정보:
+
+- Reservation에 포함된 Flight
+- Reservation에 포함된 Passenger
+- Passenger와 Flight의 연결
+- Passenger별 Flight Seat 연결
+- Passenger / Flight별 확정 운임
+
+예약 구성을 변경해야 하는 경우:
+
+```text
+기존 PENDING Reservation
+→ CANCELLED
+
+HELD Seat
+→ AVAILABLE
+
+새 Reservation
+→ 다시 시작
+```
+
+방식을 사용합니다.
+
+Payment 실패 후 재시도하는 경우에는
+기존 Mapping과 확정 운임을 그대로 사용합니다.
+
+#### 취소 후 이력
+
+Reservation이 `CANCELLED` 상태가 되어도
+다음 Mapping Row를 삭제하지 않습니다.
+
+```text
+ReservationFlight
+ReservationPassenger
+PassengerFlight
+```
+
+Seat는 현재 판매 상태로 반환할 수 있지만
+Reservation 당시의 Mapping과 운임 이력은 유지합니다.
+
+따라서 Reservation 취소를
+Mapping Entity 삭제로 구현하지 않습니다.
+
+#### JPA 삭제 정책
+
+Reservation Mapping은 이력 보존 대상이므로
+삭제가 자동 전파되는 구조를 사용하지 않습니다.
+
+```text
+orphanRemoval = true
+→ 사용하지 않음
+
+CascadeType.REMOVE
+→ 사용하지 않음
+```
+
+특히 다음 Entity로 삭제가 전파되어서는 안 됩니다.
+
+- Flight
+- Passenger
+- Seat
 
 ---
 
@@ -2307,13 +2631,6 @@ Resolved
 ### Seat
 
 - [ ] `AircraftSeat`의 통로 표현 방식
-
-### Reservation Mapping
-
-- [ ] `ReservationFlight`의 최종 JPA Entity 여부
-- [ ] `ReservationPassenger`의 최종 JPA Entity 여부
-- [ ] `PassengerFlight`의 최종 JPA Entity 여부
-- [ ] Mapping Entity별 추가 Constraint
 
 ### Passenger
 
