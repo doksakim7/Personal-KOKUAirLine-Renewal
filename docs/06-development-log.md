@@ -362,7 +362,6 @@ Entity 관계 및 API 기본 구조 정의
 주요 미확정 항목:
 
 - `AircraftSeat`의 통로 표현 방식
-- Passport Encryption / Masking
 - Payment SUCCESS Database 보호 방식
 - API Error 상세 Mapping
 - External Flight DTO
@@ -427,6 +426,40 @@ Database
 → 핵심 Unique Constraint
 ```
 
+Passenger / Passport 관련 Data 정책도 확정되었습니다.
+
+```text
+Passenger
+→ Reservation-scoped Snapshot
+→ 다른 Reservation에서 기존 Passenger Row 재사용하지 않음
+
+Gender
+→ MALE / FEMALE
+
+Nationality
+→ ISO 3166-1 alpha-2
+
+PassengerFlight.age_category
+→ ADULT / CHILD / INFANT
+→ Flight별 Snapshot
+
+PassengerFlight.companion_passenger_id
+→ Flight별 Infant Companion
+→ Nullable FK
+
+Test Passport Number
+→ SecureRandom 기반 시스템 생성
+→ 사용자 직접 입력 / 수정 불가
+
+Passport 저장
+→ AES-GCM Application-level Encryption
+→ Ciphertext + IV 분리 저장
+
+Passport API
+→ 원문 반환 금지
+→ Masked 값만 반환
+```
+
 ---
 
 ### 3.6 ERD
@@ -450,6 +483,13 @@ Draft 작성 완료
 - Airport IANA Time Zone
 - Airport IATA `VARCHAR(3)`
 - `test_passport_expiry_date`
+- Passenger의 Reservation-scoped Snapshot 구조
+- `Passenger.gender` → `MALE / FEMALE`
+- `Passenger.nationality` → ISO 3166-1 alpha-2
+- `test_passport_no_ciphertext`
+- `test_passport_no_iv`
+- `test_passport_country`
+- Test Passport Number의 AES-GCM 암호화 저장 구조
 - `FlightSchedule`
 - `FlightScheduleDay`
 - Flight의 `flight_schedule_id`
@@ -471,6 +511,8 @@ Draft 작성 완료
 - `PassengerFlight` 명시적 Entity
 - Reservation Mapping Entity별 `BIGINT` 단일 Primary Key
 - `PassengerFlight.reservation_id`
+- `PassengerFlight.age_category`
+- `PassengerFlight.companion_passenger_id`
 - `PassengerFlight.fare_amount` → `DECIMAL(15,0)`
 - Reservation Mapping 핵심 Unique Constraint
 - `PassengerFlight` Membership Application Validation
@@ -618,6 +660,7 @@ PassengerFlight
 ├─ Flight
 ├─ Seat (nullable)
 ├─ Companion Passenger (nullable)
+├─ AgeCategory Snapshot
 └─ fare_amount
 ```
 
@@ -681,12 +724,37 @@ Database에서는 복잡한 Composite Foreign Key 대신
 ROUND_TRIP에서는 같은 Passenger라도
 Flight에 따라 다음 정보가 달라질 수 있습니다.
 
-- Adult / Child / Infant 판단
+- `AgeCategory`
 - Seat 필요 여부
 - Seat 배정
 - SeatClass
 - 최종 운임
 - Infant Companion
+
+Flight별 연령 판정 결과는:
+
+```text
+PassengerFlight.age_category
+
+ADULT
+CHILD
+INFANT
+```
+
+으로 `PENDING` Reservation 생성 당시 Snapshot 저장합니다.
+
+Infant Companion은:
+
+```text
+PassengerFlight.companion_passenger_id
+```
+
+로 Flight별 관리합니다.
+
+따라서 동일 Infant가
+출국 / 귀국 Flight 모두에서 `INFANT`이더라도
+각 Flight에서 서로 다른 Adult Passenger를
+Companion으로 지정할 수 있습니다.
 
 Passenger / Flight별 최종 확정 운임은:
 
@@ -725,9 +793,28 @@ Reservation Mapping 구조
 → 설계 완료
 ```
 
-Infant Companion의 세부 Constraint와
-연령 정보 저장 구조는
-Passenger / Passport 설계에서 별도로 확정합니다.
+Passenger / Passport 후속 설계에서
+다음 사항까지 확정되었습니다.
+
+```text
+PassengerFlight.age_category
+→ Flight별 AgeCategory Snapshot
+
+PassengerFlight.companion_passenger_id
+→ Flight별 Infant Companion
+
+ADULT / CHILD
+→ Seat 필수
+
+INFANT
+→ Seat 없음
+
+Adult 1명
+→ 같은 Flight에서 Infant 최대 1명
+```
+
+위 조건의 관계 정합성은
+Application / Service Layer에서 검증합니다.
 
 #### 영향 문서
 
@@ -1612,6 +1699,10 @@ PENDING Reservation 생성과
 ```text
 Reservation 요청 검증
         ↓
+Passenger 입력 Normalize / Validation
+        ↓
+동일 Reservation 내 Passenger 중복 검증
+        ↓
 선택 Seat ID 중복 제거 / 검증
         ↓
 seat_id ASC 정렬
@@ -1628,9 +1719,24 @@ hold_expires_at 확정
         ↓
 ReservationFlight 생성
         ↓
+Passenger 생성
+        ↓
+Test Passport 생성
++ SecureRandom Passport Number
++ AES-GCM Encryption
+        ↓
 ReservationPassenger 생성
         ↓
+각 Passenger / Flight
+AgeCategory 계산
+        ↓
+Seat 필요 여부 검증
++ Infant Companion 검증
+        ↓
 PassengerFlight 생성
++ seat_id
++ companion_passenger_id
++ age_category Snapshot
         ↓
 Passenger / Flight Membership 정합성 검증
         ↓
@@ -1670,24 +1776,31 @@ Backend `SeatClassFarePolicy`를 기준으로 계산합니다.
 Reservation의 최종 금액은
 반올림이 완료된 Passenger / Flight별 운임의 합계입니다.
 
-`ReservationFlight`,
-`ReservationPassenger`,
-`PassengerFlight` 생성은
-모두 동일한 Reservation 시작 Transaction 안에서 처리합니다.
-
-Mapping 생성 또는 Membership 검증에 실패하면:
+다음 데이터 생성은 모두
+동일한 Reservation 시작 Transaction 안에서 처리합니다.
 
 ```text
-Reservation 생성
+Reservation
 +
-Mapping 생성
+ReservationFlight
++
+Passenger
++
+Test Passport 정보
++
+ReservationPassenger
++
+PassengerFlight
 +
 Seat Hold
-
-→ 전체 Rollback
 ```
 
-합니다.
+따라서 Passenger Validation,
+Passport 생성,
+AgeCategory 계산,
+Infant Companion Validation,
+Mapping 생성 또는 Membership 검증 중 하나라도 실패하면
+Reservation 시작 전체를 Rollback합니다.
 
 따라서 정상 Commit된 `PENDING` Reservation에
 불완전한 Reservation Mapping이 남는 것을 허용하지 않습니다.
@@ -1830,6 +1943,10 @@ Reservation
 +
 ReservationFlight
 +
+Passenger
++
+Test Passport 정보
++
 ReservationPassenger
 +
 PassengerFlight
@@ -1848,8 +1965,12 @@ Seat Hold
 
 - Reservation에 포함된 Flight
 - Reservation에 포함된 Passenger
+- Passenger의 예약 당시 기본정보
+- Passenger의 Test Passport 정보
 - Passenger와 Flight의 연결
 - Passenger별 Flight Seat 연결
+- `PassengerFlight.age_category`
+- `PassengerFlight.companion_passenger_id`
 - Passenger / Flight별 확정 운임
 
 예약 구성을 변경해야 하는 경우:
@@ -2519,7 +2640,14 @@ Passenger Data
 - [ ] Logout 시 Redis Refresh Token 폐기
 - [ ] Token / Token Hash Log 출력 없음
 - [ ] Secret Repository 포함 없음
-- [ ] Test Passport Log 출력 없음
+- [ ] Test Passport Number 평문 Database 저장 없음
+- [ ] Test Passport Number AES-GCM Encryption 적용
+- [ ] Passport Encryption Key Repository 포함 없음
+- [ ] Passport Encryption Key Log 출력 없음
+- [ ] Test Passport Number 원문 / 복호화 값 Log 출력 없음
+- [ ] Member Reservation 상세 Passport Number Masking
+- [ ] Admin Reservation 상세 Passport Number Masking
+- [ ] Passport 원문 API Response 노출 없음
 - [ ] 권한 Backend 검증
 - [ ] 다른 Member Reservation 접근 차단
 
@@ -2600,7 +2728,7 @@ Technical Debt를 관리합니다.
 | TD-001 | Auth | JWT / Refresh Token / CSRF 세부 정책 확정 | High | Resolved |
 | TD-002 | Time | UTC / Instant / ZoneId / Clock 시간 정책 확정 | High | Resolved |
 | TD-003 | Seat | Pessimistic Row Lock 동시성 / Deadlock / 성능 검증 필요 | High | Open |
-| TD-004 | Passenger | Test Passport 보호 방식 확정 필요 | Medium | Open |
+| TD-004 | Passenger | Test Passport 보호 방식 확정 | Medium | Resolved |
 | TD-005 | External | Flight API Provider 확정 필요 | High | Open |
 | TD-006 | AI | Structured Output Contract 확정 필요 | Medium | Open |
 | TD-007 | Infra | AWS 세부 Architecture 확정 필요 | Medium | Open |
@@ -2631,14 +2759,6 @@ Resolved
 ### Seat
 
 - [ ] `AircraftSeat`의 통로 표현 방식
-
-### Passenger
-
-- [ ] Gender Enum
-- [ ] Nationality 저장
-- [ ] Passport 형식
-- [ ] Encryption
-- [ ] Masking
 
 ### Payment
 

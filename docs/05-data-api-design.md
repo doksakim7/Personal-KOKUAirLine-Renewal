@@ -1990,8 +1990,12 @@ MVP에서 Reservation Mapping을 수정하지 않습니다.
 
 - Reservation에 포함된 Flight
 - Reservation에 포함된 Passenger
+- Passenger의 예약 당시 기본정보
+- Passenger의 테스트용 Passport 정보
 - Passenger와 Flight의 연결
 - Passenger별 Flight Seat 연결
+- `PassengerFlight.age_category`
+- `PassengerFlight.companion_passenger_id`
 - Passenger / Flight별 확정 운임
 
 예약 구성을 변경해야 하는 경우에는:
@@ -2201,11 +2205,34 @@ Database Constraint와 Application Validation을 함께 사용합니다.
 
 `Member`와 `Passenger`는 별개의 Entity입니다.
 
-Member가 자신이 아닌 다른 Passenger를 포함한 Reservation을 생성할 수 있습니다.
+Member가 자신이 아닌 다른 Passenger를 포함한
+Reservation을 생성할 수 있습니다.
+
+MVP의 Passenger는
+Member가 여러 Reservation에서 재사용하는
+Passenger Profile 또는 동행자 주소록으로 사용하지 않습니다.
+
+Passenger는 특정 Reservation 생성 당시의
+탑승객 정보를 보존하는
+Reservation-scoped Snapshot으로 취급합니다.
+
+```text
+Reservation A
+→ Passenger A
+
+Reservation B
+→ 새로운 Passenger
+```
+
+동일한 실제 사람이 다른 Reservation에 다시 탑승하더라도
+기존 Passenger Row를 재사용하지 않습니다.
+
+Passenger는 `PENDING` Reservation 생성 Transaction에서 생성하며,
+정상 Commit 이후 예약 당시 기본정보를 수정하지 않습니다.
 
 ---
 
-### 14.2 주요 Column 초안
+### 14.2 주요 Column
 
 ```text
 passenger
@@ -2216,24 +2243,54 @@ first_name
 birth_date
 gender
 nationality
-test_passport_no
+test_passport_no_ciphertext
+test_passport_no_iv
 test_passport_country
 test_passport_expiry_date
 created_at
 updated_at
 ```
 
-날짜 Column Type:
+주요 Type은 다음과 같습니다.
 
 ```text
+last_name
+→ VARCHAR(50)
+
+first_name
+→ VARCHAR(50)
+
 birth_date
 → Java LocalDate
 → MySQL DATE
+
+gender
+→ Gender Enum
+→ VARCHAR(10)
+
+nationality
+→ ISO 3166-1 alpha-2
+→ CHAR(2)
+
+test_passport_no_ciphertext
+→ AES-GCM 암호화 결과
+→ VARBINARY(128)
+
+test_passport_no_iv
+→ AES-GCM IV / Nonce
+→ BINARY(12)
+
+test_passport_country
+→ ISO 3166-1 alpha-2
+→ CHAR(2)
 
 test_passport_expiry_date
 → Java LocalDate
 → MySQL DATE
 ```
+
+Passport Encryption Key는
+Passenger Table에 저장하지 않습니다.
 
 Passenger의 생년월일과 Test Passport 만료일은
 특정 순간의 절대 시각이 아니라 날짜 자체를 의미하므로
@@ -2246,23 +2303,118 @@ Passenger의 생년월일과 Test Passport 만료일은
 Passenger 이름은
 테스트용 여권 영문명 형식을 기준으로 저장합니다.
 
-구체적인 허용 문자, 길이 및 Validation은
-구현 전에 확정합니다.
+영문 성과 이름은 각각:
+
+```text
+1 ~ 50자
+```
+
+로 제한합니다.
+
+허용 문자는 다음과 같습니다.
+
+```text
+A-Z
+공백
+-
+'
+```
+
+Backend는 저장 전에 다음 Normalize를 수행합니다.
+
+```text
+trim
+        ↓
+연속 공백 → 하나의 공백
+        ↓
+uppercase(Locale.ROOT)
+```
+
+API Validation과 Domain Validation 모두
+정규화된 값을 기준으로 처리합니다.
 
 ---
 
-### 14.4 생년월일과 연령 구분
+### 14.4 Gender / Nationality
 
-Passenger의 Adult / Child / Infant 구분을
-Passenger Table에 고정 Enum으로 저장하지 않는 것을 기본 방향으로 합니다.
+`Gender`는 다음 Canonical Enum을 사용합니다.
 
-이유:
+```text
+MALE
+FEMALE
+```
 
-`ROUND_TRIP`에서는 같은 Passenger라도
-각 Flight 탑승일에 따라 연령 구분이 달라질 수 있습니다.
+JPA에서는 `EnumType.STRING`으로 저장합니다.
 
-따라서 연령 Category는
-각 Flight의 탑승일과 Passenger `birth_date`를 기준으로 계산합니다.
+Nationality는
+ISO 3166-1 alpha-2 국가 코드를 사용합니다.
+
+예:
+
+```text
+KR
+JP
+US
+FR
+```
+
+KOKU Airline의 운항 Route가 한국 ↔ 일본으로 제한되어 있어도
+Passenger Nationality는 `KR`, `JP`로 제한하지 않습니다.
+
+지원 Route와 Passenger Nationality는
+서로 다른 Validation 영역으로 처리합니다.
+
+---
+
+### 14.5 동일 Reservation Passenger 중복
+
+동일 Reservation 생성 요청 안에서
+명백하게 같은 Passenger가 중복 입력되지 않도록
+Application에서 검증합니다.
+
+기본 비교값:
+
+```text
+normalized last_name
++
+normalized first_name
++
+birth_date
+```
+
+다만 동명이인 가능성이 있으므로
+이 조합을 Database Unique Constraint로 강제하지 않습니다.
+
+---
+
+### 14.6 생년월일과 AgeCategory
+
+Passenger의 Adult / Child / Infant 구분은
+Passenger Table에 저장하지 않습니다.
+
+각 Flight의 출발 Airport Local Date와
+Passenger의 `birth_date`를 기준으로 계산합니다.
+
+```text
+Flight Local Date < birth_date + 7 days
+→ 예약 불가
+
+Flight Local Date < birth_date + 2 years
+→ INFANT
+
+Flight Local Date < birth_date + 12 years
+→ CHILD
+
+그 외
+→ ADULT
+```
+
+계산 결과는
+`PENDING` Reservation 생성 시
+각 `PassengerFlight.age_category`에 Snapshot으로 저장합니다.
+
+따라서 `ROUND_TRIP`에서는
+동일 Passenger라도 Flight별 AgeCategory가 달라질 수 있습니다.
 
 ---
 
@@ -2272,8 +2424,9 @@ Passenger Table에 고정 Enum으로 저장하지 않는 것을 기본 방향으
 
 사용자는 실제 Passport 정보를 입력하지 않습니다.
 
-Passenger 기본 정보 입력 후
-시스템이 테스트용 여권정보를 생성합니다.
+테스트용 Passport 정보는
+`PENDING` Reservation 생성 Transaction에서
+시스템이 자동 생성합니다.
 
 생성 항목:
 
@@ -2281,61 +2434,180 @@ Passenger 기본 정보 입력 후
 - 발급국
 - 만료일
 
----
-
-### 15.2 발급국
-
-초안:
-
-```text
-test_passport_country = Passenger nationality
-```
+Passport 정보는 별도의 `Passport` Entity로 분리하지 않고
+Passenger의 Reservation Snapshot 정보로 저장합니다.
 
 ---
 
-### 15.3 만료일
-
-Domain Policy 기준:
-
-```text
-생성일 + 5년
-```
-
-생성된 만료일은
-Reservation에 포함된 모든 Flight의 탑승일 이후여야 합니다.
-
-유효하지 않으면
-Reservation을 `CONFIRMED`로 변경할 수 없습니다.
-
----
-
-### 15.4 Passport Number 생성
+### 15.2 Passport Number 생성
 
 테스트용 Passport Number는
-실제 여권번호가 아님을 명확하게 구분할 수 있는
-시스템 생성 값을 사용합니다.
+Java `SecureRandom`을 이용하여 생성합니다.
 
-구체적인 형식은 구현 전에 확정합니다.
+사용 가능한 문자는 다음과 같습니다.
+
+```text
+A-Z
+0-9
+```
+
+길이는:
+
+```text
+6 ~ 12자
+```
+
+범위로 제한합니다.
+
+실제 국가별 Passport Number 규칙을
+MVP에서 재현하지 않습니다.
 
 사용자가 직접 입력하거나 수정할 수 없습니다.
 
+하나의 Reservation 생성 과정에서
+여러 Passenger의 Passport Number를 동시에 생성할 경우
+암호화 전 원문 기준으로 중복이 발생하지 않도록 검증합니다.
+
+MVP에서는 Database 전체의 Passport Number를 대상으로
+전역 중복 검사를 수행하지 않습니다.
+
 ---
 
-### 15.5 저장 및 보호
+### 15.3 발급국
 
-테스트용 Passport Number는
-실제 개인정보는 아니지만 민감정보와 유사하게 취급합니다.
+테스트용 Passport의 발급국은
+Passenger Nationality와 동일하게 생성합니다.
 
-다음 원칙을 적용합니다.
+```text
+test_passport_country
+=
+Passenger.nationality
+```
 
-- Log 출력 금지
-- 불필요한 API Response 제외
-- 불필요한 관리자 화면 노출 금지
+국가 표현은
+ISO 3166-1 alpha-2 Code를 사용합니다.
 
-Database Encryption 적용 여부와
-API Masking 방식은 아직 확정하지 않습니다.
+---
 
-`04-system-design.md`의 보안 미확정 항목과 함께 결정합니다.
+### 15.4 만료일
+
+테스트용 Passport 만료일은
+해당 Passenger가 Reservation에서 탑승하는
+가장 마지막 Flight의 출발 Airport Local Date를 기준으로 생성합니다.
+
+```text
+마지막 Flight Local Date
++
+5년
+```
+
+예:
+
+```text
+마지막 Flight 탑승일
+2026-09-10
+
+Passport 만료일
+2031-09-10
+```
+
+`ONE_WAY`에서는 단일 Flight,
+`ROUND_TRIP`에서는 Passenger가 탑승하는
+출국 / 귀국 Flight 중 가장 마지막 날짜를 기준으로 합니다.
+
+따라서 생성된 Passport의 만료일은
+해당 Passenger가 탑승하는 모든 Flight의 탑승일 이후입니다.
+
+---
+
+### 15.5 Encryption 저장
+
+Test Passport Number 원문은
+Database에 평문으로 저장하지 않습니다.
+
+Application의 `PassportCryptoService`에서
+AES-GCM으로 암호화한 뒤 저장합니다.
+
+```text
+Plain Passport Number
+        ↓
+AES-GCM
+        ↓
+Ciphertext
++
+IV / Nonce
+        ↓
+Passenger 저장
+```
+
+Database Column:
+
+```text
+test_passport_no_ciphertext
+→ VARBINARY(128)
+→ NOT NULL
+
+test_passport_no_iv
+→ BINARY(12)
+→ NOT NULL
+```
+
+암호화 시 매번 새로운 IV / Nonce를 생성하고
+동일 Key / IV 조합을 재사용하지 않습니다.
+
+Encryption Key는 Database에 저장하지 않습니다.
+
+검색용 Passport Hash / HMAC Column도
+MVP에서는 사용하지 않습니다.
+
+따라서 Randomized Encryption Ciphertext에
+Passport 원문 기준 Unique Constraint를 적용하지 않습니다.
+
+---
+
+### 15.6 Masking
+
+Passport Number는
+일반 API Response에서 원문으로 반환하지 않습니다.
+
+기본 Masking 규칙:
+
+```text
+앞 2자리
++
+중간 Masking
++
+뒤 2자리
+```
+
+예:
+
+```text
+AB123491
+→ AB****91
+```
+
+기본 API 정책:
+
+```text
+Reservation 목록
+→ Passport Number 제외
+
+Member Reservation 상세
+→ Masked Passport Number
+
+Admin Reservation 상세
+→ Masked Passport Number
+```
+
+Masking은 Backend에서 수행하며
+Frontend에 원문 Passport Number를 전달한 뒤
+Frontend에서 Masking하는 구조를 사용하지 않습니다.
+
+Passport Number 원문,
+복호화된 값,
+Encryption Key는
+Application Log에 출력하지 않습니다.
 
 ---
 
@@ -2451,6 +2723,7 @@ passenger_id
 flight_id
 seat_id
 companion_passenger_id
+age_category
 fare_amount
 created_at
 ```
@@ -2479,11 +2752,50 @@ PassengerFlight
 `PassengerFlight.reservation_id`는
 Reservation을 직접 참조합니다.
 
-`seat_id`는 Seat가 필요하지 않은 Passenger를 고려하여
-Nullable FK로 사용합니다.
+`seat_id`는 Nullable FK입니다.
 
-`companion_passenger_id`의 최종 Constraint와 Validation 구조는
-Passenger / Passport 설계에서 최종 확정합니다.
+```text
+ADULT
+→ seat_id NOT NULL
+
+CHILD
+→ seat_id NOT NULL
+
+INFANT
+→ seat_id NULL
+```
+
+Database Column 자체는 Nullable로 두고
+AgeCategory와 Seat의 조합은 Application에서 검증합니다.
+
+`companion_passenger_id` 역시 Nullable FK입니다.
+
+```text
+ADULT / CHILD
+→ companion_passenger_id = NULL
+
+INFANT
+→ companion_passenger_id 필수
+```
+
+이 조합도 Application / Service Layer에서 검증합니다.
+
+`age_category`는 다음 Canonical Enum의
+Reservation 생성 당시 Snapshot입니다.
+
+```text
+ADULT
+CHILD
+INFANT
+```
+
+Database에는 문자열로 저장합니다.
+
+```text
+age_category
+→ VARCHAR(10)
+→ NOT NULL
+```
 
 `PassengerFlight`에는 SeatClass를 별도 Column으로 저장하지 않습니다.
 
@@ -2522,58 +2834,89 @@ scale(0, RoundingMode.HALF_UP)
 
 ---
 
-### 17.3 Seat
+### 17.3 AgeCategory / Seat
 
-해당 Flight에서 Seat가 필요한 Passenger는
-`seat_id`를 가집니다.
-
-해당 Flight에서 Infant인 Passenger는
-별도 Seat를 사용하지 않으므로:
+Passenger의 Seat 필요 여부는
+`PassengerFlight.age_category` Snapshot을 기준으로 판단합니다.
 
 ```text
-seat_id = NULL
+ADULT
+→ seat_id 필수
+
+CHILD
+→ seat_id 필수
+
+INFANT
+→ seat_id = NULL
 ```
 
-을 허용합니다.
+`ADULT` 또는 `CHILD`인데 `seat_id`가 없거나,
+`INFANT`인데 `seat_id`가 존재하면
+Reservation 시작을 거부합니다.
 
-Seat 필요 여부는
-Passenger의 생년월일과 Flight 탑승일을 기준으로
-Backend에서 판단합니다.
+`seat_id`가 존재하는 경우
+해당 Seat는 반드시 `PassengerFlight.flight_id`가 가리키는
+동일 Flight에 속해야 합니다.
+
+이 정합성은 Application / Service Layer에서 검증합니다.
 
 ---
 
 ### 17.4 Infant Companion
 
-해당 Flight에서 Infant인 경우
+해당 Flight에서 `INFANT`인 Passenger는
+독립 Seat를 사용하지 않고
 Adult Passenger와 연결되어야 합니다.
 
-초안:
-
 ```text
-companion_passenger_id
+PassengerFlight.companion_passenger_id
 ```
 
-이 값은 동일 Reservation에 포함된 Passenger를 참조합니다.
+Companion Passenger는 반드시 다음 조건을 만족해야 합니다.
 
-지정된 Companion은
-해당 Flight에서 Adult 조건을 만족해야 합니다.
+- 동일 Reservation에 포함
+- 동일 Flight에 포함
+- 해당 Flight의 `PassengerFlight.age_category = ADULT`
 
-Adult 1명당
-해당 Flight에서 최대 Infant 1명만 연결할 수 있습니다.
+`INFANT`의 `companion_passenger_id`는 필수이며,
+`ADULT` / `CHILD`에서는 사용하지 않습니다.
+
+같은 Flight에서 Adult 1명은
+최대 1명의 Infant만 동반할 수 있습니다.
+
+이 정책은 Application / Service Layer에서 검증합니다.
+
+MVP에서는 이를 위한 복잡한 Composite Foreign Key 또는
+추가 Companion Mapping Entity를 만들지 않습니다.
 
 ---
 
 ### 17.5 ROUND_TRIP Companion
 
-Domain Policy에 따라
-Passenger가 하나 이상의 Flight에서 Infant인 경우
-동일 Companion Adult를 기본으로 사용합니다.
+`ROUND_TRIP`에서도
+Infant Companion은 Flight별로 독립적으로 관리합니다.
 
-그러나 Validation은
-각 Flight별로 수행합니다.
+따라서 동일 Infant가
+출국과 귀국 모두 `INFANT`인 경우에도
+각 Flight의 Companion이 서로 달라도 허용합니다.
 
-한 Flight에서 Companion이 Adult 조건을 만족하지 못하면
-Reservation을 시작할 수 없습니다.
+예:
+
+```text
+OUTBOUND
+Infant → Passenger A
+
+RETURN
+Infant → Passenger B
+```
+
+Frontend는 출국 Flight에서 선택한 Adult를
+귀국 Flight의 기본값으로 제안할 수 있지만
+Backend에서 동일 Adult를 강제하지 않습니다.
+
+각 Flight에서 Companion이
+해당 Flight의 `ADULT` 조건을 만족하는지
+독립적으로 검증합니다.
 
 ---
 
@@ -3655,6 +3998,7 @@ POST /api/v1/reservations
   ],
   "passengers": [
     {
+      "passengerKey": "P1",
       "lastName": "KIM",
       "firstName": "JIHUN",
       "birthDate": "1991-02-04",
@@ -3663,11 +4007,33 @@ POST /api/v1/reservations
       "flightSelections": [
         {
           "flightId": 101,
-          "seatId": 1001
+          "seatId": 1001,
+          "companionPassengerKey": null
         },
         {
           "flightId": 202,
-          "seatId": 2001
+          "seatId": 2001,
+          "companionPassengerKey": null
+        }
+      ]
+    },
+    {
+      "passengerKey": "P2",
+      "lastName": "KIM",
+      "firstName": "BABY",
+      "birthDate": "2025-10-01",
+      "gender": "FEMALE",
+      "nationality": "KR",
+      "flightSelections": [
+        {
+          "flightId": 101,
+          "seatId": null,
+          "companionPassengerKey": "P1"
+        },
+        {
+          "flightId": 202,
+          "seatId": null,
+          "companionPassengerKey": "P1"
         }
       ]
     }
@@ -3675,13 +4041,30 @@ POST /api/v1/reservations
 }
 ```
 
-Infant가 있는 경우 Companion 식별 방식은
-Request DTO 최종 설계 시 별도로 정의합니다.
+Reservation 생성 전 Passenger는 Database ID를 가지지 않으므로
+Request 내부 Passenger 식별에는 `passengerKey`를 사용합니다.
 
-Client가 Passenger Age Type을
-신뢰 가능한 값으로 직접 전달하지 않습니다.
+`passengerKey`는 해당 Request 안에서만 유효한
+Client-side 임시 식별자입니다.
 
-Backend가 생년월일과 각 Flight 탑승일을 기준으로 계산합니다.
+Infant Companion은 Flight별:
+
+```text
+companionPassengerKey
+```
+
+로 지정합니다.
+
+Backend는 `companionPassengerKey`가
+동일 Request의 Passenger를 가리키는지 검증한 뒤
+Passenger Entity 생성 후 실제 `passenger_id`로 변환하여
+`PassengerFlight.companion_passenger_id`에 저장합니다.
+
+Client가 `AgeCategory`를 직접 전달하지 않습니다.
+
+Backend가 Passenger `birthDate`와
+각 Flight의 출발 Airport Local Date를 기준으로 계산하고
+`PassengerFlight.age_category`에 Snapshot으로 저장합니다.
 
 ---
 
@@ -3733,13 +4116,40 @@ PENDING Reservation 생성
 + hold_expires_at 저장
         |
         v
-Reservation / Flight / Passenger Mapping 생성
+ReservationFlight 생성
         |
         v
-Passenger / Flight별 Seat 연결
+Passenger 생성
++ Normalize된 기본정보 저장
         |
         v
-SeatClass 반영 운임 계산
+Test Passport 생성
++ SecureRandom Passport Number
++ AES-GCM Encryption
+        |
+        v
+ReservationPassenger 생성
+        |
+        v
+각 Passenger / Flight
+AgeCategory 계산
+        |
+        v
+Seat 필요 여부 검증
++ Infant Companion 검증
+        |
+        v
+PassengerFlight 생성
++ seat_id
++ companion_passenger_id
++ age_category Snapshot
+        |
+        v
+Passenger / Flight Membership 검증
+        |
+        v
+SeatClass 반영 최종 운임 계산
++ fare_amount Snapshot
         |
         v
 Reservation.total_amount 확정
@@ -3858,8 +4268,34 @@ Backend는 현재 인증된 Member의 Reservation인지 검증합니다.
 }
 ```
 
-실제 Passport Number 전체를
-기본 Reservation 상세 Response에 포함하지 않는 방향을 우선합니다.
+Reservation 상세 Response에서
+Test Passport Number 원문은 반환하지 않습니다.
+
+Passenger 상세 정보가 필요한 경우
+Passport Number는 Backend에서 Masking한 값만 반환합니다.
+
+예:
+
+```json
+{
+  "lastName": "KIM",
+  "firstName": "JIHUN",
+  "birthDate": "1991-02-04",
+  "gender": "MALE",
+  "nationality": "KR",
+  "testPassport": {
+    "numberMasked": "AB****91",
+    "country": "KR",
+    "expiryDate": "2031-09-10"
+  }
+}
+```
+
+Reservation 목록 API에서는
+Passport Number 자체를 반환하지 않습니다.
+
+Member 및 Admin Reservation 상세 모두
+동일하게 Masked Passport Number를 기본값으로 사용합니다.
 
 ---
 
@@ -4699,24 +5135,14 @@ Schema 변경 이력을 Repository에서 관리합니다.
 
 ---
 
-### 47.2 Passenger
-
-- [ ] Gender Enum 상세 값
-- [ ] Nationality 저장 규칙
-- [ ] Test Passport Number 형식
-- [ ] Passport Number Encryption 적용 여부
-- [ ] Passport API Masking 규칙
-
----
-
-### 47.3 Reservation
+### 47.2 Reservation
 
 - [ ] Reservation Number Collision 재시도 횟수
 - [ ] Cancellation Reason 상세 코드 구조
 
 ---
 
-### 47.4 Payment
+### 47.3 Payment
 
 - [ ] Idempotency Header 최종 이름
 - [ ] 동일 Key + 다른 Body 요청 처리
@@ -4724,7 +5150,7 @@ Schema 변경 이력을 Repository에서 관리합니다.
 
 ---
 
-### 47.5 API
+### 47.4 API
 
 - [ ] `/api/v1` Version Prefix 최종 적용 여부
 - [ ] 공통 Success Response Wrapper 여부
@@ -4734,7 +5160,7 @@ Schema 변경 이력을 Repository에서 관리합니다.
 
 ---
 
-### 47.6 External / AI
+### 47.5 External / AI
 
 - [ ] 실제 External Flight API Provider
 - [ ] External Flight DTO 최종 Field

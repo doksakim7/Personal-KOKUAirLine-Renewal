@@ -1506,7 +1506,30 @@ Dynamic Pricing은 향후 개선사항으로 남깁니다.
 
 예:
 
-한 명의 Member가 가족 3명의 항공편을 예약할 수 있습니다.
+```text
+한 명의 Member
+→ 가족 3명의 Passenger 예약 가능
+```
+
+MVP의 Passenger는 Member가 반복적으로 재사용하는
+Passenger Profile 또는 동행자 주소록으로 관리하지 않습니다.
+
+Passenger는 특정 Reservation 당시의
+탑승객 정보를 보존하기 위한 Reservation-scoped Snapshot으로 관리합니다.
+
+```text
+Reservation A
+→ Passenger A
+
+Reservation B
+→ 새로운 Passenger
+```
+
+동일한 사람이 다른 Reservation에 다시 탑승하더라도
+기존 Passenger Row를 재사용하지 않습니다.
+
+이를 통해 이후 사용자 정보 변경이
+과거 Reservation의 Passenger 이력에 영향을 주지 않도록 합니다.
 
 ---
 
@@ -1514,13 +1537,87 @@ Dynamic Pricing은 향후 개선사항으로 남깁니다.
 
 예약 시 Passenger별로 다음 테스트용 기본 정보를 입력합니다.
 
-- 테스트용 영문 성 (여권 영문명 형식)
-- 테스트용 영문 이름 (여권 영문명 형식)
+- 테스트용 영문 성
+- 테스트용 영문 이름
 - 생년월일
 - 성별
 - 국적
 
-구체적인 Database Column 및 Validation 규칙은 데이터 모델 설계에서 정의합니다.
+#### 영문 이름
+
+Passenger 이름은 여권 영문명 형식을 기준으로 관리합니다.
+
+입력 가능한 기본 문자는 다음과 같습니다.
+
+```text
+A-Z
+공백
+-
+'
+```
+
+저장 전 다음 정규화를 적용합니다.
+
+```text
+앞뒤 공백 제거
+→ 연속 공백을 하나의 공백으로 정리
+→ uppercase(Locale.ROOT)
+```
+
+영문 성과 영문 이름은 각각 `1 ~ 50자` 범위로 제한합니다.
+
+구체적인 Regex와 API Validation 구현은
+`05-data-api-design.md`에서 정의합니다.
+
+#### 성별
+
+MVP의 `Gender`는 다음 Enum을 사용합니다.
+
+```text
+MALE
+FEMALE
+```
+
+Passenger가 임의 문자열 형태로 성별 값을 저장하지 않습니다.
+
+#### 국적
+
+Passenger의 국적은
+ISO 3166-1 alpha-2 국가 코드를 기준으로 관리합니다.
+
+예:
+
+```text
+KR
+JP
+US
+FR
+```
+
+KOKU Airline의 운항 노선이 한국 ↔ 일본으로 제한되어 있더라도
+Passenger의 국적을 `KR`, `JP`로 제한하지 않습니다.
+
+노선 지원 국가와 Passenger 국적은 별개의 정책으로 취급합니다.
+
+#### 동일 Reservation 내 중복 Passenger
+
+동일 Reservation에서
+명백하게 동일한 Passenger를 중복 입력하지 않도록 검증합니다.
+
+기본 중복 판단에는 다음 정규화 값을 사용할 수 있습니다.
+
+```text
+last_name
++
+first_name
++
+birth_date
+```
+
+다만 이름과 생년월일이 동일한 실제 Passenger가 존재할 수 있으므로
+Database Unique Constraint로 강제하지 않습니다.
+
+구체적인 중복 판단 구현은 Application / Service Layer에서 처리합니다.
 
 ---
 
@@ -1529,37 +1626,141 @@ Dynamic Pricing은 향후 개선사항으로 남깁니다.
 KOKU Airline은 실제 항공권을 발권하지 않는 포트폴리오용 가상 서비스이므로
 실제 여권 정보를 입력받지 않습니다.
 
-Passenger의 기본 정보 입력이 완료되면
-예약 검증에 사용할 테스트용 여권 정보를 시스템에서 자동으로 생성합니다.
+Passenger의 테스트용 여권 정보는
+사용자가 직접 입력하거나 수정하지 않고 시스템에서 자동 생성합니다.
 
 자동 생성 항목은 다음과 같습니다.
 
-- 여권번호: 테스트용 여권번호 자동 생성
-- 여권 발급국: Passenger가 입력한 국적과 동일한 국가로 자동 설정
-- 여권 만료일: 테스트용 여권정보 생성 시점 기준 5년 뒤 날짜로 자동 설정
+- 테스트용 여권번호
+- 여권 발급국
+- 테스트용 여권 만료일
 
-자동 생성된 테스트용 여권 정보는 사용자가 직접 입력하거나 수정하지 않습니다.
+#### 생성 시점
 
-생성된 테스트용 여권 만료일은
-해당 Passenger가 Reservation을 통해 탑승할 모든 Flight의 출발일 이후여야 합니다.
+테스트용 여권 정보는
+Passenger 입력 단계에서 즉시 Database에 저장하지 않습니다.
 
-`ONE_WAY`에서는 출국 Flight의 탑승일을 기준으로 합니다.
+Reservation 시작이 정상적으로 처리되는
+`PENDING` Reservation 생성 Transaction 안에서 생성합니다.
 
-`ROUND_TRIP`에서는 출국 Flight와 귀국 Flight 모두의
-탑승일 조건을 만족해야 합니다.
+```text
+Reservation 시작 검증
+        ↓
+Seat 확보
+        ↓
+PENDING Reservation 생성
+        ↓
+Passenger 생성
+        ↓
+테스트용 Passport 정보 생성
+        ↓
+Reservation Mapping 생성
+        ↓
+Commit
+```
 
-하나의 Flight라도 테스트용 여권 유효기간 조건을 만족하지 못하면
-Reservation을 `CONFIRMED` 상태로 확정할 수 없습니다.
+Reservation 시작 Transaction이 실패하면
+해당 Passenger와 테스트용 여권 정보도 함께 Rollback합니다.
 
-테스트용 여권 정보는 Passenger에 귀속됩니다.
+따라서 실패한 예약으로 인해
+사용되지 않는 Passenger 또는 Passport 정보가 남지 않도록 합니다.
 
-Reservation을 `CONFIRMED` 상태로 확정하기 전에
-필요한 테스트용 여권 정보가 모두 생성되어 있어야 합니다.
+#### 테스트용 여권번호
 
-테스트용 여권번호는 실제 개인정보가 아니더라도 Log에 출력하지 않는 것을 기본으로 합니다.
+테스트용 여권번호는
+대문자 영문과 숫자로 구성된 시스템 생성 값으로 사용합니다.
 
-구체적인 생성 규칙, 저장 위치 및 보호 방식은
-데이터 및 시스템 설계에서 정의합니다.
+서비스 내부 공통 형식은 다음 범위로 제한합니다.
+
+```text
+A-Z
+0-9
+6 ~ 12자
+```
+
+실제 국가별 Passport Number 규칙을
+MVP에서 완전하게 재현하지 않습니다.
+
+테스트용 여권번호는
+충돌 가능성이 충분히 낮은 Random 방식으로 생성하며,
+동일 번호가 생성된 경우 새로운 번호를 다시 생성합니다.
+
+구체적인 Random 생성 방식과 충돌 처리 방식은
+`04-system-design.md`와 `05-data-api-design.md`에서 정의합니다.
+
+#### 여권 발급국
+
+여권 발급국은 Passenger의 국적과 동일한 국가 코드로 자동 설정합니다.
+
+```text
+Passenger.nationality
+→ Passport 발급국
+```
+
+#### 테스트용 여권 만료일
+
+테스트용 여권 만료일은
+해당 Reservation에서 Passenger가 탑승하는
+가장 마지막 Flight의 탑승일을 기준으로 생성합니다.
+
+```text
+마지막 Flight 탑승일
++
+5년
+```
+
+따라서 생성된 테스트용 여권 만료일은
+Reservation에 포함된 모든 Flight의 탑승일 이후여야 합니다.
+
+`ONE_WAY`에서는 해당 Flight의 탑승일을 기준으로 하며,
+`ROUND_TRIP`에서는 귀국 Flight를 포함한
+가장 마지막 탑승일을 기준으로 합니다.
+
+#### 저장 및 보호
+
+테스트용 여권번호는 실제 개인정보가 아니더라도
+민감정보와 동일한 방향으로 보호합니다.
+
+Database에는 여권번호 원문을 평문으로 저장하지 않습니다.
+
+```text
+Passport Number
+→ Application-level Encryption
+→ Database 저장
+```
+
+일반 API 및 UI에서는 전체 여권번호를 노출하지 않고 Masking합니다.
+
+기본 Masking 방향:
+
+```text
+앞 2자리
++
+Masking
++
+뒤 2자리
+```
+
+예:
+
+```text
+AB123491
+→ AB****91
+```
+
+Member와 Admin의 일반 Reservation 조회에서도
+Masking된 값을 기본으로 사용합니다.
+
+다음 정보는 Log에 출력하지 않습니다.
+
+- 테스트용 여권번호 원문
+- 암호화 Key
+- 복호화된 Passport Number
+
+구체적인 Encryption 방식,
+Key 관리,
+Column 구조 및 Masking 구현은
+`04-system-design.md`와 `05-data-api-design.md`에서 정의합니다.
 
 ---
 
@@ -1581,70 +1782,177 @@ Reservation을 `CONFIRMED` 상태로 확정하기 전에
 
 ### 10.5 연령 구분
 
-탑승객의 연령은 항공편 **탑승일을 기준**으로 계산합니다.
+탑승객의 연령은
+각 Flight의 출발 Airport 현지 Date를 탑승일 기준으로 계산합니다.
 
-탑승객은 다음과 같이 구분합니다.
+Passenger의 연령 구분은 `AgeCategory`로 관리하며
+다음 값을 사용합니다.
 
-* **유아(Infant)**: 생후 7일 이상 ~ 만 2세 미만
-* **소아(Child)**: 만 2세 이상 ~ 만 12세 미만
-* **성인(Adult)**: 만 12세 이상
+```text
+INFANT
+CHILD
+ADULT
+```
 
-예약 시 탑승객의 생년월일과 항공편 탑승일을 기준으로 연령 구분을 자동으로 판단합니다.
+연령 기준은 다음과 같습니다.
 
-생후 7일 미만의 탑승객은 예약할 수 없습니다.
+- `INFANT`: 생후 7일 이상 ~ 만 2세 미만
+- `CHILD`: 만 2세 이상 ~ 만 12세 미만
+- `ADULT`: 만 12세 이상
 
-연령 구분은 탑승객이 직접 선택하는 값이 아니라, 입력된 생년월일을 기준으로 시스템에서 계산하는 것을 원칙으로 합니다.
+생후 7일 미만의 Passenger는 예약할 수 없습니다.
 
-`ROUND_TRIP`에서는 Passenger의 연령 구분을
-출국 Flight와 귀국 Flight의 탑승일을 기준으로 각각 계산합니다.
+AgeCategory는 Passenger가 직접 선택하는 값이 아닙니다.
 
-따라서 동일 Passenger라도 출국 Flight와 귀국 Flight에서
-연령 구분이 달라질 수 있습니다.
+```text
+Passenger.birth_date
++
+Flight 출발 Airport Local Date
 
-예를 들어 출국 시 `Infant`였던 Passenger가
-귀국일에는 `Child`가 될 수 있습니다.
+→ AgeCategory 계산
+```
 
-Seat 필요 여부와 Adult 동반 Validation은
-각 Flight에서 계산된 Passenger의 연령 구분을 기준으로 적용합니다.
+`ROUND_TRIP`에서는
+출국 Flight와 귀국 Flight에 대해 각각 독립적으로 계산합니다.
+
+따라서 동일 Passenger라도 Flight에 따라
+AgeCategory가 달라질 수 있습니다.
+
+예:
+
+```text
+출국 Flight
+→ INFANT
+
+귀국 Flight
+→ CHILD
+```
+
+Reservation이 `PENDING` 상태로 정상 생성될 때
+각 Passenger / Flight의 계산 결과를
+`PassengerFlight.age_category`에 Snapshot으로 보존합니다.
+
+이 Snapshot은 Reservation 당시 적용된
+연령 정책과 운임 및 Seat Validation 결과를 보존하기 위한 이력 데이터입니다.
+
+Reservation 생성 이후 정책 또는 계산 구현이 변경되더라도
+이미 생성된 Reservation의 `age_category`를 다시 계산하여 변경하지 않습니다.
+
+Seat 필요 여부,
+Passenger별 기본 운임,
+Infant Companion Validation은
+해당 `PassengerFlight.age_category`를 기준으로 적용합니다.
 
 ---
 
 ### 10.6 Child 및 Infant 동반 정책
 
-Child 및 Infant 관련 정책은 각 Flight의 탑승일을 기준으로
-계산된 Passenger 연령 구분에 따라 적용합니다.
+Child 및 Infant 관련 정책은
+각 `PassengerFlight.age_category`를 기준으로 적용합니다.
 
-해당 Flight에서 Child인 Passenger가 포함된 경우
-동일 Flight에 최소 1명 이상의 Adult가 함께 탑승해야 합니다.
+#### Child
+
+해당 Flight에서 `CHILD`인 Passenger가 포함된 경우
+동일 Flight에 최소 1명 이상의 `ADULT` Passenger가 함께 탑승해야 합니다.
 
 Child는 동일 Flight에서 함께 탑승하는 Adult 중 최소 1명과
 인접한 Seat를 배정받아야 합니다.
 
-MVP에서 인접한 Seat는 동일 Row에서 좌우로 직접 연결되어 있으며,
+MVP에서 인접한 Seat는
+동일 Row에서 좌우로 직접 연결되어 있으며
 두 Seat 사이에 통로가 존재하지 않는 Seat를 의미합니다.
 
-해당 Flight에서 Infant인 Passenger는 독립된 Seat를 사용하지 않습니다.
+Child는 독립된 Seat를 사용해야 합니다.
 
-Infant는 해당 Flight에서 Adult인 Passenger와 연결되어야 하며,
-Adult 1명당 최대 1명의 Infant를 동반할 수 있습니다.
+```text
+CHILD
+→ seat_id 필수
+```
 
-해당 Flight에서 Infant만으로 탑승 구성을 만들 수 없습니다.
+#### Infant
 
-`ROUND_TRIP`에서는 위 Validation을
+해당 Flight에서 `INFANT`인 Passenger는
+독립된 Seat를 사용하지 않습니다.
+
+```text
+INFANT
+→ seat_id = NULL
+```
+
+Infant는 동일 Reservation에 포함된 Passenger 중
+해당 Flight에서 `ADULT`로 분류된 Passenger와 연결되어야 합니다.
+
+Infant Companion은
+`PassengerFlight` 단위로 관리합니다.
+
+```text
+PassengerFlight.companion_passenger_id
+```
+
+동반 Adult는 반드시 다음 조건을 만족해야 합니다.
+
+- 동일 Reservation에 포함된 Passenger
+- 동일 Flight에서 `ADULT`
+- 해당 Flight에 실제로 탑승하는 Passenger
+
+Adult 1명당 같은 Flight에서
+최대 1명의 Infant만 동반할 수 있습니다.
+
+```text
+Adult 1명
+→ Infant 최대 1명
+```
+
+Infant만으로 Reservation을 구성할 수 없습니다.
+
+#### ROUND_TRIP
+
+`ROUND_TRIP`에서는
+Child / Infant Validation을
 출국 Flight와 귀국 Flight 각각에 독립적으로 적용합니다.
 
-Infant의 동반 Adult는 Reservation의 Passenger 중에서 지정합니다.
+동일 Infant가 출국과 귀국 모두에서 `INFANT`인 경우
+출국 Flight에서 선택한 Adult를
+귀국 Flight의 기본 Companion으로 제안할 수 있습니다.
 
-`ROUND_TRIP`에서 동일 Passenger가 하나 이상의 Flight에서
-`Infant`로 분류되는 경우 동일한 동반 Adult를 기본으로 사용합니다.
+다만 동일 Adult를 강제하지 않습니다.
 
-지정된 동반 Adult는 해당 Infant가 `Infant`로 분류되는
-모든 Flight에서 `Adult` 조건을 만족해야 합니다.
+예:
 
-어느 Flight에서든 지정된 동반 Passenger가 `Adult` 조건을
-만족하지 못하면 Reservation을 시작할 수 없습니다.
+```text
+출국 Flight
+Infant → Passenger A
 
-구체적인 Passenger 간 동반 관계의 저장 구조는
+귀국 Flight
+Infant → Passenger B
+```
+
+처럼 Flight별로 다른 Adult를 지정할 수 있습니다.
+
+각 Flight에서 지정된 Companion이
+해당 Flight의 `ADULT` 조건을 만족하는지 독립적으로 검증합니다.
+
+#### Seat 필요 여부
+
+AgeCategory별 Seat 규칙은 다음과 같습니다.
+
+```text
+ADULT
+→ Seat 필수
+
+CHILD
+→ Seat 필수
+
+INFANT
+→ Seat 없음
+```
+
+`ADULT` 또는 `CHILD`인데 Seat가 없는 경우,
+또는 `INFANT`인데 독립 Seat가 연결된 경우
+Reservation을 시작할 수 없습니다.
+
+구체적인 `PassengerFlight` Column,
+Foreign Key 및 Validation 구현은
 `05-data-api-design.md`에서 정의합니다.
 
 ---
@@ -1816,7 +2124,24 @@ Passenger 자체나 Reservation 전체에 고정하지 않습니다.
 - Seat
 - SeatClass에 따른 최종 운임
 - Infant Companion
-- Flight 탑승일 기준 연령 판단 결과
+- Flight 탑승일 기준 `AgeCategory`
+
+Flight별 `AgeCategory`는
+Reservation이 `PENDING` 상태로 생성될 때
+`PassengerFlight.age_category`에 Snapshot으로 보존합니다.
+
+```text
+ADULT
+CHILD
+INFANT
+```
+
+Infant Companion은
+`PassengerFlight.companion_passenger_id`를 통해
+Flight별로 관리합니다.
+
+따라서 `ROUND_TRIP`에서도
+동일 Infant의 출국 / 귀국 Companion이 서로 다를 수 있습니다.
 
 Passenger가 선택한 Seat의 SeatClass는
 Flight별 `Seat`에 보존된 SeatClass를 기준으로 사용합니다.
@@ -1826,6 +2151,10 @@ Flight별 `Seat`에 보존된 SeatClass를 기준으로 사용합니다.
 
 Passenger / Flight별 최종 확정 운임은
 Reservation 생성 당시의 예약 이력을 보존하기 위해 유지합니다.
+
+`PassengerFlight.age_category`와
+`companion_passenger_id` 역시
+Reservation 당시의 Passenger / Flight 관계 이력으로 유지합니다.
 
 하나의 `PassengerFlight`는
 반드시 동일 Reservation에 포함된 Passenger와 Flight의 조합이어야 합니다.
@@ -2893,9 +3222,6 @@ AI 응답 생성이 실패하더라도 실제 항공편 API 원본 데이터나 
 
 다음 항목은 M1 설계 과정에서 추가로 확정합니다.
 
-- [ ] Access Token / Refresh Token 정책
-- [ ] JWT 저장 및 재발급 방식
-- [ ] 여권번호 등 민감정보의 저장 및 보호 방식
 - [ ] 외부 Flight API Cache 적용 여부 및 TTL
 
 ---

@@ -180,13 +180,14 @@ erDiagram
 
     PASSENGER {
     BIGINT id PK
-    VARCHAR last_name
-    VARCHAR first_name
+    VARCHAR(50) last_name
+    VARCHAR(50) first_name
     DATE birth_date
-    VARCHAR gender
-    VARCHAR nationality
-    VARCHAR test_passport_no
-    VARCHAR test_passport_country
+    VARCHAR(10) gender
+    CHAR(2) nationality
+    VARBINARY(128) test_passport_no_ciphertext
+    BINARY(12) test_passport_no_iv
+    CHAR(2) test_passport_country
     DATE test_passport_expiry_date
     DATETIME(6) created_at
     DATETIME(6) updated_at
@@ -207,6 +208,7 @@ erDiagram
     BIGINT flight_id FK
     BIGINT seat_id FK
     BIGINT companion_passenger_id FK
+    VARCHAR(10) age_category
     DECIMAL(15,0) fare_amount
     DATETIME(6) created_at
     }
@@ -795,8 +797,25 @@ UNIQUE(
 `ROUND_TRIP`에서도 Passenger 자체를
 출국 / 귀국별로 별도로 생성하지 않습니다.
 
-동일 Passenger 구성을 두 Flight에 공통으로 사용하고,
+하나의 Reservation 안에서는
+동일 Passenger를 출국 / 귀국 Flight에 공통으로 사용하고,
 Flight별 속성은 `PassengerFlight`에서 관리합니다.
+
+다만 MVP의 Passenger는
+Reservation-scoped Snapshot입니다.
+
+```text
+Reservation A
+→ Passenger A
+
+Reservation B
+→ 새로운 Passenger
+```
+
+동일한 실제 사람이 다른 Reservation에 다시 탑승하더라도
+기존 Passenger Row를 재사용하지 않습니다.
+
+이 정책은 Application / Service Layer에서 보장합니다.
 
 ---
 
@@ -820,6 +839,7 @@ PassengerFlight
 ├─ Flight
 ├─ Seat (nullable)
 ├─ Companion Passenger (nullable)
+├─ AgeCategory Snapshot
 └─ fare_amount
 ```
 
@@ -831,27 +851,65 @@ PassengerFlight
 ```text
 Passenger
   |
-  +-- Flight A → Seat 1A / 확정 운임 A
+  +-- Flight A
+  |    → Seat 1A
+  |    → ADULT
+  |    → 확정 운임 A
   |
-  +-- Flight B → Seat 3C / 확정 운임 B
+  +-- Flight B
+       → Seat 3C
+       → ADULT
+       → 확정 운임 B
 ```
 
-또는 연령 Boundary가 있는 경우:
+연령 Boundary가 있는 경우:
 
 ```text
 Passenger
   |
-  +-- 출국 Flight → Infant
+  +-- 출국 Flight
+  |    → INFANT
   |
-  +-- 귀국 Flight → Child
+  +-- 귀국 Flight
+       → CHILD
 ```
+
+처럼 동일 Passenger라도
+Flight별 예약 속성이 달라질 수 있습니다.
 
 따라서 다음 정보는 Flight별로 관리합니다.
 
 - Seat
+- `AgeCategory`
 - Passenger / Flight별 확정 운임
 - Infant Companion
-- Flight별 Adult / Child / Infant Validation
+
+`AgeCategory`는 다음 값을 사용합니다.
+
+```text
+ADULT
+CHILD
+INFANT
+```
+
+AgeCategory는 Passenger Table에 저장하지 않습니다.
+
+```text
+Passenger.birth_date
++
+Flight 출발 Airport Local Date
+        ↓
+AgeCategory 계산
+        ↓
+PassengerFlight.age_category
+```
+
+Reservation이 `PENDING` 상태로 생성될 때
+계산 결과를 `PassengerFlight.age_category`에
+Snapshot으로 저장합니다.
+
+따라서 이미 생성된 Reservation의 AgeCategory를
+나중에 다시 계산하여 변경하지 않습니다.
 
 Passenger / Flight별 최종 확정 운임은:
 
@@ -874,12 +932,6 @@ Seat.seat_class
 ```
 
 를 해당 Passenger / Flight의 SeatClass 기준으로 사용합니다.
-
-Adult / Child / Infant 값을
-Passenger Table에 고정 상태로 저장하지 않습니다.
-
-각 Flight의 탑승일과 Passenger의 `birth_date`를 기준으로
-Backend에서 계산합니다.
 
 동일 Reservation에서
 동일 Passenger와 동일 Flight를 중복 연결할 수 없습니다.
@@ -913,20 +965,31 @@ Database에서는 복잡한 Composite Foreign Key 대신
 
 ### 4.4 PassengerFlight - Seat
 
-Seat가 필요한 Passenger는
-해당 Flight의 Seat를 연결합니다.
+Seat 필요 여부는
+`PassengerFlight.age_category` Snapshot을 기준으로 합니다.
 
 ```text
-passenger_flight.seat_id
+ADULT
+→ seat_id 필수
+
+CHILD
+→ seat_id 필수
+
+INFANT
+→ seat_id = NULL
 ```
 
-Infant는 별도 Seat를 사용하지 않으므로:
+따라서 다음 조합은 허용하지 않습니다.
 
 ```text
-seat_id = NULL
+ADULT / CHILD + seat_id = NULL
+→ 불가
+
+INFANT + seat_id 존재
+→ 불가
 ```
 
-을 허용합니다.
+이 정합성은 Application / Service Layer에서 검증합니다.
 
 취소된 과거 Reservation의 PassengerFlight 기록은 유지될 수 있으므로
 하나의 Seat가 시간 전체에 걸쳐
@@ -955,22 +1018,63 @@ Seat.flight_id
 
 ### 4.5 Infant Companion
 
-Passenger가 해당 Flight에서 Infant인 경우:
+Passenger가 해당 Flight에서 `INFANT`인 경우:
 
 ```text
 passenger_flight.companion_passenger_id
 ```
 
-를 이용하여 동반 Adult를 표현하는 방향을 사용합니다.
+를 사용하여 동반 Adult Passenger를 표현합니다.
 
-Companion은 동일 Reservation의 Passenger여야 하며
-해당 Flight에서 Adult 조건을 만족해야 합니다.
+AgeCategory별 Companion 규칙은 다음과 같습니다.
 
-Adult 한 명당
-해당 Flight에서 최대 한 명의 Infant만 연결할 수 있습니다.
+```text
+INFANT
+→ companion_passenger_id 필수
 
-구체적인 Database Constraint와 Validation 방식은
-Data Design 확정 과정에서 결정합니다.
+ADULT / CHILD
+→ companion_passenger_id = NULL
+```
+
+Companion Passenger는 반드시 다음 조건을 만족해야 합니다.
+
+```text
+동일 Reservation Passenger
++
+동일 Flight에 포함
++
+해당 Flight의 PassengerFlight.age_category = ADULT
+```
+
+같은 Flight에서 Adult 1명은
+최대 1명의 Infant만 동반할 수 있습니다.
+
+이 정책은 Application / Service Layer에서 검증합니다.
+
+복잡한 Composite Foreign Key 또는
+별도의 Companion Mapping Entity는 사용하지 않습니다.
+
+`ROUND_TRIP`에서도
+Infant Companion은 Flight별로 독립적으로 관리합니다.
+
+따라서 동일 Infant가
+출국과 귀국 모두 `INFANT`인 경우에도
+각 Flight에서 서로 다른 Adult를 지정할 수 있습니다.
+
+예:
+
+```text
+OUTBOUND
+Infant → Passenger A
+
+RETURN
+Infant → Passenger B
+```
+
+Frontend에서는
+출국 Flight에서 선택한 Adult를
+귀국 Flight의 기본값으로 제안할 수 있지만,
+Backend 또는 Database에서 동일 Adult를 강제하지 않습니다.
 
 ---
 
@@ -1152,15 +1256,6 @@ payment(reservation_id, idempotency_key)
 ### Seat
 
 - [ ] `AircraftSeat`의 통로 표현 방식
-
-### Passenger
-
-- [ ] `gender` Enum 상세 값
-- [ ] `nationality` 저장 형식
-- [ ] Test Passport Number 형식
-- [ ] Test Passport Encryption
-- [ ] Test Passport API Masking
-- [ ] Infant Companion Database Constraint
 
 ### Payment
 

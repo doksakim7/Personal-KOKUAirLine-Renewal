@@ -935,36 +935,54 @@ Mobile에서는 출국 Flight → 귀국 Flight 순서의 1 Column Layout을 사
 
 ### 12.2 테스트용 여권 정보
 
-테스트용 여권 정보는 사용자가 직접 입력하지 않습니다.
+테스트용 여권 정보는
+사용자가 직접 입력하거나 수정하지 않습니다.
 
-시스템이 자동으로 생성합니다.
+Figma Make는 Passenger 기본정보 입력 단계에서
+Passport Number 또는 만료일이 이미 생성된 것처럼 표현하지 않습니다.
 
-반드시 UI에 반영할 내용은 다음과 같습니다.
+테스트용 Passport 정보는
+Seat 선택 이후 Reservation 시작이 성공하여
+`PENDING` Reservation이 생성될 때 Backend에서 자동 생성됩니다.
 
-* 여권번호: 테스트용 번호 자동 생성
-* 여권 발급국: 입력한 국적과 동일하게 자동 설정
-* 여권 만료일: 생성 시점 기준 5년 뒤
-* 사용자가 직접 입력하거나 수정할 수 없음
+자동 생성 항목:
 
-UI에는 다음 의미의 안내를 포함합니다.
+* 테스트용 Passport Number
+* Passport 발급국
+* Passport 만료일
 
-* 실제 개인정보나 실제 여권정보를 입력하지 않도록 안내
-* 테스트용 여권정보가 시스템에서 자동 생성됨을 안내
+Passport 발급국은
+Passenger의 국적과 동일합니다.
 
-테스트용 여권 만료일은 Reservation에 포함된
-모든 Flight의 탑승일 이후여야 합니다.
+Passport 만료일은
+해당 Passenger가 탑승하는 가장 마지막 Flight의
+출발 Airport Local Date를 기준으로 합니다.
 
-- `ONE_WAY`: 출국 Flight 기준
-- `ROUND_TRIP`: 출국 Flight와 귀국 Flight 모두 기준
+```text
+마지막 Flight Local Date
++
+5년
+```
 
-조건을 만족하지 않으면 예약을 계속 진행할 수 없는 UI를 제공합니다.
+Passenger 입력 화면에서는 다음 의미의 안내만 제공합니다.
+
+* 실제 개인정보 또는 실제 Passport 정보를 입력하지 않음
+* 테스트용 Passport 정보는 Reservation 시작 성공 시 자동 생성됨
 
 예:
 
 ```text
-테스트용 여권 유효기간이 Flight 출발일 조건을 만족하지 않습니다.
-예약을 계속 진행할 수 없습니다.
+실제 여권 정보를 입력하지 마세요.
+
+테스트용 여권 정보는
+예약 시작 성공 시 시스템에서 자동 생성됩니다.
 ```
+
+`PENDING` Reservation 생성 이후
+Passport Number를 UI에 표시하는 경우에는
+Backend에서 제공한 Masked 값만 사용합니다.
+
+Figma Make는 Passport 원문을 표시하는 UI를 생성하지 않습니다.
 
 ---
 
@@ -1005,19 +1023,42 @@ Seat 필요 여부와 동반 Adult Validation도
 
 ### 13.2 Infant 규칙
 
-해당 Flight에서 `Infant`인 Passenger는 별도의 Seat를 사용하지 않습니다.
+해당 Flight에서 `Infant`인 Passenger는
+별도의 Seat를 사용하지 않습니다.
 
-Passenger 입력 화면에서 Reservation에 포함된 Passenger 중
-Infant를 동반할 Adult를 지정합니다.
+```text
+Infant
+→ Seat 없음
+```
 
-- Adult 1명당 최대 1명의 Infant
-- 지정된 동반 Passenger는 Infant가 Infant로 분류되는 Flight에서 `Adult`여야 함
-- `ROUND_TRIP`에서 동일 Passenger가 여러 Flight에서 Infant이면 동일 동반 Adult를 기본 사용
-- 어느 Flight에서든 동반 Passenger가 Adult 조건을 만족하지 못하면 Reservation 시작 불가
-- Infant만으로 Reservation 생성 불가
+Infant Companion은 Flight별로 지정합니다.
 
-왕복 일정 중 연령 구분이 변경되면
-Flight별로 Seat 필요 여부와 Infant Validation이 달라질 수 있습니다.
+* Companion은 동일 Reservation의 Passenger여야 함
+* Companion은 해당 Flight에 포함되어 있어야 함
+* Companion은 해당 Flight에서 `Adult`여야 함
+* 같은 Flight에서 Adult 1명당 Infant 최대 1명
+* Infant만으로 Reservation 생성 불가
+
+`ROUND_TRIP`에서 동일 Passenger가
+출국 Flight와 귀국 Flight 모두 Infant인 경우에도
+각 Flight의 Companion은 서로 다를 수 있습니다.
+
+```text
+출국
+Infant → Adult A
+
+귀국
+Infant → Adult B
+```
+
+Figma Make는 출국에서 선택한 Adult를
+귀국 Flight Companion의 기본값으로 제안할 수 있습니다.
+
+다만 동일 Adult를 반드시 사용해야 하는 UI로 만들지 않습니다.
+
+왕복 일정 중 연령 구분이 변경되는 경우
+Flight별 AgeCategory에 따라
+Seat 필요 여부와 Infant Companion UI를 각각 적용합니다.
 
 ---
 

@@ -725,7 +725,13 @@ Reservation 시작은 다음 작업을 하나의 Transaction Boundary 안에서 
 Reservation 조건 검증
         |
         v
-선택한 Seat ID 정렬
+Passenger 입력 Normalize / Validation
+        |
+        v
+동일 Reservation 내 Passenger 중복 검증
+        |
+        v
+선택한 Seat ID 수집 / 정렬
         |
         v
 선택한 모든 Seat
@@ -743,17 +749,33 @@ PENDING Reservation 생성
 ReservationFlight 생성
         |
         v
+Passenger 생성
+        |
+        v
+테스트용 Passport 정보 생성
+        |
+        v
 ReservationPassenger 생성
         |
         v
+각 Passenger / Flight
+AgeCategory 계산
+        |
+        v
+Seat 필요 여부 /
+Infant Companion Validation
+        |
+        v
 PassengerFlight 생성
++ age_category Snapshot
++ companion_passenger_id
         |
         v
 Passenger / Flight Membership 정합성 검증
         |
         v
 Passenger / Flight별
-최종 운임 계산 및 Snapshot 저장
+최종 운임 계산 및 fare_amount Snapshot 저장
         |
         v
 Reservation.total_amount 확정
@@ -775,6 +797,34 @@ Reservation Mapping은
 - `ReservationFlight`
 - `ReservationPassenger`
 - `PassengerFlight`
+
+Passenger와 테스트용 Passport 정보 역시
+별도의 사전 영속화 단계에서 생성하지 않습니다.
+
+다음 데이터는 모두 동일한 Reservation 시작 Transaction에서
+함께 생성하고 검증합니다.
+
+```text
+Passenger
++
+테스트용 Passport 정보
++
+ReservationFlight
++
+ReservationPassenger
++
+PassengerFlight
++
+Seat Hold
+```
+
+따라서 Seat 확보,
+Passenger Validation,
+Passport 생성,
+AgeCategory 계산,
+Infant Companion Validation,
+Mapping 생성 중 하나라도 실패하면
+Reservation 시작 전체를 Rollback합니다.
 
 Mapping 생성 또는 Membership 검증 중 하나라도 실패하면
 Reservation 생성과 Seat Hold를 포함한 전체 Transaction을 Rollback합니다.
@@ -821,7 +871,11 @@ MVP에서 Reservation Mapping을 수정하지 않습니다.
 - `ReservationFlight`
 - `ReservationPassenger`
 - `PassengerFlight`
+- Passenger의 예약 당시 기본 정보
+- Passenger의 테스트용 Passport 정보
 - Passenger별 Flight Seat 연결
+- `PassengerFlight.age_category`
+- `PassengerFlight.companion_passenger_id`
 - Passenger / Flight별 확정 운임
 
 예약 구성을 변경해야 하는 경우에는
@@ -1002,6 +1056,8 @@ PassengerFlight
 ├─ Passenger
 ├─ Flight
 ├─ Seat (nullable)
+├─ Companion Passenger (nullable)
+├─ AgeCategory Snapshot
 └─ Passenger / Flight별 확정 운임
 ```
 
@@ -1018,6 +1074,41 @@ Seat.seat_class
 Passenger / Flight별 최종 운임은
 Reservation 생성 시 Snapshot으로 저장하고
 이후 Payment 재시도에서도 다시 계산하지 않습니다.
+
+Passenger의 Flight별 연령 판정 결과는
+`PassengerFlight.age_category`에 Snapshot으로 저장합니다.
+
+```text
+ADULT
+CHILD
+INFANT
+```
+
+Infant Companion은
+`PassengerFlight.companion_passenger_id`를 통해
+Flight별로 관리합니다.
+
+따라서 `ROUND_TRIP`에서도
+동일 Infant가 출국 Flight와 귀국 Flight에서
+서로 다른 Adult Passenger를 Companion으로 가질 수 있습니다.
+
+Seat 필요 여부는 다음 규칙으로 검증합니다.
+
+```text
+ADULT
+→ Seat 필수
+
+CHILD
+→ Seat 필수
+
+INFANT
+→ Seat 없음
+```
+
+`PassengerFlight.age_category`와
+`companion_passenger_id` 역시
+Reservation 생성 당시의 Snapshot / 이력 데이터로 취급하며
+`PENDING` 생성 이후 다시 계산하거나 변경하지 않습니다.
 
 구체적인 Column, Foreign Key 및 Unique Constraint는
 `05-data-api-design.md`에서 정의합니다.
@@ -1085,6 +1176,215 @@ Mapping Entity
 필요한 Persist Cascade 사용 여부는
 실제 Aggregate 생성 편의성과 명시성을 고려해 결정할 수 있지만,
 삭제 Cascade는 사용하지 않는 것을 기본 원칙으로 합니다.
+
+---
+
+### 7.8 Passenger / Passport 처리 원칙
+
+#### 7.8.1 Passenger Normalize / Validation
+
+Passenger 입력값은
+Reservation 시작 Transaction에서 영속화하기 전에 정규화하고 검증합니다.
+
+영문 이름은 다음 순서로 정규화합니다.
+
+```text
+trim
+        ↓
+연속 공백 → 단일 공백
+        ↓
+uppercase(Locale.ROOT)
+```
+
+허용 문자는 Domain Policy를 기준으로 합니다.
+
+```text
+A-Z
+공백
+-
+'
+```
+
+`Gender`는 다음 Enum만 허용합니다.
+
+```text
+MALE
+FEMALE
+```
+
+Nationality는
+ISO 3166-1 alpha-2 국가 코드 형식으로 검증합니다.
+
+KOKU Airline의 지원 Route와
+Passenger Nationality 검증은 서로 분리합니다.
+
+동일 Reservation의 명백한 Passenger 중복 여부는
+정규화된 다음 값을 기준으로 Application Layer에서 검증합니다.
+
+```text
+last_name
++
+first_name
++
+birth_date
+```
+
+동명이인 가능성이 있으므로
+이 조합을 Database Unique Constraint로 강제하지 않습니다.
+
+---
+
+#### 7.8.2 AgeCategory 계산
+
+Passenger의 AgeCategory는
+Passenger 자체의 고정 상태로 계산하지 않습니다.
+
+각 Flight별로 다음 값을 사용합니다.
+
+```text
+Passenger.birth_date
++
+Flight 출발 Airport Local Date
+```
+
+판정은 별도의 Domain Policy Component에서 수행합니다.
+
+예:
+
+```text
+AgeCategoryPolicy
+또는
+AgeCategoryCalculator
+```
+
+연령 Boundary는 다음 방식으로 비교합니다.
+
+```text
+flightLocalDate < birthDate + 7 days
+→ 예약 불가
+
+flightLocalDate < birthDate + 2 years
+→ INFANT
+
+flightLocalDate < birthDate + 12 years
+→ CHILD
+
+그 외
+→ ADULT
+```
+
+이를 통해 단순한 연도 차이가 아니라
+실제 탑승일 기준 Boundary를 일관되게 처리합니다.
+
+계산된 값은 `PENDING` Reservation 생성 시:
+
+```text
+PassengerFlight.age_category
+```
+
+에 Snapshot으로 저장합니다.
+
+이후 정책 구현이 변경되어도
+이미 생성된 Reservation의 Snapshot을 다시 계산하여 변경하지 않습니다.
+
+---
+
+#### 7.8.3 Infant Companion Validation
+
+`INFANT` Passenger는 독립 Seat를 사용하지 않으며
+해당 Flight의 `ADULT` Passenger와 연결되어야 합니다.
+
+```text
+PassengerFlight.companion_passenger_id
+```
+
+Companion은 반드시 다음 조건을 모두 만족해야 합니다.
+
+```text
+동일 Reservation Passenger
++
+동일 Flight에 포함
++
+해당 Flight AgeCategory = ADULT
+```
+
+같은 Flight에서 Adult 1명은
+최대 1명의 Infant만 동반할 수 있습니다.
+
+```text
+Adult 1
+:
+Infant 최대 1
+```
+
+이 규칙은 Application / Service Layer에서 검증합니다.
+
+`ROUND_TRIP`에서는
+출국 / 귀국 Flight별로 독립적으로 검증하므로
+동일 Infant의 Companion이 Flight마다 달라도 허용합니다.
+
+---
+
+#### 7.8.4 테스트용 Passport 생성
+
+실제 Passport Number를 사용자에게 입력받지 않습니다.
+
+테스트용 Passport 정보는
+`PENDING` Reservation 생성 Transaction에서
+Passenger와 함께 생성합니다.
+
+Passport Number 생성에는
+일반 `Random` 대신 Java `SecureRandom`을 사용합니다.
+
+```text
+SecureRandom
+        ↓
+허용 Character Set
+A-Z / 0-9
+        ↓
+테스트용 Passport Number 생성
+```
+
+Passport Number는
+Domain Policy에서 정의한 길이 및 문자 규칙을 만족해야 합니다.
+
+별도의 Passport 검색용 Hash Column은
+MVP에서 사용하지 않습니다.
+
+Randomized Encryption으로 저장한 Ciphertext를
+Passport 원문 중복 검색 목적으로 사용하지 않습니다.
+
+테스트용 Passport Number는
+`SecureRandom`과 충분히 큰 영숫자 조합 공간을 사용하여
+충돌 가능성을 매우 낮게 유지합니다.
+
+MVP에서는 기존 Database 전체를 대상으로
+Passport Number의 전역 중복 검사를 수행하지 않습니다.
+
+하나의 Reservation 생성 과정에서
+동시에 생성하는 Passenger 간에는
+암호화 전 원문 값을 기준으로 중복이 발생하지 않도록 검증합니다.
+
+향후 실제 Passport 입력,
+Passport Number 검색,
+전역 중복 검사가 요구되는 경우에는
+검색용 HMAC / Hash Column을 별도로 추가하는 방식을 검토합니다.
+
+Passport 발급국은
+Passenger Nationality를 그대로 사용합니다.
+
+Passport 만료일은:
+
+```text
+Passenger가 탑승하는 마지막 Flight Local Date
++
+5년
+```
+
+으로 생성합니다.
+
+Passport 생성 실패 시
+Reservation 시작 Transaction 전체를 Rollback합니다.
 
 ---
 
@@ -2544,7 +2844,10 @@ Application 운영 및 문제 분석에 필요한 정보를
 - OAuth Client Secret
 - External Flight API Key
 - AI API Key
-- 테스트용 여권번호
+- 테스트용 여권번호 원문
+- 복호화된 테스트용 여권번호
+- Passport Encryption Key
+- Passport Encryption IV / 암호화 내부 정보의 불필요한 전체 Dump
 
 민감한 Header 또는 Cookie 값을
 그대로 Logging하지 않습니다.
@@ -2603,67 +2906,181 @@ Audit 정보는 최소 다음 내용을 식별할 수 있어야 합니다.
 ### 16.1 기본 원칙
 
 본 프로젝트는 실제 항공권 발권 서비스가 아니므로
-실제 여권정보를 입력받지 않습니다.
+실제 Passport Number를 입력받지 않습니다.
 
-Passenger의 여권정보는
-Domain Policy에 따라 시스템에서 테스트용으로 생성합니다.
+테스트용 Passport 정보는
+Domain Policy에 따라 시스템에서 자동 생성합니다.
 
----
-
-### 16.2 보호 대상
-
-테스트용 데이터이더라도
-여권번호는 민감정보와 유사한 방식으로 취급합니다.
-
-다음 원칙을 적용합니다.
-
-- Log 출력 금지
-- 필요한 API에서만 전달
-- 불필요한 화면에서 노출 금지
-- 실제 개인정보 사용 금지
-- 실제 Passport Number 입력 금지
+테스트 데이터이더라도
+Passport Number는 민감정보와 유사한 수준으로 보호합니다.
 
 ---
 
-### 16.3 API 노출
+### 16.2 Passport Number Encryption
 
-Passenger 정보를 사용하는 모든 API에서
-여권번호 전체가 항상 필요한 것은 아닙니다.
+테스트용 Passport Number 원문은
+Database에 평문으로 저장하지 않습니다.
 
-API 목적에 따라 필요한 정보만 반환합니다.
+Application Layer에서 암호화한 뒤
+암호화된 값을 Database에 저장합니다.
+
+```text
+Test Passport Number
+        ↓
+PassportCryptoService
+        ↓
+AES-GCM Encryption
+        ↓
+Encrypted Value
+        ↓
+Database
+```
+
+MVP에서는 인증된 암호화 방식인
+AES-GCM 계열을 사용합니다.
+
+암호화 시 매번 새로운 Random IV / Nonce를 생성하며
+동일 Key와 IV 조합을 재사용하지 않습니다.
+
+암호화에 필요한 Random 값은
+보안 목적에 적합한 난수 생성기를 사용합니다.
+
+암호화 / 복호화 책임은
+Domain Entity나 Controller에 직접 두지 않고
+별도의 Infrastructure / Security Component로 분리합니다.
 
 예:
 
 ```text
-Reservation 목록
-→ 여권번호 불필요
-
-Reservation 상세
-→ 필요 여부 검토
-
-내부 Validation
-→ 전체 값 사용 가능
+PassportCryptoService
 ```
+
+구체적인 Ciphertext,
+IV 및 관련 Column 구조는
+`05-data-api-design.md`에서 정의합니다.
+
+---
+
+### 16.3 Encryption Key 관리
+
+Passport Encryption Key는
+Source Code 또는 Git Repository에 저장하지 않습니다.
+
+환경별 Key 관리 원칙은 다음과 같습니다.
+
+```text
+Local
+→ Environment Variable
+  또는 Git에서 제외된 Local Secret
+
+CI / Test
+→ GitHub Actions Secret
+
+AWS 운영
+→ AWS Secret 관리 수단
+```
+
+운영 환경의 구체적인 AWS Secret 관리 서비스는
+Infrastructure Architecture 확정 시 결정합니다.
+
+다음 값은 Log에 출력하지 않습니다.
+
+- Encryption Key
+- 복호화된 Passport Number
+- Passport Number 원문
+
+Application Startup 또는 암호화 처리 과정에서
+Key 값 자체를 출력하지 않습니다.
+
+---
+
+### 16.4 API / UI Masking
+
+일반 API와 UI에는
+Passport Number 전체 값을 반환하지 않습니다.
+
+기본 Masking 규칙은 다음과 같습니다.
+
+```text
+앞 2자리
++
+중간 문자 Masking
++
+뒤 2자리
+```
+
+예:
+
+```text
+AB123491
+→ AB****91
+```
+
+기본 노출 정책:
+
+```text
+Reservation 목록
+→ Passport Number 반환하지 않음
+
+Member Reservation 상세
+→ Masking
+
+Admin Reservation 상세
+→ Masking
+```
+
+Admin이라는 이유만으로
+Passport Number 전체 원문을 자동 노출하지 않습니다.
+
+내부 Business Validation에서 원문이 필요한 경우에만
+Backend 내부에서 제한적으로 복호화할 수 있습니다.
+
+복호화된 원문을
+Frontend Response 또는 Log로 전달하지 않습니다.
 
 구체적인 Response Field는
 `05-data-api-design.md`에서 정의합니다.
 
 ---
 
-### 16.4 저장 방식
+### 16.5 Passenger Snapshot
 
-테스트용 여권번호의 Database 저장 방식은
-Data Design 단계에서 확정합니다.
+Passenger는
+Member가 재사용하는 Profile Entity로 사용하지 않습니다.
 
-검토 대상:
+각 Reservation 당시의 Passenger 정보를
+Reservation-scoped Snapshot으로 저장합니다.
 
-- 평문 저장
-- Encryption
-- Masking
-- API Response Masking
+`PENDING` Reservation 생성 이후에는
+다음 Passenger 정보를 수정하지 않습니다.
 
-테스트 데이터라는 특성과
-포트폴리오 프로젝트의 보안 설계 목적을 함께 고려하여 결정합니다.
+- 영문 성
+- 영문 이름
+- 생년월일
+- Gender
+- Nationality
+- 테스트용 Passport 정보
+
+변경이 필요한 경우에는
+기존 `PENDING` Reservation을 취소하고
+새 Reservation을 시작합니다.
+
+이를 통해 다음 Snapshot과
+Passenger 원본 정보의 정합성을 유지합니다.
+
+```text
+Passenger.birth_date
+        ↓
+PassengerFlight.age_category
+
+Passenger
+        ↓
+Passport 정보
+
+PassengerFlight
+        ↓
+Seat / Companion / Fare
+```
 
 ---
 
@@ -2762,6 +3179,7 @@ Locale 정보는 인증 Token과 분리합니다.
 - Google Client Secret
 - External Flight API Key
 - AI API Key
+- Passport Encryption Key
 
 ---
 
@@ -2789,6 +3207,9 @@ Local 개발환경에서는 다음 방식을 사용할 수 있습니다.
 - Environment Variable
 - Git에서 제외된 Local 설정파일
 - IDE Run Configuration
+
+Passport Encryption Key 역시 동일한 환경별 Secret 관리 원칙을 적용하며,
+예제 설정에는 실제 Key 값을 포함하지 않습니다.
 
 `.gitignore`를 이용하여
 실제 Secret이 포함된 Local 설정파일을 보호합니다.
@@ -3596,16 +4017,7 @@ Reviewer는 다음 사항을 확인합니다.
 
 ---
 
-### 26.2 Passenger 정보 보호
-
-- [ ] 테스트용 여권번호 Database 저장 방식
-- [ ] Encryption 적용 여부
-- [ ] API Response Masking 여부
-- [ ] 관리자 화면 Masking 여부
-
----
-
-### 26.3 External Flight API
+### 26.2 External Flight API
 
 - [ ] 실제 사용할 External Flight API
 - [ ] Connection Timeout
@@ -3618,7 +4030,7 @@ Reviewer는 다음 사항을 확인합니다.
 
 ---
 
-### 26.4 AI
+### 26.3 AI
 
 - [ ] 사용할 AI Model / Provider
 - [ ] Structured Output 구체 구조
@@ -3629,7 +4041,7 @@ Reviewer는 다음 사항을 확인합니다.
 
 ---
 
-### 26.5 Infrastructure
+### 26.4 Infrastructure
 
 - [ ] AWS 세부 Architecture
 - [ ] Backend 배포 방식
@@ -3689,6 +4101,18 @@ MVP System Design이 완료된 것으로 판단합니다.
 - [ ] Database 시간 저장 기준이 확정되어 있습니다.
 - [ ] Flight `DEPARTED` 처리 방식이 정의되어 있습니다.
 - [ ] Seat Hold 만료 처리 방식이 정의되어 있습니다.
+
+### Passenger / Passport
+
+- [ ] Passenger Normalize / Validation 방식이 정의되어 있습니다.
+- [ ] Passenger를 Reservation-scoped Snapshot으로 관리하는 원칙이 정의되어 있습니다.
+- [ ] Flight별 `AgeCategory` 계산 및 Snapshot 방식이 정의되어 있습니다.
+- [ ] Infant Companion의 Flight별 Validation 방식이 정의되어 있습니다.
+- [ ] AgeCategory별 Seat 필요 여부가 정의되어 있습니다.
+- [ ] 테스트용 Passport 생성 시점과 생성 방식이 정의되어 있습니다.
+- [ ] Passport Number Encryption 방식이 정의되어 있습니다.
+- [ ] Passport Number API / UI Masking 원칙이 정의되어 있습니다.
+- [ ] Passport Encryption Key 관리 원칙이 정의되어 있습니다.
 
 ### External / AI
 

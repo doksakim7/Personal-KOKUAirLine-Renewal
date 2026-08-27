@@ -1541,33 +1541,51 @@ Flight별로 별도의 Passenger 입력 Form을 제공하지 않습니다.
 
 #### 테스트용 여권 정보
 
-Passenger의 기본 정보를 입력하면 테스트용 여권 정보는 시스템에서 자동으로 생성합니다.
+Passenger 입력 화면에서는
+사용자가 실제 Passport 정보를 입력하지 않습니다.
 
-- 여권번호: 테스트용 번호 자동 생성
-- 여권 발급국: 입력한 국적과 동일한 국가로 자동 설정
-- 여권 만료일: 생성 시점 기준 5년 뒤 날짜로 자동 설정
+테스트용 Passport 정보는
+Passenger 기본정보 입력 직후 생성되는 것이 아니라,
+Seat 선택 및 Reservation 시작이 정상적으로 처리되어
+`PENDING` Reservation이 생성될 때 Backend에서 자동 생성합니다.
 
-자동 생성된 테스트용 여권 정보는 사용자가 직접 입력하거나 수정하지 않는 것을 기본으로 합니다.
+자동 생성 항목:
 
-화면에는 다음 안내를 표시합니다.
+- 테스트용 여권번호
+- 여권 발급국
+- 테스트용 여권 만료일
 
-> 본 서비스는 포트폴리오용 가상 항공사 서비스입니다.
-> 실제 탑승객의 개인정보나 실제 여권 정보를 입력하지 마세요.
-> 테스트용 여권번호, 발급국, 만료일은 시스템에서 자동 생성됩니다.
+여권 발급국은 Passenger가 입력한 국적과 동일하게 설정합니다.
 
-테스트용 여권 만료일은 예약에 포함된 모든 Flight의 탑승일 이후인지 검증합니다.
-
-편도에서는 출국 Flight의 탑승일을 기준으로 하며,
-왕복에서는 출국 Flight와 귀국 Flight 모두의 탑승일 조건을 만족해야 합니다.
-
-조건을 만족하지 않는 경우 예약을 계속 진행할 수 없으며
-다음과 같이 안내합니다.
+테스트용 여권 만료일은
+해당 Passenger가 Reservation에서 탑승하는
+가장 마지막 Flight의 출발 Airport Local Date를 기준으로 합니다.
 
 ```text
-테스트용 여권 유효기간이 Flight 출발일 조건을 만족하지 않습니다.
-
-예약을 계속 진행할 수 없습니다.
+마지막 Flight Local Date
++
+5년
 ```
+
+따라서 Passenger 입력 화면에서는
+아직 생성되지 않은 Passport Number나 만료일을
+확정된 값처럼 표시하지 않습니다.
+
+대신 다음 안내를 제공합니다.
+
+> *본 서비스는 포트폴리오용 가상 항공사 서비스입니다.*
+>
+> *실제 탑승객의 개인정보나 실제 여권 정보를 입력하지 마세요.*
+>
+> *테스트용 여권 정보는 예약 시작 성공 시 시스템에서 자동 생성됩니다.*
+
+`PENDING` Reservation 생성 이후의
+예약 확인 및 Reservation 상세 화면에서는
+Backend가 생성한 테스트용 Passport 정보를 사용할 수 있습니다.
+
+Passport Number를 표시해야 하는 화면에서는
+Backend에서 전달한 Masked Passport Number만 표시하며,
+Frontend에서 원문 Passport Number를 취급하지 않습니다.
 
 ---
 
@@ -1666,37 +1684,58 @@ ROUND_TRIP에서는 위 Validation을
 
 ### 15.2 Infant
 
-Passenger의 Infant 여부는 각 Flight의 탑승일을 기준으로 판단합니다.
+Passenger의 Infant 여부는
+각 Flight의 탑승일을 기준으로 판단합니다.
 
-해당 Flight에서 `Infant`인 Passenger는 별도의 Seat를 사용하지 않습니다.
-
-Passenger 입력 화면에서는 Reservation에 포함된 Passenger 중
-Infant를 동반할 Adult를 지정합니다.
+해당 Flight에서 `Infant`인 Passenger는
+별도의 Seat를 사용하지 않습니다.
 
 ```text
 Infant
-KIM BABY
-
-동반 Adult
-[ KIM JIHUN ▼ ]
+→ Seat 없음
 ```
 
-Adult 1명당 최대 1명의 Infant를 연결할 수 있습니다.
+Infant를 동반할 Adult는
+Flight별로 지정합니다.
 
-지정된 동반 Adult는 해당 Infant가 Infant로 분류되는 Flight에서
-Adult 조건을 만족해야 합니다.
+`ONE_WAY`에서는 단일 Flight의 Companion을 선택합니다.
 
-ROUND_TRIP에서 동일 Passenger가 하나 이상의 Flight에서
-Infant로 분류되는 경우 동일한 동반 Adult를 기본으로 사용합니다.
+`ROUND_TRIP`에서 동일 Passenger가
+출국과 귀국 모두 Infant인 경우에는
+각 Flight의 Companion을 독립적으로 선택할 수 있습니다.
 
-어느 Flight에서든 지정된 동반 Passenger가
-Adult 조건을 만족하지 못하면 Reservation을 시작할 수 없습니다.
+예:
+
+```text
+출국 Flight
+KIM BABY
+→ 동반 Adult: KIM JIHUN
+
+귀국 Flight
+KIM BABY
+→ 동반 Adult: KIM MINJI
+```
+
+출국 Flight에서 선택한 Adult를
+귀국 Flight의 기본값으로 제안할 수는 있지만
+동일 Adult를 강제하지 않습니다.
+
+Adult 1명은 같은 Flight에서
+최대 1명의 Infant만 동반할 수 있습니다.
+
+선택 가능한 Companion은 반드시:
+
+- 동일 Reservation의 Passenger
+- 해당 Flight에 포함된 Passenger
+- 해당 Flight에서 `Adult`로 판정된 Passenger
+
+여야 합니다.
 
 왕복 일정 중 Passenger의 연령 구분이 변경되는 경우
-각 Flight의 연령 구분에 따라 Seat 필요 여부와
-Infant 동반 Validation을 각각 적용합니다.
+각 Flight의 AgeCategory에 따라
+Seat 필요 여부와 Infant Companion UI를 각각 적용합니다.
 
-Infant만으로 Reservation을 생성할 수 없습니다.
+Infant만으로 Reservation을 구성할 수 없습니다.
 
 ---
 
