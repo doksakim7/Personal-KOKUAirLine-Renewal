@@ -261,15 +261,24 @@ MVP 필수 범위에 포함하지 않습니다.
 - 항공편 상세 조회
 - 사전에 정의된 고정 운임 규칙 적용
 - 출국편 / 귀국편의 여정 역할, 출발 시간대 및 출발 요일에 따른 운임 산정
-- Adult / Child / Infant별 Passenger 운임 계산
+- Adult / Child / Infant별 Passenger 기본 운임 계산
+- KOKU Flight 검색 단계에서는 `ECONOMY` SeatClass 기준 예상 운임 표시
+- 실제 선택한 SeatClass를 반영하여 Reservation 시작 시 최종 결제 예정 금액 확정
 
 ### 좌석
 
 - 항공편별 좌석 조회
 - 좌석 선택
 - 예약 가능한 좌석 확인
+- SeatClass 지원
+  - `ECONOMY`
+  - `PREMIUM_ECONOMY`
+  - `BUSINESS`
+- Passenger별 선택 Seat의 SeatClass를 운임에 반영
+- 동일 Reservation에서도 Passenger마다 서로 다른 SeatClass 선택 가능
+- `ROUND_TRIP`에서는 동일 Passenger가 출국 / 귀국 Flight에서 서로 다른 SeatClass 선택 가능
 - 예약 시작 성공 시 선택한 모든 좌석을 1시간 임시 점유(Hold)
-- Hold 만료 시 좌석 자동 반환
+- Hold 만료 시 Reservation 취소 및 HELD Seat 자동 반환
 
 ### 예약
 
@@ -303,6 +312,7 @@ MVP 필수 범위에 포함하지 않습니다.
 - 노선 조회
 - 항공기 및 좌석 구성 조회
 - 항공편 관리
+- Flight별 Seat 운영 상태 관리
 - 운항 일정 관리
 - 예약 현황 조회
 
@@ -398,7 +408,22 @@ Member는 정책에 따라 회원 탈퇴를 수행할 수 있어야 합니다.
 
 ### FR-03 좌석 조회
 
-사용자는 선택한 항공편의 예약 가능한 좌석을 확인할 수 있어야 합니다.
+사용자는 선택한 항공편의 좌석 상태와 SeatClass를 확인할 수 있어야 합니다.
+
+MVP에서 지원하는 SeatClass는 다음과 같습니다.
+
+- `ECONOMY`
+- `PREMIUM_ECONOMY`
+- `BUSINESS`
+
+Seat가 필요한 Passenger는
+각 Flight에서 예약 가능한 Seat를 선택할 수 있어야 합니다.
+
+동일 Reservation의 Passenger들은
+서로 다른 SeatClass를 선택할 수 있어야 합니다.
+
+`ROUND_TRIP`에서는 동일 Passenger도
+출국 Flight와 귀국 Flight에서 서로 다른 SeatClass를 선택할 수 있어야 합니다.
 
 ### FR-04 예약
 
@@ -411,6 +436,13 @@ Seat가 필요한 모든 Passenger의 예약 가능한 좌석을 선택할 수 �
 선택한 모든 Seat를 확보할 수 있는 경우에만
 `PENDING` 상태의 Reservation을 생성하고,
 선택한 모든 Seat를 `HELD` 상태로 전환할 수 있어야 합니다.
+
+Reservation 시작 시
+각 Passenger와 Flight에서 실제로 선택한 Seat의 SeatClass를 반영하여
+최종 결제 예정 금액을 확정할 수 있어야 합니다.
+
+확정된 Reservation 금액은 이후 Payment 재시도 과정에서
+다시 계산하거나 변경하지 않아야 합니다.
 
 Seat 확보는 All-or-Nothing을 원칙으로 하며,
 선택한 Seat 중 하나라도 확보하지 못한 경우 예약 시작 전체가 실패해야 합니다.
@@ -444,6 +476,13 @@ Mock 결제가 정상적으로 완료된 경우 Reservation을
 
 Admin은 운영 목적의 공항, 노선, 항공기 및 좌석 구성 정보를 조회하고,
 항공편 및 운항 일정을 관리할 수 있어야 합니다.
+
+Admin과 SuperAdmin은
+특정 Flight의 운영상 판매 가능한 Seat를 판매 불가 상태로 전환하거나
+운영 제한이 해제된 Seat를 다시 판매 가능 상태로 복구할 수 있어야 합니다.
+
+이미 Reservation에 사용 중인 Seat의 상태를
+이 기능으로 임의 변경해서는 안 됩니다.
 
 SuperAdmin은 Admin의 모든 권한을 포함하며,
 공항, 노선, 항공기 및 좌석 구성 등의 핵심 Master Data를 관리할 수 있어야 합니다.
@@ -782,7 +821,10 @@ AI Agent가 정의된 설계와 규칙을 기반으로 독립적인 작업을 �
 - 한국 ↔ 일본 항공편 검색
 - 항공편 상세 조회
 - Domain Policy 기반 KOKU Airline 고정 운임 산정
-- PENDING Reservation 생성 시 최종 운임 확정 및 보존
+- KOKU Flight 검색 시 `ECONOMY` 기준 예상 운임 제공
+- SeatClass별 고정 운임 정책 적용
+- Passenger / Flight별 SeatClass 선택
+- PENDING Reservation 생성 시 실제 선택 SeatClass를 반영한 최종 운임 확정 및 보존
 - 좌석 조회
 - 좌석 선택
 - 예약 생성
@@ -846,6 +888,9 @@ AI Agent가 정의된 설계와 규칙을 기반으로 독립적인 작업을 �
 - [ ] 한국 ↔ 일본 KOKU Airline 항공편을 검색할 수 있습니다.
 - [ ] 편도 / 왕복 항공편을 검색할 수 있습니다.
 - [ ] KOKU Airline Flight의 운임이 Domain Policy의 고정 운임 규칙에 따라 계산됩니다.
+- [ ] Flight 검색 단계에서 `ECONOMY` SeatClass 기준 예상 운임이 제공됩니다.
+- [ ] `ECONOMY`, `PREMIUM_ECONOMY`, `BUSINESS` SeatClass를 선택할 수 있습니다.
+- [ ] Passenger / Flight별로 선택한 SeatClass가 최종 운임에 정상적으로 반영됩니다.
 - [ ] PENDING Reservation 생성 시 최종 결제 예정 금액이 확정되고 이후 결제 재시도 과정에서 변경되지 않습니다.
 - [ ] 왕복 Reservation에서 출국 / 귀국 Flight와 Seat가 하나의 Reservation으로 정상 처리됩니다.
 - [ ] 왕복 Reservation의 전체 Mock 결제 및 전체 취소 정책이 정상 동작합니다.
@@ -857,6 +902,7 @@ AI Agent가 정의된 설계와 규칙을 기반으로 독립적인 작업을 �
 - [ ] 정책에 따라 예약을 취소할 수 있습니다.
 - [ ] Admin과 SuperAdmin의 권한이 Domain Policy에 따라 구분되어 동작합니다.
 - [ ] Admin은 항공편 및 운항 일정을 관리할 수 있습니다.
+- [ ] Admin과 SuperAdmin은 정책에 따라 Flight별 Seat의 운영상 판매 가능 / 불가 상태를 관리할 수 있습니다.
 - [ ] SuperAdmin은 핵심 Master Data를 관리할 수 있습니다.
 - [ ] 선택된 좌석은 1시간 동안 Hold되고 만료 시 정상 반환됩니다.
 - [ ] 하나의 예약에 대해 Mock 결제는 최대 3회까지만 시도할 수 있습니다.

@@ -277,12 +277,27 @@ AVAILABLE
 HELD
 RESERVED
 UNAVAILABLE
+
+ECONOMY
+PREMIUM_ECONOMY
+BUSINESS
 ```
 
 JPA에서는 `EnumType.STRING` 사용을 기본으로 검토합니다.
 
 Enum 순서 변경으로 Database 의미가 달라질 수 있는
 Ordinal 저장은 기본안으로 사용하지 않습니다.
+
+`SeatClass`는 다음 값을 사용하며
+Database에는 문자열로 저장합니다.
+
+```text
+ECONOMY
+PREMIUM_ECONOMY
+BUSINESS
+```
+
+`FIRST`는 MVP 범위에 포함하지 않습니다.
 
 ---
 
@@ -844,20 +859,47 @@ aircraft_id
 seat_no
 row_no
 seat_column
+seat_class
 active
 deactivated_at
 created_at
 updated_at
 ```
 
+Column 의미:
+
+- `aircraft_id`: 해당 Seat Configuration이 속한 Aircraft
+- `seat_no`: Aircraft 내부 Seat Number
+- `row_no`: Seat Row
+- `seat_column`: Seat Column
+- `seat_class`: KOKU Airline의 좌석 등급
+
+`seat_class`는 다음 Canonical Enum을 사용합니다.
+
+```text
+ECONOMY
+PREMIUM_ECONOMY
+BUSINESS
+```
+
+JPA에서는 `SeatClass`를 `EnumType.STRING`으로 저장합니다.
+
+Aircraft마다 서로 다른 Seat 수와 SeatClass 구성을 가질 수 있습니다.
+
 예:
 
 ```text
-1A
-1B
-1C
-1D
+1A  BUSINESS
+1B  BUSINESS
+5A  PREMIUM_ECONOMY
+5B  PREMIUM_ECONOMY
+12A ECONOMY
+12B ECONOMY
 ```
+
+Flight 생성 시
+활성 상태의 `AircraftSeat`를 기준으로
+Flight 전용 Seat Snapshot을 생성합니다.
 
 ---
 
@@ -1424,23 +1466,88 @@ flight_id
 seat_no
 row_no
 seat_column
+seat_class
 status
 held_reservation_id
 created_at
 updated_at
 ```
 
-상태:
+Column 의미:
+
+- `flight_id`: Seat가 속한 Flight
+- `seat_no`: 해당 Flight의 Seat Number
+- `row_no`: Seat Row Snapshot
+- `seat_column`: Seat Column Snapshot
+- `seat_class`: Flight 생성 시점의 SeatClass Snapshot
+- `status`: 현재 Seat 상태
+- `held_reservation_id`: 현재 Seat를 Hold 중인 `PENDING` Reservation
+
+`seat_class`는 다음 값을 사용합니다.
+
+```text
+ECONOMY
+PREMIUM_ECONOMY
+BUSINESS
+```
+
+Flight Seat는
+Flight 생성 시 해당 Aircraft의 `AircraftSeat`를 기준으로 생성합니다.
+
+최소 다음 값을 Snapshot으로 복사합니다.
+
+```text
+AircraftSeat.seat_no
+→ Seat.seat_no
+
+AircraftSeat.row_no
+→ Seat.row_no
+
+AircraftSeat.seat_column
+→ Seat.seat_column
+
+AircraftSeat.seat_class
+→ Seat.seat_class
+```
+
+따라서 이후 AircraftSeat 구성이 변경되더라도
+이미 생성된 Flight의 Seat Snapshot은 자동 변경하지 않습니다.
+
+`held_reservation_id`는 Nullable FK로 사용합니다.
 
 ```text
 AVAILABLE
+→ held_reservation_id = NULL
+
 HELD
+→ held_reservation_id = Hold 중인 Reservation ID
+
 RESERVED
+→ held_reservation_id = NULL
+
 UNAVAILABLE
+→ held_reservation_id = NULL
 ```
 
-`held_reservation_id` 같은 직접 참조가 실제로 필요한지는
-Reservation / Seat Mapping 구조와 함께 최종 결정합니다.
+Seat Hold의 만료시각은 Seat에 중복 저장하지 않습니다.
+
+```text
+Seat.held_until
+→ 사용하지 않음
+
+Reservation.hold_expires_at
+→ Reservation 전체 Hold 만료시각
+```
+
+구체적인 FK:
+
+```text
+seat.held_reservation_id
+→ reservation.id
+```
+
+Seat가 `HELD`에서 다른 상태로 전환될 때는
+`held_reservation_id`를 `NULL`로 정리합니다.
 
 ---
 
@@ -1460,7 +1567,7 @@ UNIQUE(
 
 ### 11.4 Seat 상태
 
-기본 상태:
+기본 생성 상태:
 
 ```text
 AVAILABLE
@@ -1469,44 +1576,191 @@ AVAILABLE
 Reservation 시작 성공:
 
 ```text
+Seat.status
 AVAILABLE → HELD
+
+Seat.held_reservation_id
+NULL → Reservation ID
 ```
 
-결제 성공:
+Mock Payment 성공:
 
 ```text
+Seat.status
 HELD → RESERVED
+
+Seat.held_reservation_id
+Reservation ID → NULL
 ```
 
-Hold 만료 또는 예약 진행 취소:
+Hold 만료 또는 `PENDING` Reservation 진행 취소:
 
 ```text
+Seat.status
 HELD → AVAILABLE
+
+Seat.held_reservation_id
+Reservation ID → NULL
 ```
 
 정상 Reservation 취소:
 
 ```text
+Seat.status
 RESERVED → AVAILABLE
 ```
+
+운영상 Seat 판매 중지:
+
+```text
+AVAILABLE → UNAVAILABLE
+```
+
+운영 제한 해제:
+
+```text
+UNAVAILABLE → AVAILABLE
+```
+
+`HELD` 또는 `RESERVED` Seat를
+직접 `UNAVAILABLE`로 변경하지 않습니다.
 
 Flight 취소에서 이미 출발한 Flight의 Seat는
 Domain Policy에 따라 변경하지 않습니다.
 
 ---
 
-### 11.5 동시성
+### 11.5 Seat 동시성
 
-Database 구조는
-동일 Flight의 동일 Seat가 둘 이상의 Reservation에
-동시에 확정되지 않도록 보호해야 합니다.
+Seat 확보의 MVP 동시성 제어는
+`04-system-design.md`에 따라
+MySQL Pessimistic Row Lock을 사용합니다.
 
-구체적인 Lock 방식은
-`04-system-design.md` 및 M4 동시성 테스트 이후 확정합니다.
+Spring Data JPA에서는
+`PESSIMISTIC_WRITE`를 사용합니다.
 
-따라서 본 문서에서는
-Pessimistic Lock, Optimistic Lock 또는 Redis Lock을
-특정 방식으로 확정하지 않습니다.
+논리적인 Query는 다음과 같습니다.
+
+```sql
+SELECT *
+FROM seat
+WHERE id IN (...)
+ORDER BY id ASC
+FOR UPDATE;
+```
+
+Repository 구현에서는
+선택한 Seat ID 목록을 기준으로
+필요한 Seat Row를 하나의 Query에서 Lock하는 방향을 사용합니다.
+
+Lock 순서는 다음과 같이 고정합니다.
+
+```text
+seat_id ASC
+```
+
+Reservation 시작 기본 흐름:
+
+```text
+요청 Seat ID 수집
+        |
+        v
+중복 ID 제거 및 Validation
+        |
+        v
+seat_id ASC 정렬
+        |
+        v
+PESSIMISTIC_WRITE 조회
+        |
+        v
+요청 Seat 수 == 조회 Seat 수 검증
+        |
+        v
+모든 Seat 상태 검증
+        |
+        +-- 전부 AVAILABLE
+        |       → 계속 진행
+        |
+        +-- 하나라도 확보 불가
+                → 전체 실패
+```
+
+Lock 대상은 선택한 Seat Row로 제한합니다.
+
+다음 Resource를 Seat 확보 목적으로 Lock하지 않습니다.
+
+- Flight 전체
+- Aircraft 전체
+- Seat Table 전체
+
+`ROUND_TRIP`에서는
+출국 및 귀국 Flight의 Seat ID를 하나의 목록으로 합친 뒤
+동일하게 `seat_id ASC` 순서로 Lock합니다.
+
+선택한 Seat 중 하나라도 다음 상태이면
+Reservation 시작 전체를 실패합니다.
+
+- `HELD`
+- `RESERVED`
+- `UNAVAILABLE`
+
+일부 Seat만 `HELD`로 만드는 Partial Success는 허용하지 않습니다.
+
+여러 Backend Instance가 동일 MySQL을 사용하는 경우에도
+동일한 Database Row Lock을 사용합니다.
+
+Redis Distributed Lock은
+MVP Seat 확보 경로에 사용하지 않습니다.
+
+---
+
+### 11.6 Flight Seat 생성 Transaction
+
+Flight 생성과 해당 Flight의 Seat Snapshot 생성은
+하나의 Transaction에서 처리합니다.
+
+```text
+Flight 생성
+        |
+        v
+AircraftSeat 조회
+        |
+        v
+Seat Snapshot 생성
+        |
+        v
+Commit
+```
+
+Seat Snapshot 생성 중 하나라도 실패하면
+Flight 생성도 Rollback합니다.
+
+자동 생성 Flight와
+Admin / SuperAdmin 수동 생성 Flight 모두 동일하게 적용합니다.
+
+따라서 정상 생성된 Flight가
+Seat Snapshot 없이 존재하는 상태를 허용하지 않습니다.
+
+Aircraft를 변경할 수 있는 Flight의 경우에도
+Aircraft 변경과 Seat Snapshot 재생성을
+하나의 Transaction으로 처리합니다.
+
+```text
+기존 Seat Snapshot 제거
++
+Aircraft 변경
++
+새 AircraftSeat 기준 Seat Snapshot 생성
+        |
+        v
+전체 성공 → Commit
+
+일부 실패 → Rollback
+```
+
+Aircraft 변경 자체의 허용 조건은
+10장 Flight 정책과 Admin Flight API 정책을 따릅니다.
 
 ---
 
@@ -1550,6 +1804,63 @@ cancel_reason
 created_at
 updated_at
 ```
+
+금액 Column은 Java에서 `BigDecimal`을 사용합니다.
+
+MVP는 KRW 기준으로 최종 금액을 1원 단위로 확정하므로
+Database의 최종 금액 Column은 정수 원화 금액을 정확하게 저장할 수 있는
+`DECIMAL` Type을 사용합니다.
+
+기본 Mapping:
+
+```text
+Reservation.total_amount
+
+Java
+→ BigDecimal
+
+MySQL
+→ DECIMAL(15, 0)
+```
+
+운임 계산 중 소수 원 단위가 발생하는 경우
+최종 Passenger / Flight별 운임은
+1원 단위에서 `RoundingMode.HALF_UP`으로 반올림합니다.
+
+```text
+중간 계산
+→ BigDecimal
+
+Passenger / Flight별 최종 운임
+→ scale(0, RoundingMode.HALF_UP)
+
+Reservation.total_amount
+→ 반올림이 완료된 각 운임의 합계
+```
+
+반올림 시점과 방식은
+Application 전체에서 동일하게 적용합니다.
+
+운임 계산 과정에서도
+`double` 또는 `float`을 사용하지 않습니다.
+
+SeatClass 고정 배율은 Application의
+`SeatClassFarePolicy`에서 `BigDecimal` 값으로 제공합니다.
+
+```text
+ECONOMY
+→ 1.0
+
+PREMIUM_ECONOMY
+→ 1.3
+
+BUSINESS
+→ 2.0
+```
+
+최종 Reservation 금액은
+모든 Passenger / Flight별 운임을 계산한 뒤 합산하여
+`PENDING` Reservation 생성 시 Snapshot으로 저장합니다.
 
 ---
 
@@ -2114,10 +2425,33 @@ attempt_no = 3
 ### 18.4 Payment 금액
 
 각 Payment의 `amount`는
-Reservation에 확정된 `total_amount`를 기준으로 합니다.
+Reservation에 확정된 `total_amount`를 그대로 Snapshot으로 저장합니다.
 
-Payment 재시도 과정에서
+```text
+Reservation.total_amount
+        |
+        v
+Payment.amount
+```
+
+Payment 생성 시점에
+운임을 다시 계산하지 않습니다.
+
+금액 Mapping:
+
+```text
+Java
+→ BigDecimal
+
+MySQL
+→ DECIMAL(15, 0)
+```
+
+Payment 재시도 과정에서도
 Reservation 금액을 다시 계산하지 않습니다.
+
+따라서 동일 Reservation의 정상적인 Payment 시도는
+모두 동일한 확정 금액을 사용합니다.
 
 ---
 
@@ -2520,7 +2854,7 @@ Error Response는
 
 ```json
 {
-  "code": "SEAT_ALREADY_UNAVAILABLE",
+  "code": "SEAT_NOT_AVAILABLE",
   "message": "선택한 좌석을 사용할 수 없습니다.",
   "details": []
 }
@@ -2897,12 +3231,16 @@ UI Design에서 필요한 최소 정보를 제공합니다.
   "arrivalAt": "2026-09-10T11:50:00+09:00",
   "status": "SCHEDULED",
   "bookable": true,
-  "currentFare": 270000
+  "economyFare": 270000
 }
 ```
 
-`currentFare`는
-Domain Policy의 고정 운임 정책에 따라 계산된 현재 운임입니다.
+`economyFare`는
+해당 Flight의 `ECONOMY` SeatClass를 기준으로 계산한
+검색 단계의 예상 운임입니다.
+
+Passenger별 실제 최종 운임은
+Reservation 시작 시 선택한 Seat의 SeatClass를 반영하여 확정합니다.
 
 ---
 
@@ -2922,7 +3260,7 @@ Response에는 다음 정보를 포함할 수 있습니다.
 - Date / Time
 - Aircraft 기본 정보
 - 예약 가능 여부
-- 현재 고정 운임
+- ECONOMY 기준 예상 운임
 
 외부 실제 Flight Data를
 이 API Response와 혼합하지 않습니다.
@@ -2946,20 +3284,34 @@ Response 예:
     {
       "seatId": 1001,
       "seatNo": "1A",
+      "seatClass": "BUSINESS",
       "status": "AVAILABLE"
     },
     {
       "seatId": 1002,
       "seatNo": "1B",
+      "seatClass": "BUSINESS",
       "status": "RESERVED"
+    },
+    {
+      "seatId": 1010,
+      "seatNo": "5A",
+      "seatClass": "PREMIUM_ECONOMY",
+      "status": "AVAILABLE"
     }
   ]
 }
 ```
 
-Frontend에서는 Domain Policy / UI Design에 따라
-`HELD`, `RESERVED`, `UNAVAILABLE`을 모두
-사용자에게 선택 불가 상태로 표현할 수 있습니다.
+Frontend에서는 `seatClass`를 이용하여
+좌석 등급과 예상 추가 운임을 표현할 수 있습니다.
+
+`HELD`, `RESERVED`, `UNAVAILABLE`은 모두
+일반 Member에게 선택 불가 상태로 표현합니다.
+
+일반 사용자 Seat 조회 Response에는
+내부 Hold 소유자를 식별하는
+`heldReservationId`를 노출하지 않습니다.
 
 ---
 
@@ -3039,28 +3391,73 @@ Reservation 생성 API는 최소 다음을 검증합니다.
 2. Flight 존재
 3. Flight 상태
 4. 신규 Reservation 2시간 제한
-5. ONE_WAY / ROUND_TRIP 구조
+5. `ONE_WAY` / `ROUND_TRIP` 구조
 6. 왕복 Reverse Route
 7. 왕복 Date Rule
 8. Passenger 정보
 9. Adult / Child / Infant 판단
 10. Infant Companion
 11. Child Seat 인접성
-12. 선택 Seat 상태
-13. 모든 Flight Seat 확보 가능 여부
+12. Seat가 요청 Flight에 실제로 속하는지
+13. Passenger별 Seat 필요 여부
+14. 모든 Flight의 Seat 확보 가능 여부
 
-모든 Validation을 통과하고
-모든 Seat 확보에 성공한 경우:
+Seat 확보 단계에서는
+요청된 모든 Seat ID를 정렬한 뒤
+하나의 Pessimistic Lock Query로 조회합니다.
 
 ```text
-Reservation → PENDING
-Reservation 번호 생성
-최종 운임 확정
-Seat → HELD
-Hold 만료시각 저장
+모든 Seat ID
+        |
+        v
+중복 제거 / 검증
+        |
+        v
+seat_id ASC
+        |
+        v
+PESSIMISTIC_WRITE
+        |
+        v
+전체 Seat 상태 검증
 ```
 
-을 하나의 Transaction Boundary 안에서 처리합니다.
+모든 Validation과 Seat 확보에 성공한 경우
+하나의 Transaction Boundary 안에서 다음 작업을 처리합니다.
+
+```text
+PENDING Reservation 생성
++ Reservation 번호 생성
++ hold_expires_at 저장
+        |
+        v
+Reservation / Flight / Passenger Mapping 생성
+        |
+        v
+Passenger / Flight별 Seat 연결
+        |
+        v
+SeatClass 반영 운임 계산
+        |
+        v
+Reservation.total_amount 확정
+        |
+        v
+선택 Seat
+AVAILABLE → HELD
+        |
+        v
+Seat.held_reservation_id
+→ 생성한 Reservation ID
+        |
+        v
+Commit
+```
+
+`ROUND_TRIP`에서도
+출국 / 귀국 Seat 전체를 하나의 Transaction에서 처리합니다.
+
+일부 Seat만 확보한 상태의 Commit은 허용하지 않습니다.
 
 ---
 
@@ -3076,6 +3473,32 @@ ROUND_TRIP에서도:
 - Passenger 일부만 성공
 
 같은 Partial Success를 허용하지 않습니다.
+
+Seat Pessimistic Lock 획득 후
+하나 이상의 Seat가 더 이상 확보 가능한 상태가 아니면:
+
+```text
+HTTP 409 Conflict
+
+code
+→ SEAT_NOT_AVAILABLE
+```
+
+을 반환합니다.
+
+동시 요청 경쟁으로 인해
+사용자가 선택한 Seat를 다른 Reservation이 먼저 확보한 경우도
+동일한 Business Error로 처리합니다.
+
+Frontend는 해당 Error를 받으면
+최신 Seat 상태를 다시 조회하도록 유도합니다.
+
+Database Lock Timeout 또는 Deadlock과 같이
+Business Seat 상태 충돌과 구분되는 Database 동시성 예외는
+무한 재시도하지 않습니다.
+
+구체적인 Retry 적용 여부는
+동시성 테스트 결과를 기준으로 제한적으로 검토합니다.
 
 ---
 
@@ -3329,6 +3752,43 @@ flight_schedule_id = NULL
 기존 PENDING 또는 CONFIRMED Reservation이 연결된 Flight의
 핵심 운항정보 변경 제한을 적용합니다.
 
+단, Aircraft 변경은 더 엄격한 정책을 적용합니다.
+
+Aircraft 변경은 다음 조건을 모두 만족해야 합니다.
+
+- Flight가 `SCHEDULED`
+- 아직 출발하지 않음
+- 해당 Flight와 연결된 Reservation 이력이 한 번도 없음
+
+현재 Reservation이 존재하지 않더라도
+과거 `CANCELLED` Reservation 이력이 있으면
+Aircraft 변경을 허용하지 않습니다.
+
+Aircraft 변경이 허용된 경우:
+
+```text
+Aircraft Schedule Conflict 검증
+        |
+        v
+Reservation 이력 없음 검증
+        |
+        v
+기존 Seat Snapshot 제거
+        |
+        v
+Aircraft 변경
+        |
+        v
+새 AircraftSeat 기준 Seat Snapshot 생성
+        |
+        v
+Commit
+```
+
+전체 작업은 하나의 Transaction으로 처리하며
+Seat Snapshot 재생성에 실패하면
+Aircraft 변경도 Rollback합니다.
+
 ---
 
 ### 35.3 Flight 취소
@@ -3444,6 +3904,58 @@ FlightSchedule을 비활성화하면
 
 기존 Flight의 운항을 중단해야 하는 경우
 각 Flight에 대해 별도의 Flight 취소 정책을 적용합니다.
+
+---
+
+### 35.6 Flight Seat 운영 상태 관리 API
+
+Admin과 SuperAdmin은
+특정 Flight의 `AVAILABLE` Seat를 운영상 판매 불가 상태로 변경하거나
+운영 제한이 해제된 Seat를 다시 판매 가능 상태로 복구할 수 있습니다.
+
+초안:
+
+```text
+PATCH /api/v1/admin/flights/{flightId}/seats/{seatId}/availability
+```
+
+Request 예:
+
+```json
+{
+  "available": false
+}
+```
+
+처리 규칙:
+
+```text
+available = false
+
+AVAILABLE → UNAVAILABLE
+```
+
+```text
+available = true
+
+UNAVAILABLE → AVAILABLE
+```
+
+다음 상태의 Seat는
+이 API를 통해 직접 `UNAVAILABLE`로 변경하지 않습니다.
+
+- `HELD`
+- `RESERVED`
+
+Backend는 다음을 검증합니다.
+
+- 대상 Flight 존재
+- 대상 Seat 존재
+- Seat가 해당 Flight에 속하는지
+- 현재 Seat 상태가 허용된 전이인지
+
+허용되지 않는 상태 전이는
+현재 Resource 상태와의 충돌로 처리합니다.
 
 ---
 
@@ -3882,9 +4394,6 @@ Schema 변경 이력을 Repository에서 관리합니다.
 ### 47.1 Seat
 
 - [ ] Aircraft Seat 통로 표현 방식
-- [ ] Flight Seat 생성 시점
-- [ ] Seat 동시성 Lock 방식
-- [ ] Seat와 Reservation 직접 FK 필요 여부
 
 ---
 

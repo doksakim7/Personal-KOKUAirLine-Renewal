@@ -139,11 +139,16 @@ Project Plan을 기준으로 다음 Milestone을 사용합니다.
 - FlightSchedule
 - Flight
 - Seat
+- SeatClass
+- Flight별 Seat Snapshot
 - Passenger
 - Reservation
 - Reservation Number
 - Seat Hold
 - KOKU 고정 운임
+- SeatClass별 고정 운임 정책
+- Passenger / Flight별 SeatClass 선택
+- PENDING Reservation 생성 시 최종 운임 확정
 - Mock Payment
 - Reservation 취소 및 Mock 환불
 - External Flight API
@@ -167,8 +172,11 @@ Project Plan을 기준으로 다음 Milestone을 사용합니다.
 
 Redis 자체는 Refresh Token 관리를 위해 M2부터 사용합니다.
 
-Cache 또는 Distributed Lock 용도의 Redis 활용은
+Cache 용도의 Redis 활용은
 각 문제의 필요성과 검증 결과에 따라 M4에서 별도로 결정합니다.
+
+Seat 동시성 제어에는
+MVP 기준 Redis Distributed Lock을 사용하지 않습니다.
 
 ---
 
@@ -254,7 +262,6 @@ docs/04-system-design.md
 
 주요 미확정 항목:
 
-- Seat 동시성 최종 방식
 - External Flight API Provider
 - Cache 적용 범위 및 TTL
 - AWS 세부 Architecture
@@ -306,6 +313,36 @@ Seat Hold 만료 Scheduler
 → 1분
 ```
 
+Seat 동시성 정책도 확정되었습니다.
+
+```text
+Lock
+→ MySQL Pessimistic Row Lock
+
+Spring JPA
+→ PESSIMISTIC_WRITE
+
+Lock 대상
+→ 사용자가 선택한 Seat Row만
+
+복수 Seat Lock
+→ 하나의 Query
+→ seat_id ASC 순서
+
+ROUND_TRIP
+→ 출국 / 귀국 선택 Seat 전체를 하나의 Transaction에서 확보
+→ All-or-Nothing
+
+Redis Distributed Lock
+→ MVP 미사용
+```
+
+Seat 경쟁 발생 시
+일부 Seat만 확보하는 Partial Success는 허용하지 않습니다.
+
+동시성 Test는 M4에서 수행하지만,
+Lock 방식 자체는 더 이상 미확정 사항이 아닙니다.
+
 ---
 
 ### 3.5 Data & API Design
@@ -324,13 +361,40 @@ Entity 관계 및 API 기본 구조 정의
 
 주요 미확정 항목:
 
-- Seat Lock 방식
+- `AircraftSeat`의 통로 표현 방식
 - Reservation Mapping Entity 최종 형태
 - Passport Encryption / Masking
 - Payment SUCCESS Database 보호 방식
 - API Error 상세 Mapping
 - External Flight DTO
 - AI Structured Output
+
+Seat 관련 Data / API 정책은 다음과 같이 확정되었습니다.
+
+```text
+AircraftSeat.seat_class
+→ Aircraft 기본 SeatClass
+
+Seat.seat_class
+→ Flight 생성 시 Snapshot
+
+Seat.held_reservation_id
+→ Nullable FK
+→ HELD 상태에서 Hold 소유 Reservation 참조
+
+Seat Hold 만료 시각
+→ Reservation.hold_expires_at
+
+Reservation.total_amount
+→ DECIMAL(15,0)
+
+Payment.amount
+→ DECIMAL(15,0)
+
+Seat 경쟁
+→ HTTP 409
+→ SEAT_NOT_AVAILABLE
+```
 
 ---
 
@@ -363,6 +427,14 @@ Draft 작성 완료
 - FlightSchedule + Departure Local Date 중복 생성 방지
 - Aircraft 기본 배정 관계
 - Aircraft Turnaround Time 60분
+- `AircraftSeat.seat_class`
+- Flight별 `Seat.seat_class` Snapshot
+- `Seat.held_reservation_id` → Reservation Nullable FK
+- Reservation ↔ Seat 임시 Hold Relation
+- `Reservation.total_amount` → `DECIMAL(15,0)`
+- `Payment.amount` → `DECIMAL(15,0)`
+- Flight 생성과 Seat Snapshot 생성 Transaction
+- Aircraft 변경 시 Seat Snapshot 재생성 정책
 
 Refresh Token은 Redis에서 관리하므로
 관계형 Database Entity 또는 ERD Table로 추가하지 않습니다.
@@ -480,30 +552,138 @@ MVP에서는 Payment 자체가 결제 시도 이력을 충분히 표현할 수 �
 
 ---
 
-### 4.5 Seat 동시성 기술 미확정
+### 4.5 Seat 동시성 제어 방식 확정
 
 #### 결정
 
-초기 설계에서 특정 Lock 방식으로 고정하지 않습니다.
+MVP의 Seat 확보 동시성 제어는
+MySQL Database의 Pessimistic Row Lock을 사용합니다.
 
-검토 대상:
-
-- Database Unique Constraint
-- Conditional Update
-- Pessimistic Lock
-- Optimistic Lock
-- Redis Distributed Lock
-
-#### 이유
-
-단일 Backend / 단일 Database 환경에서
-Redis Distributed Lock이 실제로 필요한지 먼저 검증하기 위해서입니다.
-
-#### 결정 시점
+Spring Data JPA에서는:
 
 ```text
-M4 동시성 테스트 이후
+PESSIMISTIC_WRITE
 ```
+
+를 사용합니다.
+
+Conceptual SQL:
+
+```sql
+SELECT *
+FROM seat
+WHERE id IN (...)
+ORDER BY id ASC
+FOR UPDATE;
+```
+
+#### Lock 범위
+
+전체 Flight, Aircraft 또는 Seat Table을 Lock하지 않습니다.
+
+사용자가 실제로 선택한 Seat Row만 Lock합니다.
+
+복수 Seat 요청에서는
+Seat를 하나씩 개별 Query로 Lock하지 않고
+선택된 Seat ID 전체를 하나의 Query로 조회합니다.
+
+Lock 획득 순서는:
+
+```text
+seat_id ASC
+```
+
+로 통일합니다.
+
+#### ROUND_TRIP
+
+왕복 Reservation에서는
+출국 Flight Seat와 귀국 Flight Seat를
+하나의 확보 대상 집합으로 처리합니다.
+
+```text
+출국 선택 Seat
++
+귀국 선택 Seat
+        ↓
+전체 Seat ID 정렬
+        ↓
+PESSIMISTIC_WRITE
+        ↓
+전체 상태 검증
+        ↓
+모두 가능
+→ Reservation 시작
+
+하나라도 불가
+→ 전체 실패
+```
+
+Flight별 Partial Success는 허용하지 않습니다.
+
+#### Seat 상태 검증
+
+Lock 획득 이후
+선택한 Seat 중 하나라도 다음 상태라면
+Reservation 시작에 실패합니다.
+
+```text
+HELD
+RESERVED
+UNAVAILABLE
+```
+
+Business Seat 경쟁 실패는 다음 API 정책을 사용합니다.
+
+```text
+HTTP 409 Conflict
+SEAT_NOT_AVAILABLE
+```
+
+Frontend는 최신 Seat 상태를 다시 조회하도록 안내합니다.
+
+#### Redis Distributed Lock
+
+Redis는 Refresh Token 상태 관리에는 사용하지만
+MVP Seat Reservation Lock에는 사용하지 않습니다.
+
+```text
+Seat Concurrency
+→ Shared MySQL
+→ Pessimistic Row Lock
+
+Redis Distributed Lock
+→ 미사용
+```
+
+단일 Database가 모든 Backend Instance의
+공통 정합성 기준이기 때문입니다.
+
+#### 동시성 Test
+
+Lock 방식 자체는 설계 단계에서 확정했지만
+실제 동시성 Test는 M4에서 수행합니다.
+
+검증 대상:
+
+- 동일 Seat 동시 Reservation
+- 복수 Seat 동시 Reservation
+- ROUND_TRIP All-or-Nothing
+- Deadlock 여부
+- Lock 대기 시간
+- Response Time
+
+Test 결과에 따라
+Lock Timeout 또는 제한적 Retry 정책은 추가 조정할 수 있습니다.
+
+무한 Retry는 사용하지 않습니다.
+
+#### 영향 문서
+
+- `02-domain-policy.md`
+- `04-system-design.md`
+- `05-data-api-design.md`
+- `docs/diagrams/erd.md`
 
 ---
 
@@ -849,9 +1029,47 @@ FlightSchedule Template
 FlightSchedule에는
 자동 생성 Flight에 사용할 기본 Aircraft를 지정합니다.
 
-자동 생성 시 해당 Aircraft를 초기 배정하며,
-Admin 또는 SuperAdmin은 출발 전 `SCHEDULED` Flight의
-Aircraft를 변경할 수 있습니다.
+자동 생성 시 해당 Aircraft를 초기 배정합니다.
+
+Admin 또는 SuperAdmin의 Aircraft 변경은
+다음 조건을 모두 만족할 때만 허용합니다.
+
+```text
+Flight.status = SCHEDULED
++
+미출발
++
+Reservation 연결 이력 = 0건
+```
+
+현재 활성 Reservation이 없더라도
+과거 Reservation 이력이 한 번이라도 존재하면
+Aircraft를 변경하지 않습니다.
+
+다음 Reservation 이력도 변경을 차단합니다.
+
+```text
+PENDING
+CONFIRMED
+CANCELLED
+```
+
+Aircraft 변경이 허용되는 경우:
+
+```text
+기존 Flight Seat Snapshot 제거
+        ↓
+Flight.aircraft 변경
+        ↓
+새 AircraftSeat 기준 Seat Snapshot 생성
+        ↓
+Commit
+```
+
+위 작업은 하나의 Database Transaction으로 처리합니다.
+
+Seat Snapshot 재생성에 실패하면
+Aircraft 변경 전체를 Rollback합니다.
 
 #### Aircraft Schedule Conflict
 
@@ -1181,48 +1399,124 @@ UNIQUE(reservation_no)
 
 ### 6.2 PENDING 생성
 
-PENDING Reservation 생성은
-Seat 확보와 함께 하나의 Transaction으로 처리합니다.
+PENDING Reservation 생성과
+선택 Seat 확보는 하나의 Database Transaction으로 처리합니다.
+
+개념적 흐름:
 
 ```text
-조건 검증
-    |
-    v
-Seat 확보 가능 여부 검증
-    |
-    v
+Reservation 요청 검증
+        ↓
+선택 Seat ID 중복 제거 / 검증
+        ↓
+seat_id ASC 정렬
+        ↓
+선택 Seat 전체 PESSIMISTIC_WRITE
+        ↓
+Seat 상태 검증
+        ↓
 PENDING Reservation 생성
-    |
-    v
+        ↓
 Reservation Number 생성
-    |
-    v
-최종 금액 확정
-    |
-    v
-Seat AVAILABLE → HELD
-    |
-    v
+        ↓
+hold_expires_at 확정
+        ↓
+Reservation / Flight / Passenger Mapping 생성
+        ↓
+Passenger / Flight별 선택 SeatClass 기준 운임 계산
+        ↓
+Reservation.total_amount 확정
+        ↓
+선택 Seat
+AVAILABLE → HELD
+        ↓
+Seat.held_reservation_id
+→ 생성된 Reservation ID
+        ↓
 Commit
 ```
 
-구체적인 Persist / Flush 순서는
-실제 JPA Mapping 이후 확정합니다.
+`ROUND_TRIP`에서는
+출국 Flight와 귀국 Flight의 선택 Seat 전체를
+동일 Transaction에서 확보합니다.
+
+```text
+일부 Seat 성공
++
+일부 Seat 실패
+
+→ 허용하지 않음
+```
+
+SeatClass별 운임은
+Backend `SeatClassFarePolicy`를 기준으로 계산합니다.
+
+최종 Passenger / Flight별 운임은
+`BigDecimal`을 사용하고
+1원 단위에서 `RoundingMode.HALF_UP`으로 반올림합니다.
+
+Reservation의 최종 금액은
+반올림이 완료된 Passenger / Flight별 운임의 합계입니다.
+
+구체적인 Reservation Mapping Entity의
+Persist / Flush 순서는
+Reservation Mapping 설계 및 실제 JPA 구현 시 최종 확정합니다.
 
 ---
 
 ### 6.3 Seat Hold
 
-기본 Hold 시간:
+Hold 만료 시각은 다음 두 값 중 더 이른 시각을 기준으로 결정합니다.
 
 ```text
-1시간
+Reservation 시작 시각 + 1시간
+
+Reservation에 포함된 가장 이른 Flight 출발 시각
 ```
+
+따라서 Seat Hold는 최대 1시간이며,
+Flight 출발 시각을 넘어 유지되지 않습니다.
 
 Hold 만료 판단은 Backend `Clock`이 최종 기준입니다.
 
 `hold_expires_at`은
 UTC 기준 절대 시각으로 저장합니다.
+
+Seat 자체에는 Hold 만료 시각을 중복 저장하지 않습니다.
+
+```text
+Seat.held_until
+→ 사용하지 않음
+
+Reservation.hold_expires_at
+→ Reservation 전체 Hold 만료 시각
+```
+
+Reservation이 Seat를 Hold하는 동안:
+
+```text
+Seat.status
+→ HELD
+
+Seat.held_reservation_id
+→ 해당 Reservation ID
+```
+
+Hold 만료 또는 PENDING Reservation 취소 시:
+
+```text
+Reservation
+PENDING → CANCELLED
+
+Seat
+HELD → AVAILABLE
+
+Seat.held_reservation_id
+→ NULL
+```
+
+하나의 Reservation이 Hold한 모든 Seat는
+동일한 `hold_expires_at`을 사용합니다.
 
 Seat Hold 만료 Scheduled Job은
 1분 주기로 실행합니다.
@@ -1256,7 +1550,16 @@ PENDING → CONFIRMED
 
 Seat
 HELD → RESERVED
+
+Seat.held_reservation_id
+Reservation ID → NULL
 ```
+
+Payment 금액은
+PENDING Reservation 생성 시 확정된
+`Reservation.total_amount`를 그대로 사용합니다.
+
+결제 시점에 운임을 다시 계산하지 않습니다.
 
 하나의 Business Transaction으로 처리합니다.
 
@@ -1972,7 +2275,7 @@ Technical Debt를 관리합니다.
 | --- | --- | --- | --- | --- |
 | TD-001 | Auth | JWT / Refresh Token / CSRF 세부 정책 확정 | High | Resolved |
 | TD-002 | Time | UTC / Instant / ZoneId / Clock 시간 정책 확정 | High | Resolved |
-| TD-003 | Seat | 동시성 제어 방식 검증 필요 | High | Open |
+| TD-003 | Seat | Pessimistic Row Lock 동시성 / Deadlock / 성능 검증 필요 | High | Open |
 | TD-004 | Passenger | Test Passport 보호 방식 확정 필요 | Medium | Open |
 | TD-005 | External | Flight API Provider 확정 필요 | High | Open |
 | TD-006 | AI | Structured Output Contract 확정 필요 | Medium | Open |
@@ -2003,9 +2306,14 @@ Resolved
 
 ### Seat
 
-- [ ] Flight Seat 생성 시점
-- [ ] Lock 방식
-- [ ] held_reservation_id 필요 여부
+- [ ] `AircraftSeat`의 통로 표현 방식
+
+### Reservation Mapping
+
+- [ ] `ReservationFlight`의 최종 JPA Entity 여부
+- [ ] `ReservationPassenger`의 최종 JPA Entity 여부
+- [ ] `PassengerFlight`의 최종 JPA Entity 여부
+- [ ] Mapping Entity별 추가 Constraint
 
 ### Passenger
 

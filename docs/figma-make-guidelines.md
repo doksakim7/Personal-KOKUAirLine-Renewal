@@ -95,6 +95,8 @@ Tablet 전용 Wireframe 또한 MVP 필수 범위에 포함하지 않습니다.
 Responsive 구현 과정에서 중간 Width가 심각하게 깨지지 않도록 고려하되,
 구체적인 CSS Breakpoint는 Frontend 구현 단계에서 확정합니다.
 
+---
+
 ### 4.2 MVP에서 우선 생성할 수 있는 주요 화면
 
 - Home
@@ -202,6 +204,8 @@ Figma Make는 화면 라벨과 설명을 생성할 때 다음 원칙을 따릅�
 - Primary CTA가 명확한 구성
 - 과도한 애니메이션이나 실험적 레이아웃 지양
 
+---
+
 ### 7.2 시각적 우선순위
 
 다음 요소를 명확하게 구분합니다.
@@ -212,6 +216,8 @@ Figma Make는 화면 라벨과 설명을 생성할 때 다음 원칙을 따릅�
 4. 주요 CTA 버튼
 5. 상태 정보
 6. 주의/제한/에러 메시지
+
+---
 
 ### 7.3 레이아웃 방향
 
@@ -237,6 +243,8 @@ Mobile에서는 동일한 정보와 기능을 다음 방향으로 재배치합�
 Desktop과 Mobile 간 전환으로
 기능 또는 주요 정보를 삭제하지 않습니다.
 
+---
+
 ### 7.4 Brand Logo
 
 KOKU Airline의 Brand Symbol은 깃발 형태 안에
@@ -256,6 +264,8 @@ Logo를 지나치게 복잡한 Illustration 형태로 만들지 않습니다.
 
 첨부된 확정 Logo 시안을 이후 UI 생성의 기본 Brand Symbol 기준으로 사용합니다.
 Figma Make는 Symbol의 핵심 구조를 임의로 재해석하거나 다른 형태로 변경하지 않습니다.
+
+---
 
 ### 7.5 Responsive / Accessibility 기본 원칙
 
@@ -279,17 +289,34 @@ Figma Make는 내부 `KOKU Flight`와 외부 실제 항공편을 **절대로 같
 #### 내부 `KOKU Flight`
 
 - KOKU Airline 브랜드 표시
-- Domain Policy에 따라 계산된 현재 고정 운임 표시
+- `ECONOMY` SeatClass 기준 예상 운임 표시
 - 예약 가능
 - Seat 선택 가능
+- SeatClass 선택 가능
 - Mock Payment 가능
 - Flight 선택 완료 후 예약 절차 시작 CTA 제공 가능
 
 KOKU Flight 검색 결과와 Flight 선택 Summary에서는
-Domain Policy에 따라 계산된 현재 고정 운임을 표시합니다.
+`ECONOMY` SeatClass를 기준으로 계산된 예상 운임을 표시합니다.
 
-검색 화면의 운임은 고정 운임 정책에 따라 계산된 금액이며,
-최종 결제 예정 금액은 `PENDING` Reservation 생성 시 확정됩니다.
+검색 단계에서는 Passenger별 실제 SeatClass가 아직 선택되지 않았으므로
+해당 금액을 최종 결제 예정 금액처럼 표현하지 않습니다.
+
+```text
+검색 단계
+→ ECONOMY 기준 예상 운임
+
+Seat 선택 완료
+→ 실제 Passenger / Flight별 SeatClass 확정
+
+PENDING Reservation 생성
+→ 최종 결제 예정 금액 확정
+```
+
+`PENDING` Reservation 생성 이후의
+예약 확인 및 Mock Payment 화면에서는
+검색 단계의 예상 운임 대신
+Backend가 확정한 Reservation 금액을 표시합니다.
 
 Figma Make는 잔여 Seat 수, Seat 점유율 또는 수요에 따라
 운임이 실시간으로 변경되는 UI를 생성하지 않습니다.
@@ -314,6 +341,8 @@ Flight 선택 Action과 예약 절차 시작 Action은 구분합니다.
 - Seat 선택 UI 제공 금지
 - Mock Payment UI 제공 금지
 - 실제 발권 UI 제공 금지
+
+---
 
 ### 8.2 AI 항공편 검색
 
@@ -372,6 +401,8 @@ Guest가 해당 Action을 선택하면 로그인 UI로 이동합니다.
 Figma Make는 로그인 이후 사용자가
 Flight를 처음부터 다시 검색해야 하는 흐름을 만들지 않습니다.
 
+---
+
 ### 9.2 Member
 
 가능:
@@ -389,19 +420,40 @@ Flight를 처음부터 다시 검색해야 하는 흐름을 만들지 않습니�
 `LOCAL` AuthAccount가 없는 Member에게는
 비밀번호 변경 메뉴 또는 Action을 제공하지 않습니다.
 
+---
+
 ### 9.3 Admin
 
 가능:
 
 - 운영 데이터 조회
 - Flight 관리
+- Flight별 Seat 운영 상태 관리
 - 운항 일정 관리
 - Reservation 현황 조회
+
+Flight별 Seat 운영 상태 관리는
+Aircraft의 Seat Configuration을 변경하는 Master Data 기능이 아닙니다.
+
+Admin과 SuperAdmin은 정책에 따라
+특정 Flight의 Seat를 운영상 판매 중지하거나
+판매 가능한 상태로 복구할 수 있습니다.
+
+```text
+AVAILABLE → UNAVAILABLE
+
+UNAVAILABLE → AVAILABLE
+```
+
+`HELD` 또는 `RESERVED` Seat의 상태를
+이 기능으로 임의 변경하는 UI를 제공하지 않습니다.
 
 제한:
 
 - Master Data 변경 불가
 - 강제 Reservation 취소 불가
+
+---
 
 ### 9.4 SuperAdmin
 
@@ -437,6 +489,8 @@ Flight 선택 완료 후 동일한 UX 패턴을 사용합니다.
 Desktop과 Mobile 모두
 선택 완료 상태 안에서 Summary와 예약 절차 시작 CTA를 제공하는 의미를 유지합니다.
 
+---
+
 ### 10.1 편도 예약
 
 ```text
@@ -449,7 +503,10 @@ Home
 → 예약 절차 시작
 → Passenger 정보 입력
 → Seat 선택
-→ PENDING Reservation 생성 + 선택한 모든 Seat HELD
+→ PENDING Reservation 생성
+→ 선택한 모든 Seat HELD
+→ 실제 선택 SeatClass 반영
+→ 최종 결제 예정 금액 확정
 → 예약 확인
 → Mock 결제
 → 결제 성공
@@ -475,6 +532,8 @@ Member:
 Figma Make는 ONE_WAY Flight 선택과 예약 절차 시작을
 하나의 CTA로 합치지 않습니다.
 
+---
+
 ### 10.2 왕복 예약
 
 ```text
@@ -491,6 +550,8 @@ Home
 → 귀국 Flight Seat 선택
 → PENDING 왕복 Reservation 생성
 → 출국 / 귀국 선택 Seat HELD
+→ Passenger / Flight별 실제 SeatClass 반영
+→ 왕복 Reservation 최종 결제 예정 금액 확정
 → 예약 확인
 → 왕복 전체 Mock 결제
 → 결제 성공
@@ -508,6 +569,8 @@ Home
 - 귀국 Flight는 출국 Route의 정확한 역방향
 - 동일한 Passenger 구성을 두 Flight에 공통으로 적용
 - Seat는 각 Flight별로 선택
+- Passenger마다 서로 다른 SeatClass 선택 가능
+- 동일 Passenger도 출국 Flight와 귀국 Flight에서 서로 다른 SeatClass 선택 가능
 - 출국 / 귀국 Seat 전체 확보에 성공한 경우에만 Reservation 시작
 - 왕복 전체 여정을 대상으로 하나의 Mock Payment 흐름 제공
 - 출국 Flight와 귀국 Flight를 모두 선택한 이후 예약 절차 시작 Action 제공
@@ -603,6 +666,8 @@ Flight 선택 이전에는
 - Guest: `[로그인 후 예약]`
 - Member: `[예약하기]`
 
+---
+
 ### 10.3 Responsive Reservation Step
 
 Desktop에서는 다음과 같이 전체 Step을 가로로 표시할 수 있습니다.
@@ -624,6 +689,8 @@ Mobile에서도 전체 단계 수와 현재 진행 단계를
 
 ROUND_TRIP의 Seat 단계에서는
 현재 선택 중인 Flight가 출국편인지 귀국편인지 함께 표시합니다.
+
+---
 
 ### 10.4 Reservation 번호 표시
 
@@ -690,14 +757,90 @@ Seat 선택 화면에서 각각 별도의 사용자용 상태명으로 노출하
 상태 구분은 색상만으로 하지 말고,
 텍스트, 아이콘, 패턴 또는 Disabled 표현 등을 함께 사용합니다.
 
-### 11.2 Hold 규칙
+---
+
+### 11.2 SeatClass
+
+MVP에서는 다음 SeatClass를 사용합니다.
+
+- `ECONOMY`
+- `PREMIUM_ECONOMY`
+- `BUSINESS`
+
+`FIRST`는 MVP UI에 생성하지 않습니다.
+
+SeatClass는 Seat 예약 상태와 별개의 정보입니다.
+
+Figma Make는 Seat Map에서
+사용자가 각 Seat의 SeatClass를 식별할 수 있도록 표현합니다.
+
+가능한 표현:
+
+- SeatClass Label
+- Badge
+- 범례
+- SeatClass별 시각적 구분
+
+단, 다음 두 개념을 하나의 상태처럼 표현하지 않습니다.
+
+```text
+SeatClass
+→ ECONOMY / PREMIUM_ECONOMY / BUSINESS
+
+Seat 상태
+→ AVAILABLE / HELD / RESERVED / UNAVAILABLE
+```
+
+사용자가 Seat를 선택하면 최소 다음 정보를 확인할 수 있어야 합니다.
+
+```text
+Passenger
+KIM JIHUN
+
+Seat
+12A
+
+SeatClass
+PREMIUM_ECONOMY
+```
+
+동일 Reservation에서도 Passenger마다
+서로 다른 SeatClass를 선택할 수 있습니다.
+
+`ROUND_TRIP`에서는 동일 Passenger도
+출국 Flight와 귀국 Flight에서
+서로 다른 SeatClass를 선택할 수 있습니다.
+
+예:
+
+```text
+KIM JIHUN
+
+출국
+12A / ECONOMY
+
+귀국
+3C / BUSINESS
+```
+
+SeatClass에 따른 최종 운임은
+Backend가 Reservation 시작 시 확정합니다.
+
+Figma Make는 SeatClass 배율을 이용해
+Frontend가 자체적으로 최종 금액을 계산하거나 확정하는 UI를 만들지 않습니다.
+
+---
+
+### 11.3 Hold 규칙
 
 * Seat Hold 시간은 `1시간`입니다.
 * Hold Countdown UI를 표시합니다.
 * Countdown은 사용자 안내용입니다.
 * 실제 Hold 만료 여부는 Backend 시간을 기준으로 판단합니다.
 
-### 11.3 Seat 확보 원자성
+---
+
+### 11.4 Seat 확보 원자성
 
 편도와 왕복 모두 선택한 모든 Seat를 하나의 확보 대상 집합으로 처리합니다.
 
@@ -721,7 +864,9 @@ Seat 선택 화면에서 각각 별도의 사용자용 상태명으로 노출하
 
 Flight 단위 Partial Success UI를 생성하지 않습니다.
 
-### 11.4 Mobile Seat UX
+---
+
+### 11.5 Mobile Seat UX
 
 Mobile Seat Map에서도 실제 Row / Column 구조와
 Seat 간 인접 관계를 유지합니다.
@@ -737,6 +882,8 @@ Horizontal Scroll 등 적절한 탐색 방식을 사용할 수 있습니다.
 - 현재 선택 Seat
 - 선택 완료 Action
 - ROUND_TRIP인 경우 출국 / 귀국 Flight 구분
+- SeatClass 식별 정보 또는 범례
+- 현재 선택 Seat의 SeatClass
 
 화면 크기에 맞추기 위해 Seat 배치 관계를
 임의로 변경해서는 안 됩니다.
@@ -782,6 +929,8 @@ Passenger별 입력 정보는 다음과 같습니다.
 Desktop에서는 두 Flight Summary를 나란히 표현할 수 있으며,
 Mobile에서는 출국 Flight → 귀국 Flight 순서의 1 Column Layout을 사용할 수 있습니다.
 
+---
+
 ### 12.2 테스트용 여권 정보
 
 테스트용 여권 정보는 사용자가 직접 입력하지 않습니다.
@@ -815,8 +964,6 @@ UI에는 다음 의미의 안내를 포함합니다.
 예약을 계속 진행할 수 없습니다.
 ```
 
-
-
 ---
 
 ## 13. 연령 규칙 UI
@@ -839,6 +986,8 @@ Passenger의 연령 구분을 독립적으로 계산합니다.
 Seat 필요 여부와 동반 Adult Validation도
 각 Flight의 연령 구분을 기준으로 표현합니다.
 
+---
+
 ### 13.1 Child 규칙
 
 해당 Flight에서 `Child`인 Passenger가 포함된 경우:
@@ -849,6 +998,8 @@ Seat 필요 여부와 동반 Adult Validation도
 
 `ROUND_TRIP`에서는 출국 Flight와 귀국 Flight 각각에
 위 Validation을 적용합니다.
+
+---
 
 ### 13.2 Infant 규칙
 
@@ -878,6 +1029,8 @@ MVP 기준 Reservation 상태는 다음과 같습니다.
 * `CONFIRMED`
 * `CANCELLED`
 
+---
+
 ### 14.2 Payment 상태
 
 MVP 기준 Payment 상태는 다음과 같습니다.
@@ -888,6 +1041,8 @@ MVP 기준 Payment 상태는 다음과 같습니다.
 * `CANCELLED`
 * `REFUNDED`
 
+---
+
 ### 14.3 결제 성공
 
 결제 성공 시 다음 상태 전이를 전제로 합니다.
@@ -895,6 +1050,8 @@ MVP 기준 Payment 상태는 다음과 같습니다.
 * Payment: `PENDING → SUCCESS`
 * Reservation: `PENDING → CONFIRMED`
 * 선택한 모든 Seat: `HELD → RESERVED`
+
+---
 
 ### 14.4 결제 실패 및 재시도
 
@@ -911,6 +1068,8 @@ UI는 최소 다음 내용을 보여줄 수 있어야 합니다.
 * 다시 결제
 * 예약 진행 취소
 
+---
+
 ### 14.5 결제 3회 실패
 
 결제 가능 횟수를 모두 사용하면 다음 상태 전이를 전제로 합니다.
@@ -919,6 +1078,8 @@ UI는 최소 다음 내용을 보여줄 수 있어야 합니다.
 * 해당 Reservation의 모든 Seat: `HELD → AVAILABLE`
 
 기존 `FAILED` Payment는 결제 이력으로 유지합니다.
+
+---
 
 ### 14.6 왕복 Mock Payment
 
@@ -931,17 +1092,61 @@ UI는 최소 다음 내용을 보여줄 수 있어야 합니다.
 - 출국 Flight
 - 귀국 Flight
 - Passenger
-- 출국 Seat
-- 귀국 Seat
-- 전체 Mock 결제 금액
+- 출국 Seat / SeatClass
+- 귀국 Seat / SeatClass
+- Passenger / Flight별 확정 운임
+- Reservation 전체 Mock 결제 금액
 - 현재 결제 시도 횟수
 - Hold 남은 시간
+
+Mock Payment 화면에서 표시하는 금액은
+검색 단계의 `ECONOMY` 기준 예상 운임이 아니라
+`PENDING` Reservation 생성 시 Backend가 확정한 금액입니다.
+
+Figma Make는 Payment 재시도 시
+운임이 다시 계산되거나 변경되는 것처럼 표현하지 않습니다.
 
 하나의 `Payment`는 하나의 결제 시도를 의미하며,
 왕복 Reservation에서도 최초 시도를 포함하여 최대 3회까지 시도합니다.
 
 Figma Make는 출국편 결제와 귀국편 결제를
 별도의 결제 단계로 분리해서는 안 됩니다.
+
+---
+
+### 14.7 예약 확인 / 확정 운임 표시
+
+`PENDING` Reservation이 생성된 이후의 예약 확인 화면에서는
+Passenger / Flight별 실제 선택 결과를 표시합니다.
+
+최소 표시 정보:
+
+- Passenger
+- Flight
+- Seat
+- SeatClass
+- Passenger / Flight별 확정 운임
+- Reservation 전체 확정 금액
+- Hold 남은 시간
+
+예:
+
+```text
+KIM JIHUN
+
+Seat
+12A
+
+SeatClass
+ECONOMY
+
+확정 운임
+270,000원
+```
+
+검색 단계의 `ECONOMY` 기준 예상 운임과
+Reservation 생성 이후 확정 운임이
+같은 의미처럼 보이지 않도록 명확하게 구분합니다.
 
 ---
 
@@ -956,6 +1161,8 @@ Figma Make는 출국편 결제와 귀국편 결제를
 * 현재 처리 중인 Payment가 `PENDING` 상태라면 `PENDING → CANCELLED`
 
 Payment가 아직 생성되지 않은 경우 새로운 Payment를 생성하지 않습니다.
+
+---
 
 ### 15.2 Member 예약 취소
 
@@ -992,6 +1199,8 @@ Member는 출국 Flight 출발 예정 시각까지
 - 귀국 Flight만 취소
 - 출국 후 귀국 Flight만 취소
 - 부분 Mock 환불
+
+---
 
 ### 15.3 Flight 취소
 
@@ -1042,6 +1251,8 @@ Flight 취소 시:
 - 아직 출발하지 않은 귀국 Flight Seat만 `AVAILABLE`
 
 MVP에서는 대체편, 자동 재예약, 부분 환불 UI를 만들지 않습니다.
+
+---
 
 ### 15.4 SuperAdmin 강제 취소
 
@@ -1149,6 +1360,8 @@ Role별 접근 정책은 Desktop과 동일하게 유지합니다.
 
 언어 전환 UI는 Mobile에서도 쉽게 접근 가능해야 합니다.
 
+---
+
 ### 17.2 Hero / 메인 검색 영역
 
 다음 요소를 포함합니다.
@@ -1178,6 +1391,8 @@ MVP에서는 한국 ↔ 일본 노선만 입력할 수 있습니다.
 - 귀국 Route는 출국 Route의 정확한 역방향
 - 출국 선택 후 귀국 Flight 선택 단계로 이동
 
+---
+
 ### 17.3 주요 서비스 안내
 
 다음 3개 서비스를 명확하게 구분합니다.
@@ -1206,6 +1421,8 @@ MVP에서는 한국 ↔ 일본 노선만 입력할 수 있습니다.
 Home의 AI 서비스 CTA Label은 다음 문구를 사용합니다.
 
 `AI 항공편 추천 받기`
+
+---
 
 ### 17.4 Responsive 표현
 
@@ -1254,6 +1471,8 @@ Tablet 전용 화면은 MVP 필수 생성 범위가 아닙니다.
 
 `이메일 또는 비밀번호를 확인해 주세요.`
 
+---
+
 ### 18.2 회원가입
 
 주요 입력 항목:
@@ -1272,6 +1491,8 @@ Password 조건:
 * 허용 특수문자: `! @ # $ % ^ & *`
 
 가능하면 Password 입력 중 각 조건의 충족 여부를 표시합니다.
+
+---
 
 ### 18.3 Google OAuth
 
@@ -1318,6 +1539,8 @@ AI 항공편 검색은 로그인한 `Member`에게 제공됩니다.
 
 Guest가 접근하면 로그인 필요 안내를 제공합니다.
 
+---
+
 ### 20.2 검색 입력
 
 자연어 검색 Input을 제공합니다.
@@ -1325,6 +1548,8 @@ Guest가 접근하면 로그인 필요 안내를 제공합니다.
 입력 예시:
 
 `9월 초 인천에서 도쿄 가는 오전 항공편 찾아줘`
+
+---
 
 ### 20.3 검색 결과
 
@@ -1353,6 +1578,8 @@ MVP에서는 복잡한 통계 Dashboard보다 주요 운영 화면으로 이동�
 * Flight
 * Reservation
 
+---
+
 ### 21.2 Airport 관리
 
 `Admin`:
@@ -1367,6 +1594,8 @@ MVP에서는 복잡한 통계 Dashboard보다 주요 운영 화면으로 이동�
 * 생성
 * 수정
 * 비활성화
+
+---
 
 ### 21.3 Route 관리
 
@@ -1384,6 +1613,8 @@ MVP에서는 복잡한 통계 Dashboard보다 주요 운영 화면으로 이동�
 * 비활성화
 
 비활성화된 Airport는 신규 Route 생성에 사용할 수 없습니다.
+
+---
 
 ### 21.4 Aircraft / Seat 구성
 
@@ -1423,20 +1654,81 @@ Flight 생성 또는 수정 시 다음 조건을 따릅니다.
 * 비활성화된 Route는 새로운 Flight에 사용할 수 없음
 * 비활성화된 Aircraft는 새로운 Flight에 배정할 수 없음
 
+---
+
 ### 22.1 Flight 수정 제한
 
-Reservation이 존재하지 않는 `SCHEDULED` Flight는 수정할 수 있습니다.
+Flight의 일반 핵심 운항 정보 수정과
+Aircraft 변경은 서로 다른 제한 기준을 적용합니다.
 
-`PENDING` 또는 `CONFIRMED` Reservation이 하나 이상 존재하면 다음 핵심 정보의 수정 Action을 제공하지 않습니다.
+#### 일반 핵심 운항 정보
 
-* 출발 Airport
-* 도착 Airport
-* 출발 예정 시각
-* 도착 예정 시각
-* Aircraft
-* Flight Number
+`PENDING` 또는 `CONFIRMED` Reservation이 하나 이상 존재하는 Flight는
+다음 핵심 운항 정보의 수정 Action을 제공하지 않습니다.
 
-운항을 중단해야 하는 경우 Flight 취소 Action을 사용합니다.
+- 출발 Airport
+- 도착 Airport
+- 출발 예정 시각
+- 도착 예정 시각
+- Flight Number
+
+Reservation이 존재하지 않는 `SCHEDULED` Flight에서는
+Domain Policy가 허용하는 범위에서 수정 Action을 제공할 수 있습니다.
+
+#### Aircraft 변경
+
+Aircraft 변경에는 더 엄격한 정책을 적용합니다.
+
+Aircraft 변경 Action은 다음 조건을 모두 만족하는 경우에만 생성합니다.
+
+- Flight가 `SCHEDULED`
+- 아직 출발하지 않음
+- Reservation이 한 번도 연결된 이력이 없음
+
+현재 활성 Reservation이 없더라도
+과거 Reservation 이력이 존재하면 Aircraft를 변경할 수 없습니다.
+
+다음 이력도 Aircraft 변경을 차단합니다.
+
+```text
+PENDING
+CONFIRMED
+CANCELLED
+```
+
+Reservation 이력이 존재하는 화면에서는
+Aircraft 변경 Action을 숨기거나 Disabled 처리합니다.
+
+예:
+
+```text
+Aircraft
+KOKU-A01
+
+[변경 불가]
+
+연결된 Reservation 이력이 있어
+Aircraft를 변경할 수 없습니다.
+```
+
+Aircraft 변경이 가능한 경우에는
+기존 Flight Seat 구성이
+새 Aircraft의 Seat Configuration 기준으로 다시 생성된다는 점을 안내합니다.
+
+```text
+Aircraft를 변경하면
+이 Flight의 Seat 구성이
+새 Aircraft 기준으로 다시 생성됩니다.
+
+[취소]
+[Aircraft 변경]
+```
+
+Figma Make는 Reservation 이력이 존재하는 Flight에
+Aircraft 변경이 가능한 것처럼 보이는 UI를 생성하지 않습니다.
+
+운항을 중단해야 하는 경우에는
+Flight 취소 Action을 사용합니다.
 
 ---
 
@@ -1485,6 +1777,72 @@ FlightSchedule 변경으로 기존 Flight가 일괄 수정되는 UI를 생성하
 
 ---
 
+### 22.3 Flight Seat 운영 상태 관리
+
+Admin과 SuperAdmin은
+특정 Flight의 Seat를 운영 목적으로
+판매 중지하거나 판매 가능한 상태로 복구할 수 있습니다.
+
+Flight 상세 또는 별도 Flight Seat 관리 화면에서
+Seat 상태와 SeatClass를 확인할 수 있도록 합니다.
+
+허용되는 운영 상태 전이:
+
+```text
+AVAILABLE → UNAVAILABLE
+
+UNAVAILABLE → AVAILABLE
+```
+
+`AVAILABLE` Seat 예:
+
+```text
+12A
+
+SeatClass
+ECONOMY
+
+상태
+판매 가능
+
+[판매 중지]
+```
+
+판매 중지 Action에는 Confirmation UI를 제공합니다.
+
+```text
+12A Seat를 판매 중지하시겠습니까?
+
+신규 Reservation에서
+이 Seat를 선택할 수 없게 됩니다.
+
+[취소]
+[판매 중지]
+```
+
+`UNAVAILABLE` Seat에는 다음 Action을 제공할 수 있습니다.
+
+```text
+[판매 재개]
+```
+
+다음 Seat에는 판매 중지 Action을 제공하지 않습니다.
+
+- `HELD`
+- `RESERVED`
+
+Admin UI에서는 운영 목적상
+`HELD`, `RESERVED`, `UNAVAILABLE`을 서로 구분하여 표시할 수 있습니다.
+
+일반 Member의 Seat 선택 UI에서는
+세 상태 모두 `선택 불가`로 표현합니다.
+
+Figma Make는 Aircraft Seat Configuration 관리와
+Flight별 Seat 운영 상태 관리를
+하나의 기능처럼 합치지 않습니다.
+
+---
+
 ## 23. Reservation 관리자 UI 규칙
 
 Admin과 SuperAdmin은 Reservation 현황을 조회할 수 있습니다.
@@ -1523,6 +1881,8 @@ My Page에는 다음 영역을 포함합니다.
 * 비밀번호 변경
 * 내 예약
 * 회원 탈퇴
+
+---
 
 ### 24.1 비밀번호 변경
 
@@ -1604,6 +1964,8 @@ Figma Make는 현재 Password 입력 없이
 구체적인 인증 처리 방식과 API Contract는
 `04-system-design.md`와 `05-data-api-design.md`를 따릅니다.
 
+---
+
 ### 24.2 Reservation 목록
 
 Reservation 상태별 Filter를 제공할 수 있습니다.
@@ -1623,27 +1985,37 @@ Reservation 상태별 Filter를 제공할 수 있습니다.
 - Reservation 상태
 - 상세보기 Action
 
+---
+
 ### 24.3 Reservation 상세
 
 가능하면 다음 정보를 표시합니다.
 
-* Reservation 번호
-* Reservation 상태
-* Flight
-* Passenger
-* Seat
-* Payment 상태
-* 예약 생성 시각
-* 취소 가능 여부
+- Reservation 번호
+- Reservation 상태
+- Flight
+- Passenger
+- Seat
+- SeatClass
+- Passenger / Flight별 확정 운임
+- Reservation 전체 확정 금액
+- Payment 상태
+- 예약 생성 시각
+- 취소 가능 여부
 
 `ROUND_TRIP` Reservation 상세에서는 다음 정보를 구분하여 표시합니다.
 
 - 여행 유형: 왕복
 - 출국 Flight
-- 출국 Passenger / Seat
+- 출국 Passenger / Seat / SeatClass / 확정 운임
 - 귀국 Flight
-- 귀국 Passenger / Seat
+- 귀국 Passenger / Seat / SeatClass / 확정 운임
+- Reservation 전체 확정 금액
 - 전체 Payment 상태
+
+Reservation 상세에서는
+검색 당시의 `ECONOMY` 기준 예상 운임을 다시 표시하지 않고
+Reservation 생성 시 확정된 금액을 기준으로 표현합니다.
 
 출국편과 귀국편은 각각 별도 Section으로 표현합니다.
 
@@ -1678,6 +2050,8 @@ Hold 시간이 남아 있으면 예약 진행을 계속하거나 취소할 수 �
 
 `항공편을 조회하고 있습니다...`
 
+---
+
 ### 26.2 Empty
 
 예시 문구:
@@ -1685,6 +2059,8 @@ Hold 시간이 남아 있으면 예약 진행을 계속하거나 취소할 수 �
 `조건에 맞는 항공편이 없습니다.`
 
 `검색 조건을 변경해 주세요.`
+
+---
 
 ### 26.3 Error
 
@@ -1712,6 +2088,8 @@ Hold 시간이 남아 있으면 예약 진행을 계속하거나 취소할 수 �
 * `좌석 정보를 다시 확인해 주세요.`
 * `좌석 다시 선택`
 
+---
+
 ### 27.2 Seat Hold 만료
 
 Seat Hold가 만료되면 다음 내용을 안내합니다.
@@ -1719,6 +2097,8 @@ Seat Hold가 만료되면 다음 내용을 안내합니다.
 * 좌석 임시 확보 시간이 만료됨
 * 기존 예약 진행을 계속할 수 없음
 * 좌석을 다시 선택해야 함
+
+---
 
 ### 27.3 외부 Flight API 장애
 
@@ -1728,6 +2108,8 @@ Seat Hold가 만료되면 다음 내용을 안내합니다.
 * KOKU Airline 내부 항공편 예약 서비스는 정상적으로 이용 가능
 * 다시 시도 Action 제공 가능
 
+---
+
 ### 27.4 AI 응답 실패
 
 다음 내용을 안내합니다.
@@ -1736,13 +2118,19 @@ Seat Hold가 만료되면 다음 내용을 안내합니다.
 * 다시 시도 가능
 * 일반 실제 항공편 검색으로 이동 가능
 
+---
+
 ### 27.5 인증 필요
 
 Guest가 인증이 필요한 기능을 사용하려는 경우 로그인 필요 안내를 표시합니다.
 
+---
+
 ### 27.6 권한 없음
 
 현재 Role에 허용되지 않은 기능인 경우 권한 없음 안내를 표시합니다.
+
+---
 
 ### 27.7 지원하지 않는 노선
 
@@ -1812,6 +2200,8 @@ KOKU Flight 검색 결과와 예약 화면을 생성할 때는
 
 편도 화면만 생성한 뒤 이를 그대로 왕복 화면으로 복제하지 않습니다.
 
+---
+
 ### 29.2 기존 스타일 유지
 
 새 화면을 추가할 때 기존 화면과 다음 기준을 일관되게 유지합니다.
@@ -1826,6 +2216,8 @@ KOKU Flight 검색 결과와 예약 화면을 생성할 때는
 * 전체 색상 체계
 
 각 화면을 서로 다른 웹사이트처럼 디자인하지 않습니다.
+
+---
 
 ### 29.3 기본 흐름 우선
 
@@ -1869,6 +2261,11 @@ Figma Make는 다음을 해서는 안 됩니다.
 * 왕복 부분 취소 또는 부분 Mock 환불 기능 추가
 * 귀국 Route를 출국 Route와 무관하게 선택하는 Multi-city UI 추가
 * Flight별 Passenger 연령 Validation을 Reservation 전체 기준으로 임의 단순화
+* KOKU Flight 검색 단계의 `ECONOMY` 기준 예상 운임을 최종 결제 금액처럼 표현
+* SeatClass와 Seat 상태를 하나의 상태 체계처럼 혼합하여 표현
+* Passenger 또는 Flight별 SeatClass 선택을 하나의 Reservation 공통 SeatClass로 임의 단순화
+* Reservation 이력이 존재하는 Flight에서 Aircraft 변경 가능 UI 생성
+* `HELD` 또는 `RESERVED` Seat를 Admin이 직접 `UNAVAILABLE`로 변경할 수 있는 UI 생성
 
 ---
 

@@ -404,6 +404,7 @@ Wing 요소를 결합한 간결한 항공 Emblem 형태를 기본 방향으로 �
 | Master Data 조회 | X | X | O | O |
 | Master Data 변경 | X | X | X | O |
 | Flight 관리 | X | X | O | O |
+| Flight Seat 운영 상태 관리 | X | X | O | O |
 | 운항 일정 관리 | X | X | O | O |
 | 예약 현황 조회 | X | X | O | O |
 | 개별 Reservation 강제 취소 | X | X | X | O |
@@ -914,7 +915,7 @@ ICN                 NRT
 
 2026.09.10
 
-현재 운임
+ECONOMY 기준 예상 운임
 270,000원
 
 예약 가능
@@ -924,10 +925,15 @@ ICN                 NRT
 ```
 
 검색 결과 Card에는 Domain Policy에 따라 계산된
-해당 Flight의 현재 고정 운임을 표시합니다.
+`ECONOMY` SeatClass 기준 예상 운임을 표시합니다.
 
-표시되는 금액은 검색 시점의 고정 운임이며,
-최종 결제 예정 금액은 `PENDING` Reservation 생성 시 확정됩니다.
+검색 단계에서는 아직 Passenger별 SeatClass가 선택되지 않았으므로
+이 금액을 최종 결제 예정 금액처럼 표현하지 않습니다.
+
+사용자가 Passenger 정보 입력과 Seat 선택을 완료한 뒤
+실제 선택한 SeatClass를 반영하여
+`PENDING` Reservation이 생성되는 시점에
+최종 결제 예정 금액을 확정합니다.
 
 출발 예정 시각까지 2시간 미만이 남은 Flight는
 새로운 Reservation을 생성할 수 없습니다.
@@ -964,7 +970,7 @@ ICN → NGO
 2026-08-26
 09:30 → 11:50
 
-현재 운임
+ECONOMY 기준 예상 운임
 270,000원
 ```
 
@@ -1080,8 +1086,18 @@ Desktop과 Mobile 모두
 - 출발 Date / Time
 - 도착 Date / Time
 - Aircraft
-- 운항 상태 (`SCHEDULED`, `CANCELLED`, `DEPARTED`) 
+- 운항 상태 (`SCHEDULED`, `CANCELLED`, `DEPARTED`)
 - 예약 가능 여부
+- `ECONOMY` SeatClass 기준 예상 운임
+
+Flight 상세에서 표시하는 운임 역시
+검색 결과와 동일하게 `ECONOMY` SeatClass 기준 예상 운임입니다.
+
+Passenger별 실제 SeatClass가 아직 선택되지 않았으므로
+최종 결제 예정 금액으로 표현하지 않습니다.
+
+최종 결제 예정 금액은
+Seat 선택 완료 후 `PENDING` Reservation 생성 시 확정됩니다.
 
 #### ONE_WAY Flight 선택
 
@@ -1263,7 +1279,83 @@ Text, Icon, Pattern 또는 Disabled 표현 등을 함께 사용합니다.
 
 ---
 
-### 13.2 Reservation 시작
+### 13.2 SeatClass
+
+MVP의 Seat 선택 UI에서는 다음 SeatClass를 구분하여 표시합니다.
+
+- `ECONOMY`
+- `PREMIUM_ECONOMY`
+- `BUSINESS`
+
+SeatClass는 Seat의 예약 상태와 별개의 정보입니다.
+
+예:
+
+```text
+Seat 12A
+
+SeatClass
+ECONOMY
+
+상태
+선택 가능
+```
+
+Seat Map에서는 사용자가 각 Seat의 SeatClass를
+식별할 수 있어야 합니다.
+
+SeatClass는 다음과 같은 방식으로 표현할 수 있습니다.
+
+- SeatClass Label
+- Badge
+- 범례
+- 시각적으로 구분되는 Seat 표현
+
+단, SeatClass 표현과
+`AVAILABLE / HELD / RESERVED / UNAVAILABLE` 상태 표현을
+혼동하지 않도록 합니다.
+
+사용자가 Seat를 선택하면
+최소 다음 정보를 함께 확인할 수 있도록 합니다.
+
+```text
+Passenger
+KIM JIHUN
+
+선택 Seat
+12A
+
+SeatClass
+PREMIUM_ECONOMY
+```
+
+동일 Reservation의 Passenger들이
+서로 다른 SeatClass를 선택할 수 있습니다.
+
+`ROUND_TRIP`에서는 동일 Passenger도
+출국 Flight와 귀국 Flight에서 서로 다른 SeatClass를 선택할 수 있습니다.
+
+예:
+
+```text
+KIM JIHUN
+
+출국
+12A / ECONOMY
+
+귀국
+3C / BUSINESS
+```
+
+SeatClass에 따른 실제 최종 운임은
+Reservation 시작 시 Backend에서 확정합니다.
+
+Frontend는 SeatClass 배율을 이용하여
+임의로 최종 결제 금액을 확정하지 않습니다.
+
+---
+
+### 13.3 Reservation 시작
 
 MVP에서 Seat Hold 시간은 1시간입니다.
 
@@ -1272,8 +1364,19 @@ Backend에서 다음 처리를 수행합니다.
 
 ```text
 Reservation → PENDING
+
 선택한 모든 Seat → HELD
+
+실제 선택한 SeatClass 반영
+→ 최종 결제 예정 금액 확정
 ```
+
+Reservation 시작이 성공한 이후에는
+검색 단계에서 표시했던 `ECONOMY` 기준 예상 운임 대신
+Backend가 확정한 Reservation의 최종 결제 예정 금액을 표시합니다.
+
+이후 Payment 재시도에서도
+확정된 Reservation 금액이 변경되는 것처럼 표현하지 않습니다.
 
 Backend 처리가 성공한 이후 Hold Countdown을 표시합니다.
 
@@ -1289,7 +1392,7 @@ Countdown은 사용자 안내 목적이며
 
 ---
 
-### 13.3 Hold 만료
+### 13.4 Hold 만료
 
 Hold가 만료된 경우 사용자에게 명확하게 안내합니다.
 
@@ -1321,7 +1424,7 @@ PENDING → CANCELLED
 Hold 만료 이후 해당 Reservation에서는
 새로운 Payment를 생성할 수 없습니다.
 
-### 13.4 왕복 Seat 선택
+### 13.5 왕복 Seat 선택
 
 왕복 Reservation에서는 출국 Flight와 귀국 Flight의 Seat를
 각각 선택해야 합니다.
@@ -1356,11 +1459,22 @@ Passenger별 Seat 배정은 각 Flight마다 별도로 관리합니다.
 
 ```text
 출국편
-KIM JIHUN → 12A
+
+KIM JIHUN
+→ 12A / ECONOMY
 
 귀국편
-KIM JIHUN → 8C
+
+KIM JIHUN
+→ 8C / BUSINESS
 ```
+
+왕복 Reservation에서는
+동일 Passenger가 출국 Flight와 귀국 Flight에서
+서로 다른 SeatClass를 선택할 수 있습니다.
+
+각 Flight의 SeatClass와 Seat Number를
+서로 독립적으로 확인할 수 있도록 표시합니다.
 
 Passenger의 Seat 필요 여부는 각 Flight의 탑승일을 기준으로 계산된
 연령 구분에 따라 판단합니다.
@@ -1598,9 +1712,11 @@ Mock 결제로 이동하기 전에 Reservation 전체 내용을 확인합니다.
 - 출발 / 도착 Airport
 - Date / Time
 - Passenger
-- Seat
+- Passenger별 Seat
+- Passenger별 SeatClass
+- Passenger / Flight별 확정 운임
 - Infant 동반 정보
-- Mock 결제 금액
+- 최종 Mock 결제 금액
 - Hold 남은 시간
 
 예:
@@ -1616,11 +1732,32 @@ ICN → NRT
 
 Passenger 1
 KIM JIHUN
-Seat 12A
+
+Seat
+12A
+
+SeatClass
+ECONOMY
+
+확정 운임
+270,000원
+
 
 Passenger 2
 KIM MINSU (Child)
-Seat 12B
+
+Seat
+12B
+
+SeatClass
+PREMIUM_ECONOMY
+
+확정 운임
+210,600원
+
+
+최종 Mock 결제 금액
+480,600원
 
 Hold 남은 시간
 00:42:31
@@ -1641,6 +1778,8 @@ Reservation이 `PENDING` 상태로 생성된 이후 Passenger 또는 Seat를 변
 - Date / Time
 - Passenger
 - Seat
+- SeatClass
+- Passenger별 확정 운임
 
 Mock 결제 금액은 왕복 전체 예약의 금액을 기준으로 표시합니다.
 
@@ -1668,8 +1807,9 @@ Mock Payment
 - 출국 Flight
 - 귀국 Flight
 - Passenger
-- 출국 Seat
-- 귀국 Seat
+- 출국 Seat / SeatClass
+- 귀국 Seat / SeatClass
+- Passenger / Flight별 확정 운임
 - 전체 Mock 결제 금액
 
 ---
@@ -1947,6 +2087,9 @@ NRT → ICN
 - Flight
 - Passenger
 - Seat
+- SeatClass
+- Passenger / Flight별 확정 운임
+- Reservation 최종 금액
 - Payment 상태
 - 예약 생성 시각
 - 취소 가능 여부
@@ -1985,9 +2128,9 @@ Seat Hold 시간이 만료된 Reservation은 Backend 정책에 따라
 
 - 여행 유형: 왕복
 - 출국 Flight
-- 출국 Passenger / Seat
+- 출국 Passenger / Seat / SeatClass / 확정 운임
 - 귀국 Flight
-- 귀국 Passenger / Seat
+- 귀국 Passenger / Seat / SeatClass / 확정 운임
 - 전체 Payment 상태
 
 출국편과 귀국편은 각각 별도 Section으로 표시합니다.
@@ -2323,39 +2466,80 @@ Flight 생성 또는 수정 시 Route와 Aircraft 선택 항목에는
 
 ### 25.1 Flight 수정 제한
 
-Reservation이 존재하지 않는 `SCHEDULED` Flight는
-Admin 또는 SuperAdmin이 수정할 수 있습니다.
+Flight의 일반적인 핵심 운항 정보 수정과
+Aircraft 변경은 서로 다른 제한 기준을 적용합니다.
+
+#### 일반 핵심 운항 정보
 
 `PENDING` 또는 `CONFIRMED` Reservation이 하나 이상 존재하는 Flight는
-예약 및 Seat 정합성에 영향을 주는 핵심 정보의 수정 Action을 제공하지 않습니다.
-
-수정 제한 대상:
+예약 정합성에 영향을 주는 다음 핵심 정보의 수정 Action을 제공하지 않습니다.
 
 - 출발 Airport
 - 도착 Airport
 - 출발 예정 시각
 - 도착 예정 시각
-- Aircraft
 - Flight Number
 
-수정이 제한된 경우 다음과 같이 안내합니다.
+Reservation이 존재하지 않는 `SCHEDULED` Flight에서는
+Domain Policy가 허용하는 범위에서 수정 Action을 제공할 수 있습니다.
+
+#### Aircraft 변경
+
+Aircraft 변경에는 더 엄격한 정책을 적용합니다.
+
+Aircraft 변경 Action은 다음 조건을 모두 만족하는 경우에만 제공합니다.
+
+- Flight가 `SCHEDULED`
+- 아직 출발하지 않음
+- Reservation이 한 번도 연결된 이력이 없음
+
+즉, 현재 활성 Reservation이 없더라도
+과거에 Reservation이 연결된 적이 있다면
+Aircraft 변경 Action을 제공하지 않습니다.
+
+다음 Reservation 이력도 Aircraft 변경을 차단합니다.
 
 ```text
-연결된 예약이 존재하여
-이 Flight의 핵심 운항 정보는 수정할 수 없습니다.
+PENDING
+CONFIRMED
+CANCELLED
+```
 
-운항을 중단해야 하는 경우 Flight 취소를 사용해 주세요.
+Aircraft 변경이 허용된 경우
+Backend에서는 기존 Flight Seat Snapshot을 제거하고
+새 Aircraft의 Seat Configuration을 기준으로 다시 생성합니다.
+
+UI에서는 이 작업을 사용자가 이해할 수 있도록 안내합니다.
+
+예:
+
+```text
+Aircraft를 변경하면
+이 Flight의 기존 Seat 구성이
+새 Aircraft의 Seat 구성으로 다시 생성됩니다.
+
+[취소]
+[Aircraft 변경]
+```
+
+단, Reservation 이력이 존재하는 경우에는
+위 Action 자체를 제공하지 않습니다.
+
+수정 제한 안내 예:
+
+```text
+연결된 예약 이력이 있어
+이 Flight의 Aircraft를 변경할 수 없습니다.
+
+운항을 중단해야 하는 경우
+Flight 취소를 사용해 주세요.
 
 [확인]
 [Flight 취소]
 ```
 
-수정 Action 표시 기준:
-
-```text
-Reservation 없음 → [수정] 표시
-PENDING/CONFIRMED Reservation 존재 → [수정] 숨김 또는 비활성화
-```
+실제 수정 가능 여부와 Reservation 이력 검증은
+Backend에서 최종 판단합니다.
 
 ---
 
@@ -2543,6 +2727,77 @@ Admin과 SuperAdmin은
 
 기존 Flight의 운항을 중단해야 하는 경우
 별도의 Flight 취소 기능을 사용합니다.
+
+---
+
+### 25.4 Flight Seat 운영 상태 관리
+
+Admin과 SuperAdmin은
+특정 Flight의 Seat를 운영 목적으로 판매 중지하거나
+판매 가능한 상태로 복구할 수 있습니다.
+
+Flight 상세 또는 별도 Flight Seat 관리 화면에서
+Seat 상태를 확인할 수 있도록 합니다.
+
+운영 상태 변경은 다음 전이만 제공합니다.
+
+```text
+AVAILABLE → UNAVAILABLE
+
+UNAVAILABLE → AVAILABLE
+```
+
+예:
+
+```text
+Seat 12A
+ECONOMY
+현재 상태: 판매 가능
+
+[판매 중지]
+```
+
+판매 중지 시 Confirmation UI를 제공합니다.
+
+```text
+12A Seat를 판매 중지하시겠습니까?
+
+이 Seat는 신규 Reservation에서
+선택할 수 없게 됩니다.
+
+[취소]
+[판매 중지]
+```
+
+`UNAVAILABLE` Seat에는 다음 Action을 제공할 수 있습니다.
+
+```text
+[판매 재개]
+```
+
+다음 Seat는 운영 상태 변경 Action을 제공하지 않습니다.
+
+- `HELD`
+- `RESERVED`
+
+예:
+
+```text
+Seat 12B
+BUSINESS
+현재 상태: 예약 사용 중
+
+[판매 중지] Disabled
+```
+
+사용자용 Seat 선택 화면에서는
+`UNAVAILABLE`을 다른 선택 불가 Seat와 동일하게
+`선택 불가`로 표현합니다.
+
+Admin UI에서는 운영 목적상
+`HELD`, `RESERVED`, `UNAVAILABLE` 상태를 서로 구분하여 표시할 수 있습니다.
+
+실제 상태 전이 가능 여부는 Backend에서 최종 검증합니다.
 
 ---
 
@@ -2946,6 +3201,9 @@ KO101
 
 09:30 ICN ---------------------- 11:50 NRT
 
+ECONOMY 기준 예상 운임
+270,000원
+
 예약 가능
 
                                       [상세보기]
@@ -2974,6 +3232,9 @@ ICN → NRT
 
 KO101
 09:30 → 11:50
+
+ECONOMY 기준 예상 운임
+270,000원
 [선택]
 
 --------------------------------
@@ -2987,6 +3248,9 @@ NRT → ICN
 
 KO102
 17:00 → 19:30
+
+ECONOMY 기준 예상 운임
+270,000원
 [선택]
 ```
 
@@ -3013,10 +3277,20 @@ ICN → NRT
 X 선택 불가
 
 
+SeatClass
+
+ECONOMY
+PREMIUM_ECONOMY
+BUSINESS
+
+
 Passenger
 
-Adult  KIM JIHUN  → 1A
-Child  KIM MINSU  → 1B
+Adult  KIM JIHUN
+→ 1A / BUSINESS
+
+Child  KIM MINSU
+→ 1B / BUSINESS
 
 
                               [좌석 선택 완료]
@@ -3036,6 +3310,12 @@ ICN → NRT
 
 Passenger 2명
 Seat 1A / 1B
+
+SeatClass
+BUSINESS / BUSINESS
+
+최종 Mock 결제 금액
+480,000원
 
 남은 Hold 시간
 00:31:52
@@ -3066,11 +3346,13 @@ ICN → NRT
 Passenger
 
 KIM JIHUN
-Seat 1A
+Seat 1A / BUSINESS
 
 KIM MINSU
-Seat 1B
+Seat 1B / BUSINESS
 
+Reservation 금액
+480,000원
 
 Payment
 결제 완료
@@ -3089,6 +3371,7 @@ Payment
 Flight Detail
 
 KO101
+
 ICN → NRT
 
 Departure
@@ -3101,16 +3384,25 @@ Aircraft
 KOKU-A01
 
 운항 상태
-[상태 표시]
+SCHEDULED
 
-Reservations
-24
+Reservation 이력
+24건
 
+핵심 운항 정보
+[수정 제한]
 
-[수정]
+Aircraft
+[변경 불가]
+
+연결된 Reservation 이력이 있어
+Aircraft를 변경할 수 없습니다.
+
+[Flight Seat 관리]
 
 [Flight 취소]
 ```
+
 ---
 
 ### 32.8 Mobile Home
@@ -3185,6 +3477,9 @@ KO101
    ↓
 11:50 NRT
 
+ECONOMY 기준 예상 운임
+270,000원
+
 예약 가능
 
 [          상세보기          ]
@@ -3197,6 +3492,9 @@ KO205
 14:00 ICN
    ↓
 16:20 NRT
+
+ECONOMY 기준 예상 운임
+270,000원
 
 예약 마감
 
@@ -3216,6 +3514,9 @@ ICN → NRT
 KO101
 09:30 → 11:50
 
+ECONOMY 기준 예상 운임
+270,000원
+
 [출국편 선택]
 
 ------------------------------
@@ -3232,6 +3533,9 @@ NRT → ICN
 
 KO102
 17:00 → 19:30
+
+ECONOMY 기준 예상 운임
+270,000원
 
 [귀국편 선택]
 ```
@@ -3266,6 +3570,9 @@ X 선택 불가
 선택 Seat
 1A
 
+SeatClass
+BUSINESS
+
 [      좌석 선택 완료      ]
 ```
 
@@ -3286,6 +3593,12 @@ ICN → NRT
 
 Passenger 2명
 Seat 1A / 1B
+
+SeatClass
+BUSINESS / BUSINESS
+
+최종 Mock 결제 금액
+480,000원
 
 Hold 남은 시간
 00:31:52
@@ -3339,11 +3652,16 @@ Hold 남은 시간
 - [ ] Google OAuth 및 동일 Email 계정 연동 흐름이 정의되어 있습니다.
 - [ ] LOCAL 비밀번호 변경 및 현재 Password 재인증 UI 흐름이 정의되어 있습니다.
 - [ ] Seat 선택 및 Hold 흐름이 정의되어 있습니다.
+- [ ] `ECONOMY`, `PREMIUM_ECONOMY`, `BUSINESS` SeatClass의 UI 표현이 정의되어 있습니다.
+- [ ] Passenger / Flight별 SeatClass 선택과 왕복 구간별 서로 다른 SeatClass 선택 UI가 정의되어 있습니다.
+- [ ] 검색 단계의 `ECONOMY` 기준 예상 운임과 Reservation 생성 이후 최종 확정 금액이 명확하게 구분되어 있습니다.
 - [ ] Passenger 입력 흐름이 정의되어 있습니다.
 - [ ] Child 및 Infant UI 규칙이 정의되어 있습니다.
 - [ ] Mock 결제 성공 / 실패 / 재시도 흐름이 정의되어 있습니다.
 - [ ] Reservation 조회 및 취소 흐름이 정의되어 있습니다.
 - [ ] Flight 취소 UI가 정의되어 있습니다.
+- [ ] Aircraft 변경의 Reservation 이력 기반 제한 UI가 Domain Policy와 동기화되어 있습니다.
+- [ ] Admin / SuperAdmin의 Flight Seat 운영상 판매 중지 / 복구 UI가 정의되어 있습니다.
 - [ ] SuperAdmin 강제 취소 UI가 정의되어 있습니다.
 - [ ] 내부 KOKU Flight와 외부 실제 항공편 UI가 명확하게 구분되어 있습니다.
 - [ ] AI 항공편 검색 흐름이 정의되어 있습니다.

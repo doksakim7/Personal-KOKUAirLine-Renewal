@@ -49,6 +49,14 @@
 - `ONE_WAY`: 편도
 - `ROUND_TRIP`: 왕복
 
+좌석 등급은 `SeatClass`로 구분하며 다음 값을 사용합니다.
+
+- `ECONOMY`: 이코노미
+- `PREMIUM_ECONOMY`: 프리미엄 이코노미
+- `BUSINESS`: 비즈니스
+
+`FIRST` Class는 MVP 범위에 포함하지 않습니다.
+
 ---
 
 ## 2. 핵심 도메인 구분 
@@ -71,6 +79,8 @@ KOKU Airline이 운영한다고 가정한 가상의 항공편입니다.
 
 실제 항공사의 예약 시스템과 연결되지 않습니다.
 
+---
+
 ### 2.2 외부 실제 항공편
 
 외부 Flight API를 통해 조회하는 실제 항공편 데이터입니다.
@@ -87,6 +97,8 @@ KOKU Airline이 운영한다고 가정한 가상의 항공편입니다.
 - 좌석 확정
 - 실제 결제
 - 항공권 발권
+
+---
 
 ### 2.3 데이터 분리 원칙
 
@@ -120,6 +132,8 @@ KOKU Airline 내부 예약 데이터와 외부 실제 항공편 데이터는 명
 
 예약을 진행하려는 경우 인증을 요구합니다.
 
+---
+
 ### 3.2 Member
 
 정상적으로 인증된 일반 사용자입니다.
@@ -137,6 +151,8 @@ KOKU Airline 내부 예약 데이터와 외부 실제 항공편 데이터는 명
 - `LOCAL` AuthAccount를 보유한 경우 비밀번호 변경
 
 Member는 다른 사용자의 예약 정보를 조회하거나 수정할 수 없습니다.
+
+---
 
 ### 3.3 Admin
 
@@ -160,6 +176,8 @@ Member는 다른 사용자의 예약 정보를 조회하거나 수정할 수 없
 - 기타 중요 운영 데이터 변경 불가
 
 핵심 운영 데이터의 변경은 SuperAdmin 권한을 요구합니다.
+
+---
 
 ### 3.4 SuperAdmin
 
@@ -190,6 +208,8 @@ MVP에서는 다음 두 인증 방식을 지원합니다.
 
 두 인증 방식은 최종적으로 동일한 KOKU Airline Member 및 권한 체계를 사용합니다.
 
+---
+
 ### 4.2 일반 회원가입
 
 일반 회원가입 시 최소한 다음 정보를 사용합니다.
@@ -198,6 +218,8 @@ MVP에서는 다음 두 인증 방식을 지원합니다.
 - Password
 
 세부 회원정보는 데이터 모델 설계 과정에서 확정합니다.
+
+---
 
 ### 4.3 이메일 정책
 
@@ -229,7 +251,7 @@ Email을 비교할 때 동일한 정규화 규칙을 적용합니다.
 
 Email의 원본 대소문자 형태는 별도로 보존하지 않습니다.
 
-
+---
 
 ### 4.4 비밀번호 정책
 
@@ -247,6 +269,8 @@ Email의 원본 대소문자 형태는 별도로 보존하지 않습니다.
 
 비밀번호 정책은 Backend에서 반드시 검증하며,
 Frontend에서도 동일한 조건을 사용자에게 안내하고 입력 단계에서 검증합니다.
+
+---
 
 #### 4.4.1 비밀번호 변경
 
@@ -269,6 +293,8 @@ LOCAL 비밀번호 변경 기능을 제공하지 않습니다.
 구체적인 인증 처리 방식과 API Contract는
 `04-system-design.md`와 `05-data-api-design.md`에서 정의합니다.
 
+---
+
 ### 4.5 Google OAuth
 
 MVP 소셜 로그인 Provider는 Google 하나로 제한합니다.
@@ -286,6 +312,8 @@ Google OAuth 인증 성공 후:
 7. 이후 KOKU Airline 내부 인증 체계를 사용합니다.
 
 OAuth Client Secret 등의 민감정보는 Repository에 저장하지 않습니다.
+
+---
 
 ### 4.6 Member와 AuthAccount 관계
 
@@ -323,6 +351,8 @@ Email 비교 시 4.3 이메일 정책에서 정의한 정규화 규칙을 적용
 `WITHDRAWN` 상태의 Member는 자동으로 재활성화하거나
 새로운 AuthAccount를 연결하지 않습니다.
 
+---
+
 ### 4.7 권한
 
 서비스의 사용자 역할은 `Guest`, `Member`, `Admin`, `SuperAdmin`으로 구분합니다.
@@ -342,6 +372,8 @@ Email 비교 시 4.3 이메일 정책에서 정의한 정규화 규칙을 적용
 `Guest`는 인증되지 않은 사용자이므로 별도의 인증 권한 코드를 가지지 않습니다.
 
 구체적인 Spring Security 권한 구조는 시스템 설계 문서에서 정의합니다.
+
+---
 
 ### 4.8 회원 상태 및 탈퇴
 
@@ -404,6 +436,8 @@ Reservation에 포함된 Flight 중 아직 출발하지 않은 Flight의 존재 
 - CTS - 신치토세공항
 - NGO - 주부국제공항
 
+---
+
 ### 5.2 공항 식별
 
 공항은 IATA Code를 통해 식별할 수 있어야 합니다.
@@ -413,6 +447,8 @@ Reservation에 포함된 Flight 중 아직 출발하지 않은 Flight의 존재 
 - ICN
 - HND
 - NRT
+
+---
 
 ### 5.3 공항 관리
 
@@ -437,6 +473,8 @@ Hard Delete하지 않고 비활성 상태로 관리합니다.
 
 `ICN → NRT`
 
+---
+
 ### 6.2 MVP 노선 범위
 
 MVP에서는 한국 ↔ 일본 국제 노선만 허용합니다.
@@ -452,13 +490,19 @@ MVP에서는 한국 ↔ 일본 국제 노선만 허용합니다.
 - 일본 → 일본
 - 한국/일본 이외 국가와 연결되는 노선
 
+---
+
 ### 6.3 동일 공항
 
 출발 공항과 도착 공항은 동일할 수 없습니다.
 
+---
+
 ### 6.4 노선 중복
 
 동일한 출발 공항과 도착 공항 조합의 중복 Route 생성을 허용하지 않습니다.
+
+---
 
 ### 6.5 노선 관리
 
@@ -467,6 +511,8 @@ MVP에서는 한국 ↔ 일본 국제 노선만 허용합니다.
 과거 항공편 및 예약에서 사용된 노선은 물리적으로 삭제하지 않습니다.
 
 비활성화된 노선에는 새로운 항공편 또는 운항 일정을 생성할 수 없습니다.
+
+---
 
 ### 6.6 왕복 Route 정책
 
@@ -509,18 +555,57 @@ MVP 범위에 포함하지 않습니다.
 
 구체적인 데이터 구조는 ERD에서 정의합니다.
 
+---
+
 ### 7.2 항공기와 좌석
 
-각 항공기는 고유한 좌석 배치를 가집니다.
+각 Aircraft는 고유한 좌석 배치를 가집니다.
+
+Aircraft의 좌석 구성은 `AircraftSeat`를 기준으로 관리하며,
+각 `AircraftSeat`는 최소한 다음 정보를 표현할 수 있어야 합니다.
+
+- Seat Number
+- SeatClass
+
+좌석 등급은 다음 값을 사용합니다.
+
+- `ECONOMY`
+- `PREMIUM_ECONOMY`
+- `BUSINESS`
+
+Aircraft마다 Seat 수와 SeatClass 구성을 다르게 설정할 수 있습니다.
 
 예:
 
-- 1A
-- 1B
-- 2A
-- 2B
+```text
+Aircraft A
 
-좌석 구성은 항공편 예약 좌석을 생성하는 기준이 됩니다.
+1A BUSINESS
+1B BUSINESS
+5A PREMIUM_ECONOMY
+5B PREMIUM_ECONOMY
+12A ECONOMY
+12B ECONOMY
+```
+
+Aircraft의 좌석 구성은
+해당 Aircraft가 배정된 Flight의 예약용 Seat를 생성하는 기준이 됩니다.
+
+Flight가 생성될 때 해당 Aircraft의 `AircraftSeat`를 기준으로
+Flight 전용 `Seat` Snapshot을 생성합니다.
+
+Flight의 `Seat`에는 생성 시점의 Seat Number와 SeatClass를 보존합니다.
+
+따라서 이후 Aircraft의 기본 좌석 구성이 변경되더라도
+이미 생성된 Flight의 Seat 구성은 자동으로 변경하지 않습니다.
+
+Flight 생성은 해당 Flight에 필요한 Seat Snapshot 생성까지
+정상적으로 완료된 경우에만 성공한 것으로 처리합니다.
+
+구체적인 Entity 구조와 Transaction 처리 방식은
+`04-system-design.md`와 `05-data-api-design.md`에서 정의합니다.
+
+---
 
 ### 7.3 항공기 및 좌석 구성 관리
 
@@ -536,71 +621,179 @@ MVP 범위에 포함하지 않습니다.
 
 ## 8. 좌석 정책
 
-### 8.1 좌석 식별
+### 8.1 Flight별 Seat
 
-하나의 항공편 내에서 좌석 번호는 유일해야 합니다.
+예약에 사용하는 `Seat`는 특정 Flight에 종속됩니다.
 
-### 8.2 기본 좌석 상태
+Flight가 생성될 때
+배정된 Aircraft의 `AircraftSeat` 구성을 기준으로
+해당 Flight 전용 Seat Snapshot을 생성합니다.
 
-예약 관점의 좌석은 다음 상태를 구분합니다.
+따라서 동일한 Aircraft를 사용하는 서로 다른 Flight라도
+각 Flight는 독립적인 Seat 상태를 가집니다.
+
+하나의 Flight 내에서 Seat Number는 유일해야 합니다.
+
+구체적인 Database Unique Constraint는
+`05-data-api-design.md`에서 정의합니다.
+
+---
+
+### 8.2 SeatClass
+
+MVP에서는 다음 `SeatClass`를 사용합니다.
+
+- `ECONOMY`
+- `PREMIUM_ECONOMY`
+- `BUSINESS`
+
+`FIRST` Class는 MVP 범위에 포함하지 않습니다.
+
+각 Seat는 Flight 생성 시점에
+기준이 된 `AircraftSeat`의 SeatClass를 Snapshot으로 보존합니다.
+
+Passenger가 Seat를 선택하면
+해당 Seat의 SeatClass가 해당 Passenger와 Flight의 운임 계산에 적용됩니다.
+
+동일 Reservation에 포함된 Passenger들이
+서로 다른 SeatClass를 선택할 수 있습니다.
+
+`ROUND_TRIP`에서도 동일 Passenger가
+출국 Flight와 귀국 Flight에서 서로 다른 SeatClass를 선택할 수 있습니다.
+
+---
+
+### 8.3 기본 Seat 상태
+
+예약 관점의 Seat는 다음 상태를 구분합니다.
 
 - `AVAILABLE`: 예약 가능
 - `HELD`: 예약 진행 중 임시 점유
 - `RESERVED`: 예약 확정
-- `UNAVAILABLE`: 사용 불가
+- `UNAVAILABLE`: 운영상 판매 불가
 
 사용자가 Seat가 필요한 모든 Passenger의 Seat 선택을 완료하고
-예약 시작에 성공하면 선택한 모든 Seat를 `HELD` 상태로 전환합니다.
+Reservation 시작에 성공하면
+선택한 모든 Seat를 `AVAILABLE → HELD` 상태로 전환합니다.
 
-`HELD` 상태의 좌석은 다른 사용자가 선택하거나 예약할 수 없습니다.
+`HELD` 또는 `RESERVED` 상태의 Seat는
+다른 Reservation에서 선택하거나 확보할 수 없습니다.
 
-### 8.3 좌석 중복 예약
+---
 
-동일 항공편의 동일 좌석은 동시에 두 개 이상의 확정 예약에 포함될 수 없습니다.
+### 8.4 UNAVAILABLE
 
-해당 규칙은 Application 수준뿐 아니라 가능한 경우 Database 제약조건 및 동시성 제어를 통해 함께 보호합니다.
+`UNAVAILABLE`은 Aircraft 자체의 비활성 상태가 아니라,
+특정 Flight에서 운영상 판매할 수 없는 Seat를 표현합니다.
 
-### 8.4 동시성
+예:
 
-두 명 이상의 사용자가 동일 좌석을 동시에 예약하는 상황이 발생할 수 있습니다.
+- Seat 고장
+- 점검
+- 기타 운영상 판매 중지
 
-최종적으로 하나의 예약만 성공해야 합니다.
+Admin 또는 SuperAdmin은 운영상 필요한 경우
+`AVAILABLE` 상태의 Seat를 `UNAVAILABLE` 상태로 변경할 수 있습니다.
 
-구체적인 동시성 제어 방식은 M4에서 테스트 및 성능 측정을 통해 결정합니다.
+운영 제한이 해제되면:
 
-### 8.5 좌석 임시 점유
+```text
+UNAVAILABLE → AVAILABLE
+```
+
+로 복구할 수 있습니다.
+
+이미 Reservation에 사용 중인 다음 Seat는
+직접 `UNAVAILABLE` 상태로 변경하지 않습니다.
+
+- `HELD`
+- `RESERVED`
+
+---
+
+### 8.5 Seat 중복 예약 및 동시성
+
+동일 Flight의 동일 Seat는
+동시에 둘 이상의 Reservation에서 확보될 수 없습니다.
+
+두 명 이상의 사용자가 동일 Seat를 동시에 확보하려는 경우에도
+최종적으로 하나의 Reservation만 해당 Seat 확보에 성공해야 합니다.
+
+여러 Seat를 하나의 Reservation에서 선택한 경우
+선택한 Seat 전체를 하나의 확보 단위로 처리합니다.
+
+선택한 Seat 중 하나라도 확보할 수 없는 경우
+일부 Seat만 확보하지 않고 Reservation 시작 전체를 실패 처리합니다.
+
+즉, Seat 확보는 편도와 왕복 모두
+All-or-Nothing을 원칙으로 합니다.
+
+동시성 제어는 Database를 최종 정합성 기준으로 하며,
+구체적인 Lock 방식, Lock 순서 및 Transaction 구조는
+`04-system-design.md`와 `05-data-api-design.md`에서 정의합니다.
+
+---
+
+### 8.6 Seat Hold
 
 사용자가 Seat가 필요한 모든 Passenger의 Seat 선택을 완료하고
-예약 시작에 성공하면 선택한 모든 Seat를 일정 시간 임시 점유합니다.
+Reservation 시작에 성공하면 선택한 모든 Seat를 임시 점유합니다.
 
-좌석 Hold 시간은 MVP 기준 **1시간**으로 설정합니다.
+Seat Hold 시간은 MVP 기준 최대 **1시간**으로 합니다.
 
-좌석이 `HELD` 상태인 동안에는 다른 사용자가 해당 좌석을 선택하거나 예약할 수 없습니다.
+Reservation에 포함된 모든 `HELD` Seat는
+해당 `PENDING` Reservation의 동일한 Hold 만료 시각을 공유합니다.
 
-Frontend에서는 사용자가 남은 Hold 시간을 확인할 수 있도록 남은 시간을 표시합니다.
+Hold 만료 시각은
+Reservation에 포함된 Flight 중 가장 먼저 출발하는 Flight의
+출발 예정 시각을 초과할 수 없습니다.
+
+따라서 실제 Hold 만료 시각은
+1시간 Hold 정책과 Flight 출발 시각 제한을 함께 만족해야 합니다.
+
+Seat가 `HELD` 상태인 동안에는
+다른 사용자가 해당 Seat를 선택하거나 확보할 수 없습니다.
+
+Frontend의 Hold Countdown은 사용자 안내용이며,
+실제 Hold 만료 여부는 Backend 시간을 기준으로 판단합니다.
 
 Hold 시간 내에 Mock 결제가 성공하면:
 
-`HELD → RESERVED`
+```text
+Seat
+HELD → RESERVED
+```
 
 Hold 시간이 만료되면:
 
-`HELD → AVAILABLE`
+```text
+Reservation
+PENDING → CANCELLED
 
-Hold 시간이 만료될 때까지 결제가 완료되지 않은 예약은 `CANCELLED` 상태로 전환하고 좌석을 반환합니다.
+Seat
+HELD → AVAILABLE
+```
 
-결제 실패가 발생한 경우 결제 시도 횟수가 최대 허용 횟수에 도달하지 않았고
-Hold 시간이 남아 있다면 사용자는 결제를 다시 시도할 수 있습니다.
+Hold가 만료된 Reservation에 연결된 모든 `HELD` Seat를 반환하며,
+일부 Seat만 계속 `HELD` 상태로 남기지 않습니다.
 
-MVP에서 결제 시도는 최초 시도를 포함하여 최대 3회까지 허용합니다.
+Hold 만료 처리는 Backend에서 자동으로 수행하며,
+핵심 예약 및 결제 처리 과정에서도
+Hold가 아직 유효한지 다시 검증합니다.
 
-Hold 만료 및 좌석 반환은 Backend를 기준으로 처리하며,
-Frontend의 남은 시간 표시는 사용자 안내 목적으로 사용합니다.
+구체적인 Scheduler 주기와 시간 검증 방식은
+`04-system-design.md`에서 정의합니다.
 
-`ROUND_TRIP` Reservation에서는 출국 Flight와 귀국 Flight에서
-선택한 모든 Seat를 하나의 Reservation 시작 단위로 처리합니다.
+---
 
-출국 및 귀국 Flight에서 선택한 모든 Seat를 확보할 수 있는 경우에만
+### 8.7 ROUND_TRIP Seat 확보
+
+`ROUND_TRIP` Reservation에서는
+출국 Flight와 귀국 Flight에서 선택한 모든 Seat를
+하나의 Reservation 시작 단위로 처리합니다.
+
+출국 및 귀국 Flight에서 필요한 모든 Seat를
+확보할 수 있는 경우에만
 Reservation을 `PENDING` 상태로 시작합니다.
 
 두 Flight 중 하나의 Seat라도 확보하지 못한 경우
@@ -612,8 +805,8 @@ Reservation 시작 전체를 실패 처리합니다.
 - 출국 또는 귀국 Flight의 일부 Seat만 `HELD` 상태로 남기지 않습니다.
 - Flight 단위 또는 Seat 단위 Partial Success를 허용하지 않습니다.
 
-즉, 왕복 Reservation에서도 전체 Seat 확보 성공 또는 전체 실패
-(All-or-Nothing)를 원칙으로 합니다.
+즉, 왕복 Reservation에서도
+전체 Seat 확보 성공 또는 전체 실패(All-or-Nothing)를 원칙으로 합니다.
 
 ---
 
@@ -632,6 +825,8 @@ KOKU Airline의 항공편은 특정 노선과 운항 정보를 가집니다.
 - 도착 시간
 - 운항 항공기
 - 운항 상태
+
+---
 
 #### 9.1.1 Flight 운항 상태
 
@@ -663,6 +858,8 @@ Flight 취소와 연결된 Reservation 처리는 9.6 Flight 취소 정책을 따
 
 MVP에서는 실제 운항 시스템과 연동하지 않으므로
 `DEPARTED` 전환의 구체적인 처리 방식은 시스템 설계에서 정의합니다.
+
+---
 
 ### 9.2 편명
 
@@ -713,11 +910,15 @@ departure Airport Local Date
 Local Date 계산 방식은
 `04-system-design.md`와 `05-data-api-design.md`에서 정의합니다.
 
+---
+
 ### 9.3 운항 시간
 
 - 출발 시간은 도착 시간보다 이전이어야 합니다.
 - 날짜 및 시간은 시간대(Time Zone)를 고려할 수 있는 구조로 설계합니다.
 - 실제 저장 방식은 시스템 및 데이터 설계에서 확정합니다.
+
+---
 
 ### 9.4 항공기 배정
 
@@ -735,11 +936,29 @@ Admin 또는 SuperAdmin은 운영상 필요한 경우
 비활성화된 Aircraft는
 새로운 Flight 또는 운항 일정에 배정할 수 없습니다.
 
-Reservation이 존재하는 Flight의 Aircraft 변경은
-9.5.1 Flight 수정 제한 정책을 따릅니다.
+Flight의 Aircraft를 변경하려면
+해당 Flight가 `SCHEDULED` 상태이며
+Reservation이 한 번도 연결된 적이 없어야 합니다.
+
+Reservation이 한 번이라도 연결된 Flight는
+현재 Reservation 상태가 `CANCELLED`이더라도
+Aircraft를 변경하지 않습니다.
+
+Aircraft 변경이 허용된 경우에는
+기존 Flight Seat Snapshot을 제거하고
+새 Aircraft의 `AircraftSeat` 구성을 기준으로
+Flight Seat Snapshot을 다시 생성합니다.
+
+Aircraft 변경과 Seat Snapshot 재구성은
+전체 작업이 정상적으로 완료된 경우에만 성공한 것으로 처리합니다.
+
+구체적인 Transaction 및 데이터 처리 방식은
+`04-system-design.md`와 `05-data-api-design.md`에서 정의합니다.
 
 구체적인 Aircraft 충돌 검증 방식은
 9.4.1 Aircraft 운항 충돌 정책을 따릅니다.
+
+---
 
 #### 9.4.1 Aircraft 운항 충돌
 
@@ -794,6 +1013,8 @@ MVP 범위에 포함하지 않고 향후 개선사항으로 남깁니다.
 
 구체적인 시간 비교 및 동시성 처리 방식은
 `04-system-design.md`와 `05-data-api-design.md`에서 정의합니다.
+
+---
 
 #### 9.4.2 Flight 자동 생성 및 운항 일정
 
@@ -919,6 +1140,8 @@ Reservation이 한 번이라도 연결된 Flight는
 `CANCELLED` Flight 역시
 자동 생성 작업에 의해 다시 생성되지 않습니다.
 
+---
+
 ### 9.5 예약 가능 시간
 
 KOKU Airline 항공편의 신규 예약은
@@ -945,6 +1168,8 @@ Hold 만료 시각이 항공편 출발 예정 시각을 초과하지 않도록 �
 예약에 포함된 Flight 중 가장 먼저 출발하는 Flight의
 출발 예정 시각을 초과할 수 없습니다.
 
+---
+
 #### 9.5.1 Flight 수정 제한
 
 Reservation이 존재하지 않는 `SCHEDULED` Flight는
@@ -960,11 +1185,28 @@ Admin 또는 SuperAdmin이 운영 정보를 수정할 수 있습니다.
 - Aircraft
 - 편명
 
+단, `Aircraft` 변경은 Seat Snapshot 재구성이 필요하므로
+위 일반적인 Flight 수정 제한보다 엄격한 정책을 적용합니다.
+
+Aircraft는 Reservation이 한 번도 연결된 적이 없는
+`SCHEDULED` Flight에서만 변경할 수 있습니다.
+
+과거에 Reservation이 연결된 이력이 있다면
+현재 해당 Reservation이 `CANCELLED` 상태이더라도
+Aircraft 변경을 허용하지 않습니다.
+
+Aircraft 변경이 허용된 경우에는
+9.4 항공기 배정 정책에 따라
+새 Aircraft의 좌석 구성을 기준으로
+Flight Seat Snapshot을 다시 생성합니다.
+
 예약이 존재하는 Flight의 운항을 더 이상 유지할 수 없는 경우에는
 기존 Flight 정보를 직접 변경하기보다
 9.6 Flight 취소 정책을 적용하는 것을 원칙으로 합니다.
 
 구체적인 수정 가능 Field와 API 제약은 API Contract에서 정의합니다.
+
+---
 
 ### 9.6 Flight 취소
 
@@ -1004,6 +1246,8 @@ Flight 취소가 정상적으로 처리되면:
 MVP에서는 Flight 취소로 인한 결제 금액을 전액 Mock 환불하며,
 대체편 제공 및 자동 재예약은 지원하지 않습니다.
 
+---
+
 #### 9.6.1 왕복 Reservation과 Flight 취소
 
 `ROUND_TRIP` Reservation에 포함된 출국 Flight 또는 귀국 Flight가 취소되면
@@ -1040,6 +1284,8 @@ MVP에서는 Flight 취소로 인한 대체편 제공,
 Flight 취소 시 처리한 Admin 또는 SuperAdmin,
 대상 Flight, 처리 시각 및 취소 사유를 Audit Log로 기록합니다.
 
+---
+
 ### 9.7 KOKU Airline 운임 정책
 
 KOKU Airline은 포트폴리오용 가상 항공사이므로
@@ -1049,9 +1295,13 @@ MVP에서는 실시간 수요 기반 Dynamic Pricing을 적용하지 않습니�
 출발 시간대 및 출발 요일을 기준으로
 사전에 정의된 고정 규칙에 따라 산정합니다.
 
+---
+
 #### 9.7.1 기준 운임
 
 MVP의 기본 Flight 운임은 200,000원으로 합니다.
+
+---
 
 #### 9.7.2 출발 시간대 구분
 
@@ -1068,6 +1318,8 @@ Flight의 출발 예정 시각을 기준으로 다음과 같이 구분합니다.
 한국과 일본은 현재 동일한 UTC+9 시간대를 사용하지만,
 운임 정책은 특정 국가의 시간대에 종속되지 않도록
 각 Flight 출발지의 Local Time을 기준으로 적용합니다.
+
+---
 
 #### 9.7.3 출국형 운임
 
@@ -1102,6 +1354,8 @@ Flight의 출발 예정 시각을 기준으로 다음과 같이 구분합니다.
 
 출국형 운임은 여행을 시작하기 좋은 시간대와
 주말 여행 수요를 단순화하여 표현한 Mock 운임 정책입니다.
+
+---
 
 #### 9.7.4 귀국형 운임
 
@@ -1138,29 +1392,93 @@ Flight의 출발 예정 시각을 기준으로 다음과 같이 구분합니다.
 귀국형 운임은 여행 마지막 날 늦은 시간까지 체류하려는 수요와
 일요일 귀국 수요를 단순화하여 표현한 Mock 운임 정책입니다.
 
-#### 9.7.5 Passenger별 운임
+---
 
-Passenger별 운임은 각 Flight에서 계산된 Passenger의 연령 구분을 기준으로 합니다.
+#### 9.7.5 Passenger별 기본 운임
+
+Passenger별 기본 운임은
+각 Flight에서 계산된 Passenger의 연령 구분을 기준으로 합니다.
 
 - Adult: Flight 운임의 100%
 - Child: Flight 운임의 60%
 - Infant: 0원
 
-ROUND_TRIP Reservation에서는 출국 Flight와 귀국 Flight의
-Passenger별 운임을 각각 계산한 후 합산합니다.
+`ROUND_TRIP` Reservation에서는
+출국 Flight와 귀국 Flight에 대해
+Passenger별 기본 운임을 각각 계산합니다.
 
-#### 9.7.6 Reservation 운임 확정
+#### 9.7.6 SeatClass 운임
 
-항공편 검색 화면에서는 해당 Flight의 현재 고정 운임을 표시합니다.
+독립된 Seat를 사용하는 Passenger의 최종 Flight별 운임에는
+선택한 Seat의 SeatClass에 따른 고정 배율을 적용합니다.
 
+MVP의 SeatClass 배율은 다음과 같습니다.
+
+| SeatClass | 배율 |
+|---|---:|
+| `ECONOMY` | 1.0 |
+| `PREMIUM_ECONOMY` | 1.3 |
+| `BUSINESS` | 2.0 |
+
+계산 기본 구조는 다음과 같습니다.
+
+```text
+Flight 고정 운임
+→ Passenger 연령별 기본 운임 계산
+→ 선택한 Seat의 SeatClass 배율 적용
+→ Passenger의 해당 Flight 최종 운임
+```
+
+예:
+
+```text
+Flight 운임
+200,000원
+
+Adult + ECONOMY
+200,000 × 1.0 × 1.0
+= 200,000원
+
+Adult + PREMIUM_ECONOMY
+200,000 × 1.0 × 1.3
+= 260,000원
+
+Adult + BUSINESS
+200,000 × 1.0 × 2.0
+= 400,000원
+
+Child + PREMIUM_ECONOMY
+200,000 × 0.6 × 1.3
+= 156,000원
+```
+
+Infant는 독립된 Seat를 사용하지 않으며
+Passenger 운임이 0원이므로 SeatClass 배율을 적용하지 않습니다.
+
+동일 Reservation의 Passenger들이
+서로 다른 SeatClass를 선택할 수 있습니다.
+
+`ROUND_TRIP`에서는 동일 Passenger도
+출국 Flight와 귀국 Flight에서 서로 다른 SeatClass를 선택할 수 있습니다.
+
+SeatClass 배율은 잔여 Seat 수나 수요에 따라 변하지 않는
+MVP의 고정 운임 정책입니다.
+
+#### 9.7.7 Reservation 운임 확정
+
+항공편 검색 단계의 운임은
+`ECONOMY` SeatClass를 기준으로 한 예상 운임을 표시합니다.
+
+Passenger 정보와 Seat 선택이 완료되고,
 Reservation에 포함된 모든 Seat 확보에 성공하여
-PENDING Reservation이 생성되는 시점에
+`PENDING` Reservation이 생성되는 시점에
+각 Passenger와 Flight별 SeatClass를 반영한
 Reservation의 최종 결제 예정 금액을 확정합니다.
 
 확정된 금액은 Reservation에 보존하며
 이후 결제 재시도 과정에서는 변경하지 않습니다.
 
-#### 9.7.7 Dynamic Pricing
+#### 9.7.8 Dynamic Pricing
 
 MVP에서는 다음 요소에 따른 실시간 운임 변경을 적용하지 않습니다.
 
@@ -1169,6 +1487,9 @@ MVP에서는 다음 요소에 따른 실시간 운임 변경을 적용하지 않
 - 예약 수요
 - 검색량
 - 예약 시점에 따른 실시간 가격 변경
+
+SeatClass에 따른 고정 운임 차이는
+Dynamic Pricing으로 취급하지 않습니다.
 
 잔여 Seat 비율 및 수요를 기반으로 운임을 조정하는
 Dynamic Pricing은 향후 개선사항으로 남깁니다.
@@ -1187,6 +1508,8 @@ Dynamic Pricing은 향후 개선사항으로 남깁니다.
 
 한 명의 Member가 가족 3명의 항공편을 예약할 수 있습니다.
 
+---
+
 ### 10.2 탑승객 정보
 
 예약 시 Passenger별로 다음 테스트용 기본 정보를 입력합니다.
@@ -1198,6 +1521,8 @@ Dynamic Pricing은 향후 개선사항으로 남깁니다.
 - 국적
 
 구체적인 Database Column 및 Validation 규칙은 데이터 모델 설계에서 정의합니다.
+
+---
 
 ### 10.3 테스트용 여권 정보
 
@@ -1236,6 +1561,8 @@ Reservation을 `CONFIRMED` 상태로 확정하기 전에
 구체적인 생성 규칙, 저장 위치 및 보호 방식은
 데이터 및 시스템 설계에서 정의합니다.
 
+---
+
 ### 10.4 테스트용 개인정보 정책
 
 본 프로젝트는 실제 항공권 발권 서비스를 제공하지 않는 포트폴리오용 가상 서비스입니다.
@@ -1249,6 +1576,8 @@ Reservation을 `CONFIRMED` 상태로 확정하기 전에
 
 프로젝트의 기능 검증 목적상 여권 형식과 유효성 검증 로직은 구현하되,
 실제 개인정보 수집을 목적으로 하지 않습니다.
+
+---
 
 ### 10.5 연령 구분
 
@@ -1277,6 +1606,8 @@ Reservation을 `CONFIRMED` 상태로 확정하기 전에
 
 Seat 필요 여부와 Adult 동반 Validation은
 각 Flight에서 계산된 Passenger의 연령 구분을 기준으로 적용합니다.
+
+---
 
 ### 10.6 Child 및 Infant 동반 정책
 
@@ -1360,6 +1691,8 @@ MVP에서는 귀국 Flight의 출발 Date가
 구체적인 Reservation과 Flight의 Database 관계 및 Mapping 방식은
 `05-data-api-design.md`에서 정의합니다.
 
+---
+
 ### 11.2 예약 생성 및 확정 조건
 
 #### PENDING 예약 생성
@@ -1394,6 +1727,8 @@ Seat 확보에 성공한 경우에만 `PENDING` Reservation을 생성합니다.
 
 모든 조건을 만족하면 예약을 `CONFIRMED` 상태로 전환합니다.
 
+---
+
 ### 11.3 예약 소유자
 
 하나의 Reservation은 하나의 Member에 소속됩니다.
@@ -1401,6 +1736,8 @@ Seat 확보에 성공한 경우에만 `PENDING` Reservation을 생성합니다.
 Member는 자신의 예약만 조회하거나 취소할 수 있습니다.
 
 Admin과 SuperAdmin은 운영 목적의 예약 현황을 조회할 수 있습니다.
+
+---
 
 ### 11.4 Reservation과 Passenger
 
@@ -1425,6 +1762,8 @@ Passenger 자체를 출국편과 귀국편별로 별도로 다시 입력하지 �
 
 단, Passenger의 연령 구분, Seat 필요 여부 및 Seat 배정은
 각 Flight별로 독립적으로 판단합니다.
+
+---
 
 ### 11.5 예약 상태
 
@@ -1458,6 +1797,8 @@ MVP에서는 취소 사유별로 별도의 예약 상태를 추가하지 않고
 
 필요한 경우 취소 원인은 별도의 정보로 구분합니다.
 
+---
+
 ### 11.6 예약 생성과 Seat 확보
 
 Reservation에 포함된 모든 Flight에서
@@ -1485,6 +1826,8 @@ Reservation에 포함된 Flight의 선택 Seat 중 하나라도 확보에 실패
 
 구체적인 Transaction 및 동시성 제어 구현 방식은
 시스템 및 데이터 설계에서 정의합니다.
+
+---
 
 ### 11.7 Reservation 번호
 
@@ -1556,6 +1899,8 @@ Database에서도 Unique Constraint를 적용하여 중복 생성을 방지합�
 - 중복 요청 처리
 - 예약 상태 전이
 
+---
+
 ### 12.2 실제 금융 거래
 
 실제 카드 결제 또는 금융 거래는 발생하지 않습니다.
@@ -1604,6 +1949,8 @@ Payment가 중복 생성되거나 결제 시도 횟수가 중복 증가하지 �
 구체적인 Database 관계와 중복 요청 방지 방식은
 `05-data-api-design.md`와 API Contract에서 정의합니다.
 
+---
+
 ### 12.4 결제 상태
 
 MVP에서 Mock 결제 상태는 다음과 같이 정의합니다.
@@ -1649,6 +1996,8 @@ Mock 결제 금액이 전액 환불된 상태입니다.
 - SuperAdmin이 Reservation을 강제 취소한 경우
 - 연결된 Flight가 취소된 경우
 
+---
+
 ### 12.5 결제 성공
 
 사용자가 Mock 결제 화면에서 `Mock 결제하기`를 선택하면
@@ -1663,6 +2012,8 @@ Mock 결제 금액이 전액 환불된 상태입니다.
 Payment가 `SUCCESS` 상태가 되면 해당 Reservation에서는 추가 Payment를 생성할 수 없습니다.
 
 예약, 결제 및 좌석 상태 변경은 데이터 정합성을 유지해야 합니다.
+
+---
 
 ### 12.6 결제 실패
 
@@ -1696,6 +2047,8 @@ Seat Hold 시간이 남아 있다면 Reservation은 `PENDING` 상태를 유지�
 Seat Hold 시간이 세 번째 결제 시도 전에 만료된 경우에는
 Seat Hold 만료 정책을 우선 적용합니다.
 
+---
+
 ### 12.7 결제 및 예약 진행 취소
 
 사용자가 결제 완료 전에 예약 진행을 취소하면:
@@ -1713,6 +2066,8 @@ Payment가 생성되기 전에 예약 진행을 취소한 경우에는
 새로운 Payment를 생성하지 않습니다.
 
 예약, Payment 및 Seat 상태 변경 과정에서 데이터 정합성을 유지해야 합니다.
+
+---
 
 ### 12.8 Seat Hold 만료
 
@@ -1748,6 +2103,8 @@ Member는 자신의 예약만 취소할 수 있습니다.
 
 Admin 및 SuperAdmin의 취소 권한은 별도 관리자 정책에서 정의합니다.
 
+---
+
 ### 13.2 취소 가능 조건
 
 다음 기본 취소 가능 조건은 `ONE_WAY` Reservation에 적용합니다.
@@ -1760,7 +2117,9 @@ Member는 항공편 출발 예정 시각 기준 24시간 전까지 확정된 예
 
 MVP에서는 정상 취소 시 Mock 결제 금액을 전액 환불합니다.
 
-### 13.2.1 왕복 Reservation 취소
+---
+
+#### 13.2.1 왕복 Reservation 취소
 
 MVP에서는 `ROUND_TRIP` Reservation의 부분 취소를 지원하지 않습니다.
 
@@ -1787,11 +2146,15 @@ Mock 결제 금액은 전체 왕복 Reservation에 대해 전액 환불합니다
 출국 Flight 출발까지 24시간 미만인 경우
 Member는 해당 왕복 Reservation을 취소할 수 없습니다.
 
+---
+
 ### 13.3 좌석 반환
 
 예약이 정상 취소되면 예약되어 있던 좌석을 다시 예약 가능한 상태로 반환해야 합니다.
 
 예약 취소와 좌석 반환은 데이터 정합성을 보장해야 합니다.
+
+---
 
 ### 13.4 환불
 
@@ -1806,6 +2169,8 @@ MVP에서는 취소 수수료 및 부분 환불을 구현하지 않고 전액 �
 환불은 해당 Reservation에서 `SUCCESS` 상태인 Payment에 적용합니다.
 
 기존 `FAILED` Payment는 상태를 변경하지 않고 결제 이력으로 유지합니다.
+
+---
 
 ### 13.5 취소 수수료
 
@@ -1823,11 +2188,15 @@ MVP에서는 취소 수수료 및 부분 환불을 구현하지 않고 전액 �
 
 AI가 실제 항공편 정보를 직접 생성하지 않습니다.
 
+---
+
 ### 14.2 지원 범위
 
 외부 항공편 조회 또한 한국 ↔ 일본 노선으로 제한합니다.
 
 지원하지 않는 출발지 또는 목적지가 입력되면 외부 API 호출 전에 Application에서 검증합니다.
+
+---
 
 ### 14.3 예약 기능 분리
 
@@ -1839,6 +2208,8 @@ AI가 실제 항공편 정보를 직접 생성하지 않습니다.
 - 좌석 예약
 - Mock 결제
 - 실제 발권
+
+---
 
 ### 14.4 데이터 저장
 
@@ -1868,6 +2239,8 @@ AI 항공편 검색 기능은 사용할 수 없습니다.
 
 > *9월 초에 인천에서 도쿄 가는데 오전 출발이고 너무 비싸지 않은 항공편 찾아줘.*
 
+---
+
 ### 15.2 기본 처리 흐름
 
 1. 사용자가 자연어 검색 조건을 입력합니다.
@@ -1876,6 +2249,8 @@ AI 항공편 검색 기능은 사용할 수 없습니다.
 4. 외부 Flight API를 호출합니다.
 5. 실제 API 데이터를 기준으로 항공편을 필터링하고 정렬합니다.
 6. AI가 결과를 설명하거나 추천합니다.
+
+---
 
 ### 15.3 AI의 역할
 
@@ -1888,6 +2263,8 @@ AI가 담당할 수 있는 영역:
 
 가능한 경우 가격, 시간 등의 명확한 정렬 및 필터링은 Application Code에서 결정론적으로 처리합니다.
 
+---
+
 ### 15.4 금지 사항
 
 AI는 다음 정보를 임의로 생성하지 않습니다.
@@ -1899,6 +2276,8 @@ AI는 다음 정보를 임의로 생성하지 않습니다.
 - 실제 운항 여부
 
 실제 데이터는 외부 Flight API 결과를 기준으로 합니다.
+
+---
 
 ### 15.5 Transaction 제한
 
@@ -1937,6 +2316,8 @@ Admin은 다음 작업을 수행할 수 없습니다.
 - 항공기 및 좌석 구성 생성·수정·비활성화
 - 기타 중요 운영 데이터 변경
 
+---
+
 ### 16.2 SuperAdmin 권한
 
 SuperAdmin은 Admin의 모든 권한을 포함합니다.
@@ -1951,6 +2332,8 @@ SuperAdmin은 Admin의 모든 권한을 포함합니다.
 
 핵심 기준정보와 중요 운영 데이터의 변경은 SuperAdmin에게만 허용하는 것을 원칙으로 합니다.
 
+---
+
 ### 16.3 예약 데이터
 
 Admin은 운영 목적으로 예약 현황을 조회할 수 있습니다.
@@ -1960,6 +2343,8 @@ Admin은 개별 사용자의 Reservation을 직접 강제로 취소할 수 없�
 SuperAdmin은 운영상 필요한 경우 사용자의 예약을 강제로 취소할 수 있습니다.
 
 강제 취소 시 예약 상태와 좌석 상태의 데이터 정합성을 유지해야 합니다.
+
+---
 
 ### 16.4 SuperAdmin 강제 예약 취소
 
@@ -2018,6 +2403,8 @@ MVP에서는 왕복 Reservation의 일부 Flight만 강제 취소하거나
 삭제가 필요한 주요 운영 데이터에는
 물리 삭제 대신 비활성화 또는 Domain 상태 전이 정책을 적용합니다.
 
+---
+
 ### 17.2 비활성화 적용 대상
 
 다음 Master Data에는 기본적으로 비활성화 정책을 적용합니다.
@@ -2030,6 +2417,8 @@ MVP에서는 왕복 Reservation의 일부 Flight만 강제 취소하거나
 회원 탈퇴는 비활성화 정책을 사용하지 않고
 회원 상태를 `WITHDRAWN`으로 변경하여 관리합니다.
 
+---
+
 ### 17.3 예약 및 결제 데이터
 
 예약과 결제는 삭제 대상이 아니라 상태 전이를 통해 관리합니다.
@@ -2037,6 +2426,8 @@ MVP에서는 왕복 Reservation의 일부 Flight만 강제 취소하거나
 예약 취소 시 예약 데이터를 삭제하지 않고 `CANCELLED` 상태로 변경합니다.
 
 결제 데이터 또한 처리 결과 및 이력 보존을 위해 물리적으로 삭제하지 않습니다.
+
+---
 
 ### 17.4 항공편
 
@@ -2046,6 +2437,8 @@ MVP에서는 왕복 Reservation의 일부 Flight만 강제 취소하거나
 `CANCELLED` 상태로 유지하여 과거 운영 및 예약 이력을 보존합니다.
 
 이미 출발한 Flight 역시 과거 운항 이력 보존을 위해 삭제하지 않습니다.
+
+---
 
 ### 17.5 Hard Delete
 
@@ -2086,6 +2479,8 @@ Mock 결제 성공 시 발생합니다.
 SuperAdmin이 정책에 따라 강제 취소하거나,
 연결된 Flight가 취소된 경우 발생합니다.
 
+---
+
 ### 18.2 결제
 
 다음 상태 전이는 개별 Payment에 적용합니다.
@@ -2117,6 +2512,8 @@ SuperAdmin에 의해 강제 취소되거나,
 `ROUND_TRIP`에서는 다음 Seat 상태 전이를
 출국 Flight와 귀국 Flight의 각 Seat에 적용합니다.
 
+---
+
 ### 18.3 좌석
 
 예약 진행 시작:
@@ -2143,6 +2540,8 @@ Mock 결제 성공:
 `AVAILABLE` 상태로 반환합니다.
 
 구체적인 예외는 9.6.1 왕복 Reservation과 Flight 취소 정책을 따릅니다.
+
+---
 
 ### 18.4 Flight
 
@@ -2189,6 +2588,8 @@ MVP에서는 실제 운항 시스템과 연동하지 않으므로
 21. 해당 Reservation의 모든 Seat를 `HELD → RESERVED`로 변경합니다.
 22. 사용자가 확정된 예약 내역을 조회합니다.
 
+---
+
 ### 19.2 Google OAuth 로그인 및 예약
 
 1. 사용자가 Google 로그인을 선택합니다.
@@ -2201,6 +2602,8 @@ MVP에서는 실제 운항 시스템과 연동하지 않으므로
 7. 서비스 인증이 완료됩니다.
 8. 이후 Member와 동일한 예약 흐름을 이용합니다.
 
+---
+
 ### 19.3 편도 Reservation 취소
 
 1. Member가 자신의 예약을 조회합니다.
@@ -2212,6 +2615,8 @@ MVP에서는 실제 운항 시스템과 연동하지 않으므로
 7. 해당 Reservation의 모든 Seat를 `RESERVED → AVAILABLE`로 반환합니다.
 8. 변경된 예약 및 환불 상태를 사용자에게 제공합니다.
 
+---
+
 ### 19.4 AI 실제 항공편 검색
 
 1. 사용자가 자연어로 항공편 조건을 입력합니다.
@@ -2221,6 +2626,8 @@ MVP에서는 실제 운항 시스템과 연동하지 않으므로
 5. 실제 항공편 결과를 수집합니다.
 6. 조건에 맞게 결과를 필터링 및 정렬합니다.
 7. AI가 추천 항공편과 추천 이유를 제공합니다.
+
+---
 
 ### 19.5 왕복 예약
 
@@ -2240,6 +2647,8 @@ MVP에서는 실제 운항 시스템과 연동하지 않으므로
 14. Payment가 `SUCCESS`가 되면 Reservation을 `CONFIRMED`로 변경합니다.
 15. 출국 및 귀국 Flight의 모든 `HELD` Seat를 `RESERVED`로 변경합니다.
 16. 사용자는 하나의 왕복 Reservation으로 출국 및 귀국 여정을 조회합니다.
+
+---
 
 ### 19.6 왕복 Reservation 취소
 
@@ -2267,11 +2676,15 @@ MVP에서는 출국 또는 귀국 Flight만 별도로 취소하는
 
 한국 ↔ 일본 이외 노선을 요청하면 검색을 거부합니다.
 
+---
+
 ### 20.2 동일 좌석 동시 예약
 
 두 사용자가 동일한 좌석을 동시에 예약하면 하나의 예약만 최종 성공해야 합니다.
 
 실패한 사용자에게는 좌석을 다시 선택하도록 안내합니다.
+
+---
 
 ### 20.3 예약 시작 중 Seat 상태 변경
 
@@ -2288,6 +2701,8 @@ MVP에서는 출국 또는 귀국 Flight만 별도로 취소하는
 `ROUND_TRIP`에서는 출국 Flight와 귀국 Flight의 모든 선택 Seat를
 하나의 확보 대상 집합으로 취급하며,
 어느 Flight의 Seat에서든 확보 실패가 발생하면 왕복 Reservation 시작 전체를 실패 처리합니다.
+
+---
 
 ### 20.4 Mock 결제 실패
 
@@ -2311,11 +2726,15 @@ Seat Hold 시간이 남아 있다면:
 Payment 수와 관계없이 Seat Hold 시간이 먼저 만료되면
 Seat Hold 만료 정책을 적용합니다.
 
+---
+
 ### 20.5 이미 취소된 예약
 
 이미 취소된 예약에 다시 취소 요청이 들어오면 요청을 거부하거나 멱등하게 처리합니다.
 
 구체적인 API 정책은 API Contract에서 결정합니다.
+
+---
 
 ### 20.6 권한 없는 접근
 
@@ -2323,11 +2742,15 @@ Seat Hold 만료 정책을 적용합니다.
 
 Admin 또는 SuperAdmin 권한이 필요한 API에 권한 없는 사용자가 접근하는 요청을 거부합니다.
 
+---
+
 ### 20.7 외부 Flight API 장애
 
 외부 Flight API의 Timeout, 오류 또는 Rate Limit 발생 시 내부 KOKU Airline 예약 시스템에 영향을 주지 않아야 합니다.
 
 사용자에게 외부 항공편 조회 실패를 명확하게 전달합니다.
+
+---
 
 ### 20.8 AI 응답 실패
 

@@ -82,6 +82,7 @@ erDiagram
     VARCHAR seat_no
     INT row_no
     VARCHAR seat_column
+    VARCHAR seat_class
     BOOLEAN active
     DATETIME(6) deactivated_at
     DATETIME(6) created_at
@@ -128,8 +129,9 @@ erDiagram
     VARCHAR seat_no
     INT row_no
     VARCHAR seat_column
+    VARCHAR seat_class
     VARCHAR status
-    BIGINT held_reservation_id
+    BIGINT held_reservation_id FK
     DATETIME(6) created_at
     DATETIME(6) updated_at
     }
@@ -152,13 +154,15 @@ erDiagram
 
     FLIGHT ||--o{ SEAT : has
 
+    RESERVATION o|--o{ SEAT : temporarily_holds
+
     RESERVATION {
     BIGINT id PK
     VARCHAR reservation_no UK
     BIGINT member_id FK
     VARCHAR trip_type
     VARCHAR status
-    DECIMAL total_amount
+    DECIMAL(15,0) total_amount
     DATETIME(6) hold_expires_at
     VARCHAR cancel_reason
     DATETIME(6) created_at
@@ -211,7 +215,7 @@ erDiagram
     BIGINT reservation_id FK
     INT attempt_no
     VARCHAR status
-    DECIMAL amount
+    DECIMAL(15,0) amount
     VARCHAR idempotency_key
     DATETIME(6) created_at
     DATETIME(6) updated_at
@@ -388,6 +392,29 @@ Aircraft 1 : N AircraftSeat
 
 `AircraftSeat`는 Aircraft의 기본 Seat Layout을 나타냅니다.
 
+`AircraftSeat`는 Seat Number와 Layout 정보뿐 아니라
+해당 좌석의 SeatClass를 정의합니다.
+
+MVP SeatClass:
+
+```text
+ECONOMY
+PREMIUM_ECONOMY
+BUSINESS
+```
+
+`FIRST`는 MVP에서 사용하지 않습니다.
+
+Flight 생성 시 활성 `AircraftSeat`의 다음 정보를
+Flight별 `Seat`로 Snapshot합니다.
+
+```text
+seat_no
+row_no
+seat_column
+seat_class
+```
+
 동일 Aircraft 안에서
 Seat Number는 중복될 수 없습니다.
 
@@ -493,8 +520,40 @@ Aircraft 1 : N Flight
 자동 생성 Flight는
 FlightSchedule의 `default_aircraft_id`를 기본값으로 사용합니다.
 
-Admin 또는 SuperAdmin은
-출발 전 `SCHEDULED` Flight의 Aircraft를 변경할 수 있습니다.
+Admin 또는 SuperAdmin의 Aircraft 변경은
+다음 조건을 모두 만족하는 경우에만 허용합니다.
+
+```text
+Flight.status = SCHEDULED
+
+아직 출발하지 않음
+
+Reservation 연결 이력 = 0건
+```
+
+현재 활성 Reservation이 없더라도
+과거에 Reservation이 한 번이라도 연결된 Flight는
+Aircraft를 변경할 수 없습니다.
+
+다음 Reservation 이력도 Aircraft 변경을 차단합니다.
+
+```text
+PENDING
+CONFIRMED
+CANCELLED
+```
+
+Aircraft 변경이 허용되는 경우:
+
+```text
+기존 Flight Seat Snapshot 제거
+→ Flight.aircraft 변경
+→ 새 AircraftSeat 기준 Seat Snapshot 재생성
+```
+
+위 작업은 하나의 Database Transaction으로 처리하며,
+Seat Snapshot 재생성에 실패하면
+Aircraft 변경 전체를 Rollback합니다.
 
 동일 Aircraft의 Flight는
 MVP 기준 고정 `60분`의 Turnaround Time을 포함하여
@@ -523,10 +582,48 @@ Flight 1 : N Seat
 ```
 
 `AircraftSeat`는 Aircraft의 기본 Seat Configuration이고,
-`Seat`는 특정 Flight에서 실제 예약 상태를 가지는 좌석입니다.
+`Seat`는 특정 Flight에서 실제 예약 상태를 가지는
+Flight별 Snapshot 좌석입니다.
 
-Flight 생성 시 Aircraft Seat Layout을 기반으로
-Flight별 Seat를 구성하는 방향을 사용합니다.
+Flight 생성 시
+배정된 Aircraft의 활성 `AircraftSeat`를 기준으로
+다음 값을 복사하여 Seat를 생성합니다.
+
+```text
+AircraftSeat.seat_no
+→ Seat.seat_no
+
+AircraftSeat.row_no
+→ Seat.row_no
+
+AircraftSeat.seat_column
+→ Seat.seat_column
+
+AircraftSeat.seat_class
+→ Seat.seat_class
+```
+
+따라서 이후 AircraftSeat Master Data가 변경되더라도
+이미 생성된 Flight의 Seat Snapshot을
+자동으로 변경하지 않습니다.
+
+Flight와 해당 Flight의 Seat Snapshot 생성은
+하나의 Database Transaction으로 처리합니다.
+
+```text
+Flight 생성
+→ AircraftSeat 조회
+→ Flight별 Seat Snapshot 생성
+→ Commit
+```
+
+Seat Snapshot 생성에 실패하면
+Flight 생성도 함께 Rollback합니다.
+
+이 정책은 다음 Flight 모두에 적용합니다.
+
+- FlightSchedule 기반 자동 생성 Flight
+- Admin / SuperAdmin 수동 생성 Flight
 
 동일 Flight에서 동일 Seat Number는 중복될 수 없습니다.
 
@@ -545,6 +642,42 @@ HELD
 RESERVED
 UNAVAILABLE
 ```
+
+Seat Hold Owner는 Nullable FK인
+`held_reservation_id`로 표현합니다.
+
+상태별 관계:
+
+```text
+AVAILABLE
+→ held_reservation_id = NULL
+
+HELD
+→ held_reservation_id = Hold를 소유한 Reservation ID
+
+RESERVED
+→ held_reservation_id = NULL
+
+UNAVAILABLE
+→ held_reservation_id = NULL
+```
+
+Seat 자체에는 별도의 Hold 만료 시각을 저장하지 않습니다.
+
+```text
+Seat.held_until
+→ 사용하지 않음
+
+Reservation.hold_expires_at
+→ Reservation 전체 Seat Hold 만료 시각
+```
+
+하나의 Reservation에서 확보한 Seat들은
+동일한 `hold_expires_at`을 공유합니다.
+
+`HELD` 상태가 종료되어
+다른 Seat 상태로 전환될 때에는
+`held_reservation_id`를 반드시 `NULL`로 정리합니다.
 
 ---
 
@@ -870,9 +1003,6 @@ Data Model 확정 후 추가합니다.
 ### Seat
 
 - [ ] `AircraftSeat`의 통로 표현 방식
-- [ ] Flight별 Seat 생성 시점
-- [ ] `Seat.held_reservation_id` 직접 FK 사용 여부
-- [ ] Seat 동시성 Lock 방식
 
 ### Reservation Mapping
 
