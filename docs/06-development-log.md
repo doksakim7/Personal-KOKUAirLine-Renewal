@@ -1,0 +1,2913 @@
+# KOKU Airline Renewal - Development Log
+
+## 1. 문서 목적
+
+본 문서는 KOKU Airline Renewal 프로젝트의
+개발 진행 과정과 주요 기술적 의사결정 기록을 관리합니다.
+
+본 문서의 목적은 다음과 같습니다.
+
+- 개발 단계별 진행 상황을 기록합니다.
+- 주요 Architecture 및 Data 설계 변경 이유를 기록합니다.
+- 구현 중 발생한 문제와 해결 과정을 기록합니다.
+- 성능 및 동시성 테스트 결과를 기록합니다.
+- 외부 API 및 AI 연동 검증 결과를 기록합니다.
+- 문서와 실제 구현의 차이를 추적합니다.
+- AI Agent가 수행한 주요 작업과 Human Review 결과를 기록합니다.
+- 향후 개선이 필요한 Technical Debt를 기록합니다.
+
+본 문서는 새로운 Business Rule을 정의하지 않습니다.
+
+비즈니스 규칙은 `02-domain-policy.md`,
+시스템 구조는 `04-system-design.md`,
+Data 및 API Contract는 `05-data-api-design.md`,
+ERD는 `diagrams/erd.md`를 기준으로 합니다.
+
+설계 변경이 필요한 경우
+본 문서에만 변경 내용을 기록하고 끝내지 않습니다.
+
+반드시 관련 설계 문서를 먼저 또는 함께 수정한 뒤
+변경 이력을 본 문서에 기록합니다.
+
+---
+
+### 1.1 기록 원칙
+
+Development Log는 다음 원칙을 따릅니다.
+
+1. 완료된 작업과 예정 작업을 구분합니다.
+2. 사실과 추정을 구분합니다.
+3. 결정된 사항과 검토 중인 사항을 구분합니다.
+4. 기술 도입 이유와 검증 결과를 함께 기록합니다.
+5. 실패한 접근도 필요한 경우 기록합니다.
+6. 성능 개선은 변경 전 / 후 결과를 함께 기록합니다.
+7. Architecture 변경은 관련 문서 변경 여부를 기록합니다.
+8. 단순 Commit History를 그대로 복사하지 않습니다.
+9. 중요한 문제와 의사결정 중심으로 기록합니다.
+10. 날짜 기준으로 개발 흐름을 추적할 수 있어야 합니다.
+
+---
+
+## 2. 프로젝트 진행 상태
+
+### 2.1 전체 단계
+
+현재 프로젝트는 다음 단계로 진행합니다.
+
+```text
+기획
+  |
+  v
+Domain Policy
+  |
+  v
+UI Design
+  |
+  v
+System Design
+  |
+  v
+Data & API Design
+  |
+  v
+ERD
+  |
+  v
+구현
+  |
+  v
+Test
+  |
+  v
+Performance / Concurrency
+  |
+  v
+AWS Deployment
+```
+
+---
+
+### 2.2 Milestone
+
+Project Plan을 기준으로 다음 Milestone을 사용합니다.
+
+#### M1 - 설계 및 AI 개발환경 구축
+
+주요 목표:
+
+- Project Plan
+- Domain Policy
+- UI Design
+- System Design
+- Data & API Design
+- ERD
+- AI Harness 규칙
+- Spring Boot 초기 구성
+- React 초기 구성
+- Docker 기반 Local 개발환경
+- GitHub Actions CI
+- AI Agent 개발 Workflow 검증
+
+---
+
+#### M2 - 기본 기능 구현
+
+주요 목표:
+
+- 일반 회원가입
+- LOCAL 로그인 / 로그아웃
+- Google OAuth 2.0
+- Spring Security 및 JWT 기반 인증/인가
+- Access Token / Refresh Token 인증 흐름
+- Redis 기반 Refresh Token Server-side 관리
+- LOCAL 비밀번호 변경 및 현재 Password 재인증
+- Member
+- AuthAccount
+- 권한 관리
+- Admin / SuperAdmin 기본 Domain 관리
+- i18n 기본 구조
+
+---
+
+#### M3 - 예약 시스템 구현
+
+주요 목표:
+
+- Airport
+- Route
+- Aircraft
+- FlightSchedule
+- Flight
+- Seat
+- SeatClass
+- Flight별 Seat Snapshot
+- Passenger
+- Reservation
+- Reservation Number
+- Seat Hold
+- KOKU 고정 운임
+- SeatClass별 고정 운임 정책
+- Passenger / Flight별 SeatClass 선택
+- PENDING Reservation 생성 시 최종 운임 확정
+- Mock Payment
+- Reservation 취소 및 Mock 환불
+- External Flight API
+
+---
+
+#### M4 - AI·성능·동시성 고도화
+
+주요 목표:
+
+- Seat 동시성 문제 분석
+- Lock 전략 검증
+- 동시성 Test
+- Query 분석
+- Index 검증
+- 성능 Bottleneck 분석
+- 필요한 영역의 Cache 적용 검토
+- 부하 Test
+- AI Flight Search / Recommendation
+- 핵심 Domain 내부 구조 Refactoring
+
+Redis 자체는 Refresh Token 관리를 위해 M2부터 사용합니다.
+
+Cache 용도의 Redis 활용은
+각 문제의 필요성과 검증 결과에 따라 M4에서 별도로 결정합니다.
+
+Seat 동시성 제어에는
+MVP 기준 Redis Distributed Lock을 사용하지 않습니다.
+
+---
+
+#### M5 - 배포 및 마무리
+
+주요 목표:
+
+- AWS Infrastructure
+- 운영 환경 배포
+- CD
+- 통합 / E2E Test
+- Secret 관리
+- Monitoring / Logging
+- 최종 버그 수정
+- README
+- Architecture 문서 정리
+- 성능 / 동시성 결과 정리
+- Troubleshooting
+- AI Agent / Harness Engineering 정리
+- 한국어 / 일본어 전체 사용자 흐름 검증
+
+---
+
+## 3. 현재 설계 문서 상태
+
+### 3.1 Project Plan
+
+```text
+docs/01-project-plan.md
+```
+
+상태:
+
+```text
+작성 완료
+추후 구현 결과에 따라 일부 수정 가능
+```
+
+---
+
+### 3.2 Domain Policy
+
+```text
+docs/02-domain-policy.md
+```
+
+상태:
+
+```text
+핵심 Business Rule 작성 완료
+일부 세부 기술 정책은 System / Data Design에 위임
+```
+
+---
+
+### 3.3 UI Design
+
+```text
+docs/03-ui-design.md
+```
+
+상태:
+
+```text
+MVP 사용자 흐름 및 주요 화면 구조 작성 완료
+```
+
+---
+
+### 3.4 System Design
+
+```text
+docs/04-system-design.md
+```
+
+상태:
+
+```text
+초안 작성 완료
+인증 / Token 및 시간 처리 핵심 정책 확정
+일부 기술 세부사항 미확정
+```
+
+주요 미확정 항목:
+
+- External Flight API Provider
+- Cache 적용 범위 및 TTL
+- AWS 세부 Architecture
+
+인증 및 Token 정책은 다음과 같이 확정되었습니다.
+
+```text
+Access Token
+→ TTL 30분
+→ Authorization Bearer Header
+→ Frontend Memory
+
+Refresh Token
+→ TTL 7일
+→ HttpOnly / Secure Cookie
+→ Redis Server-side 관리
+→ 원문 저장 금지
+→ Hash 기반 저장
+→ Rotation 적용
+
+CSRF
+→ Cookie / Header 기반 검증
+→ Refresh / Logout 보호
+
+Logout
+→ Redis Refresh Token 폐기
+→ Access Token Blacklist 미사용
+```
+
+시간 처리 정책과 Scheduler 기본 주기도 확정되었습니다.
+
+```text
+Flight 절대 시각
+→ UTC
+
+Backend 절대 시각
+→ Instant
+
+Airport Time Zone
+→ IANA ZoneId
+
+Backend 현재 시각
+→ Clock
+
+Flight DEPARTED Scheduler
+→ 1분
+
+Seat Hold 만료 Scheduler
+→ 1분
+```
+
+Seat 동시성 정책도 확정되었습니다.
+
+```text
+Lock
+→ MySQL Pessimistic Row Lock
+
+Spring JPA
+→ PESSIMISTIC_WRITE
+
+Lock 대상
+→ 사용자가 선택한 Seat Row만
+
+복수 Seat Lock
+→ 하나의 Query
+→ seat_id ASC 순서
+
+ROUND_TRIP
+→ 출국 / 귀국 선택 Seat 전체를 하나의 Transaction에서 확보
+→ All-or-Nothing
+
+Redis Distributed Lock
+→ MVP 미사용
+```
+
+Seat 경쟁 발생 시
+일부 Seat만 확보하는 Partial Success는 허용하지 않습니다.
+
+동시성 Test는 M4에서 수행하지만,
+Lock 방식 자체는 더 이상 미확정 사항이 아닙니다.
+
+---
+
+### 3.5 Data & API Design
+
+```text
+docs/05-data-api-design.md
+```
+
+상태:
+
+```text
+초안 작성 완료
+Entity 관계 및 API 기본 구조 정의
+일부 Column / Constraint / DTO 미확정
+```
+
+주요 미확정 항목:
+
+- `AircraftSeat`의 통로 표현 방식
+- Payment SUCCESS Database 보호 방식
+- API Error 상세 Mapping
+- External Flight DTO
+- AI Structured Output
+
+Seat 관련 Data / API 정책은 다음과 같이 확정되었습니다.
+
+```text
+AircraftSeat.seat_class
+→ Aircraft 기본 SeatClass
+
+Seat.seat_class
+→ Flight 생성 시 Snapshot
+
+Seat.held_reservation_id
+→ Nullable FK
+→ HELD 상태에서 Hold 소유 Reservation 참조
+
+Seat Hold 만료 시각
+→ Reservation.hold_expires_at
+
+Reservation.total_amount
+→ DECIMAL(15,0)
+
+Payment.amount
+→ DECIMAL(15,0)
+
+Seat 경쟁
+→ HTTP 409
+→ SEAT_NOT_AVAILABLE
+```
+
+Reservation Mapping 관련 Data 정책도 확정되었습니다.
+
+```text
+ReservationFlight
+→ 명시적 JPA Entity
+→ BIGINT 단일 Primary Key
+
+ReservationPassenger
+→ 명시적 JPA Entity
+→ BIGINT 단일 Primary Key
+
+PassengerFlight
+→ 명시적 JPA Entity
+→ BIGINT 단일 Primary Key
+→ Reservation 직접 참조
+→ Passenger / Flight별 fare_amount Snapshot 저장
+
+Composite Primary Key
+→ 사용하지 않음
+
+PassengerFlight.seat_class
+→ 별도 저장하지 않음
+→ Seat.seat_class 사용
+
+Membership
+→ Application / Service Layer 검증
+
+Database
+→ Foreign Key
+→ 핵심 Unique Constraint
+```
+
+Passenger / Passport 관련 Data 정책도 확정되었습니다.
+
+```text
+Passenger
+→ Reservation-scoped Snapshot
+→ 다른 Reservation에서 기존 Passenger Row 재사용하지 않음
+
+Gender
+→ MALE / FEMALE
+
+Nationality
+→ ISO 3166-1 alpha-2
+
+PassengerFlight.age_category
+→ ADULT / CHILD / INFANT
+→ Flight별 Snapshot
+
+PassengerFlight.companion_passenger_id
+→ Flight별 Infant Companion
+→ Nullable FK
+
+Test Passport Number
+→ SecureRandom 기반 시스템 생성
+→ 사용자 직접 입력 / 수정 불가
+
+Passport 저장
+→ AES-GCM Application-level Encryption
+→ Ciphertext + IV 분리 저장
+
+Passport API
+→ 원문 반환 금지
+→ Masked 값만 반환
+```
+
+---
+
+### 3.6 ERD
+
+```text
+docs/diagrams/erd.md
+```
+
+상태:
+
+```text
+Draft 작성 완료
+현재 05-data-api-design.md 기준 주요 Data 구조 동기화 완료
+미확정 Data 설계 결정에 따라 추가 수정 예정
+```
+
+현재 ERD에는 다음 확정 사항이 반영되어 있습니다.
+
+- Date / Time Data Type
+- `deactivated_at`
+- Airport IANA Time Zone
+- Airport IATA `VARCHAR(3)`
+- `test_passport_expiry_date`
+- Passenger의 Reservation-scoped Snapshot 구조
+- `Passenger.gender` → `MALE / FEMALE`
+- `Passenger.nationality` → ISO 3166-1 alpha-2
+- `test_passport_no_ciphertext`
+- `test_passport_no_iv`
+- `test_passport_country`
+- Test Passport Number의 AES-GCM 암호화 저장 구조
+- `FlightSchedule`
+- `FlightScheduleDay`
+- Flight의 `flight_schedule_id`
+- Flight의 `departure_local_date`
+- Flight Number + Departure Local Date Unique
+- FlightSchedule + Departure Local Date 중복 생성 방지
+- Aircraft 기본 배정 관계
+- Aircraft Turnaround Time 60분
+- `AircraftSeat.seat_class`
+- Flight별 `Seat.seat_class` Snapshot
+- `Seat.held_reservation_id` → Reservation Nullable FK
+- Reservation ↔ Seat 임시 Hold Relation
+- `Reservation.total_amount` → `DECIMAL(15,0)`
+- `Payment.amount` → `DECIMAL(15,0)`
+- Flight 생성과 Seat Snapshot 생성 Transaction
+- Aircraft 변경 시 Seat Snapshot 재생성 정책
+- `ReservationFlight` 명시적 Entity
+- `ReservationPassenger` 명시적 Entity
+- `PassengerFlight` 명시적 Entity
+- Reservation Mapping Entity별 `BIGINT` 단일 Primary Key
+- `PassengerFlight.reservation_id`
+- `PassengerFlight.age_category`
+- `PassengerFlight.companion_passenger_id`
+- `PassengerFlight.fare_amount` → `DECIMAL(15,0)`
+- Reservation Mapping 핵심 Unique Constraint
+- `PassengerFlight` Membership Application Validation
+
+Refresh Token은 Redis에서 관리하므로
+관계형 Database Entity 또는 ERD Table로 추가하지 않습니다.
+
+ERD는 Data Design을 선행하지 않습니다.
+
+`05-data-api-design.md`를 Source of Truth로 사용하며,
+향후 Data Design 변경 시 ERD를 함께 동기화합니다.
+
+---
+
+## 4. 설계 단계 주요 결정 기록
+
+### 4.1 내부 Flight와 외부 Flight 분리
+
+#### 결정
+
+KOKU Airline 내부 Flight와
+외부 실제 항공편 데이터를 완전히 분리합니다.
+
+```text
+KOKU Flight
+→ 내부 Database
+→ Reservation 가능
+
+External Flight
+→ 외부 API
+→ 조회 / AI 추천만 가능
+```
+
+#### 이유
+
+외부 Flight API는 실제 항공편 검색용이며
+KOKU Airline Reservation Transaction과 연결하지 않기 위해서입니다.
+
+#### 영향 문서
+
+- `02-domain-policy.md`
+- `04-system-design.md`
+- `05-data-api-design.md`
+
+---
+
+### 4.2 Reservation과 Flight 관계
+
+#### 결정
+
+Reservation에 단일 `flight_id`를 저장하지 않고
+명시적인 `ReservationFlight` Entity를 사용합니다.
+
+```text
+ONE_WAY
+Reservation
+→ ReservationFlight
+→ OUTBOUND Flight 1개
+
+ROUND_TRIP
+Reservation
+→ ReservationFlight
+→ OUTBOUND Flight
+→ RETURN Flight
+```
+
+`ReservationFlight`는 단순 Join Table이 아니라
+Reservation 내부에서 Flight의 역할과 순서를 표현합니다.
+
+```text
+journey_role
+sequence
+```
+
+각 Mapping Row는:
+
+```text
+BIGINT id
+→ 단일 Primary Key
+```
+
+를 사용하며 Composite Primary Key는 사용하지 않습니다.
+
+Database에서는 다음 중복을 방지합니다.
+
+```text
+UNIQUE(reservation_id, flight_id)
+
+UNIQUE(reservation_id, journey_role)
+
+UNIQUE(reservation_id, sequence)
+```
+
+#### 이유
+
+왕복 Reservation을 하나의 Reservation Number와
+하나의 Payment 단위로 관리하면서도
+출국 / 귀국 Flight를 명확하게 구분하기 위해서입니다.
+
+또한 단순 `@ManyToMany` 대신 Mapping Entity를 사용하면
+여정 역할과 순서 등 관계 자체의 속성을 명확하게 관리할 수 있습니다.
+
+#### 상태
+
+```text
+ReservationFlight
+→ 명시적 JPA Entity 확정
+
+Primary Key
+→ BIGINT id
+
+Composite Primary Key
+→ 미사용
+```
+
+#### 영향 문서
+
+- `02-domain-policy.md`
+- `04-system-design.md`
+- `05-data-api-design.md`
+- `docs/diagrams/erd.md`
+
+---
+
+### 4.3 ReservationPassenger / PassengerFlight Mapping 확정
+
+#### 결정
+
+Reservation과 Passenger의 관계는
+명시적인 `ReservationPassenger` Entity로 관리합니다.
+
+```text
+Reservation
+→ ReservationPassenger
+→ Passenger
+```
+
+Passenger의 Flight별 예약 속성은
+명시적인 `PassengerFlight` Entity로 관리합니다.
+
+```text
+PassengerFlight
+├─ Reservation
+├─ Passenger
+├─ Flight
+├─ Seat (nullable)
+├─ Companion Passenger (nullable)
+├─ AgeCategory Snapshot
+└─ fare_amount
+```
+
+세 Reservation Mapping Entity 모두:
+
+```text
+ReservationFlight
+ReservationPassenger
+PassengerFlight
+
+→ BIGINT id 단일 Primary Key
+→ Composite Primary Key 미사용
+→ @ManyToMany 미사용
+```
+
+#### ReservationPassenger
+
+동일 Reservation에
+동일 Passenger 또는 동일 순서를 중복 연결하지 않습니다.
+
+```text
+UNIQUE(reservation_id, passenger_id)
+
+UNIQUE(reservation_id, sequence)
+```
+
+#### PassengerFlight
+
+동일 Reservation에서
+동일 Passenger와 동일 Flight의 중복 Mapping을 허용하지 않습니다.
+
+```text
+UNIQUE(
+    reservation_id,
+    passenger_id,
+    flight_id
+)
+```
+
+`PassengerFlight`는 Reservation을 직접 참조합니다.
+
+Passenger와 Flight는 모두
+해당 Reservation에 포함되어 있어야 합니다.
+
+```text
+Passenger
+→ ReservationPassenger에 존재
+
+Flight
+→ ReservationFlight에 존재
+```
+
+Membership 정합성은
+Application / Service Layer에서 검증합니다.
+
+Database에서는 복잡한 Composite Foreign Key 대신
+일반 Foreign Key와 핵심 Unique Constraint를 사용합니다.
+
+#### Flight별 속성
+
+ROUND_TRIP에서는 같은 Passenger라도
+Flight에 따라 다음 정보가 달라질 수 있습니다.
+
+- `AgeCategory`
+- Seat 필요 여부
+- Seat 배정
+- SeatClass
+- 최종 운임
+- Infant Companion
+
+Flight별 연령 판정 결과는:
+
+```text
+PassengerFlight.age_category
+
+ADULT
+CHILD
+INFANT
+```
+
+으로 `PENDING` Reservation 생성 당시 Snapshot 저장합니다.
+
+Infant Companion은:
+
+```text
+PassengerFlight.companion_passenger_id
+```
+
+로 Flight별 관리합니다.
+
+따라서 동일 Infant가
+출국 / 귀국 Flight 모두에서 `INFANT`이더라도
+각 Flight에서 서로 다른 Adult Passenger를
+Companion으로 지정할 수 있습니다.
+
+Passenger / Flight별 최종 확정 운임은:
+
+```text
+PassengerFlight.fare_amount
+→ BigDecimal
+→ DECIMAL(15,0)
+```
+
+으로 Snapshot 저장합니다.
+
+SeatClass는 `PassengerFlight`에 중복 저장하지 않고:
+
+```text
+Seat.seat_class
+```
+
+를 기준으로 사용합니다.
+
+`Reservation.total_amount`는
+각 `PassengerFlight.fare_amount`의 합계입니다.
+
+#### 상태
+
+```text
+ReservationFlight
+→ 확정
+
+ReservationPassenger
+→ 확정
+
+PassengerFlight
+→ 확정
+
+Reservation Mapping 구조
+→ 설계 완료
+```
+
+Passenger / Passport 후속 설계에서
+다음 사항까지 확정되었습니다.
+
+```text
+PassengerFlight.age_category
+→ Flight별 AgeCategory Snapshot
+
+PassengerFlight.companion_passenger_id
+→ Flight별 Infant Companion
+
+ADULT / CHILD
+→ Seat 필수
+
+INFANT
+→ Seat 없음
+
+Adult 1명
+→ 같은 Flight에서 Infant 최대 1명
+```
+
+위 조건의 관계 정합성은
+Application / Service Layer에서 검증합니다.
+
+#### 영향 문서
+
+- `02-domain-policy.md`
+- `04-system-design.md`
+- `05-data-api-design.md`
+- `docs/diagrams/erd.md`
+
+---
+
+### 4.4 PaymentAttempt Entity 제거
+
+#### 결정
+
+별도의 `PaymentAttempt` Entity를 사용하지 않습니다.
+
+각 `Payment` Row 자체를
+한 번의 Mock Payment 시도로 사용합니다.
+
+```text
+Reservation 1 : N Payment
+```
+
+#### 이유
+
+MVP에서는 Payment 자체가 결제 시도 이력을 충분히 표현할 수 있기 때문입니다.
+
+---
+
+### 4.5 Seat 동시성 제어 방식 확정
+
+#### 결정
+
+MVP의 Seat 확보 동시성 제어는
+MySQL Database의 Pessimistic Row Lock을 사용합니다.
+
+Spring Data JPA에서는:
+
+```text
+PESSIMISTIC_WRITE
+```
+
+를 사용합니다.
+
+Conceptual SQL:
+
+```sql
+SELECT *
+FROM seat
+WHERE id IN (...)
+ORDER BY id ASC
+FOR UPDATE;
+```
+
+#### Lock 범위
+
+전체 Flight, Aircraft 또는 Seat Table을 Lock하지 않습니다.
+
+사용자가 실제로 선택한 Seat Row만 Lock합니다.
+
+복수 Seat 요청에서는
+Seat를 하나씩 개별 Query로 Lock하지 않고
+선택된 Seat ID 전체를 하나의 Query로 조회합니다.
+
+Lock 획득 순서는:
+
+```text
+seat_id ASC
+```
+
+로 통일합니다.
+
+#### ROUND_TRIP
+
+왕복 Reservation에서는
+출국 Flight Seat와 귀국 Flight Seat를
+하나의 확보 대상 집합으로 처리합니다.
+
+```text
+출국 선택 Seat
++
+귀국 선택 Seat
+        ↓
+전체 Seat ID 정렬
+        ↓
+PESSIMISTIC_WRITE
+        ↓
+전체 상태 검증
+        ↓
+모두 가능
+→ Reservation 시작
+
+하나라도 불가
+→ 전체 실패
+```
+
+Flight별 Partial Success는 허용하지 않습니다.
+
+#### Seat 상태 검증
+
+Lock 획득 이후
+선택한 Seat 중 하나라도 다음 상태라면
+Reservation 시작에 실패합니다.
+
+```text
+HELD
+RESERVED
+UNAVAILABLE
+```
+
+Business Seat 경쟁 실패는 다음 API 정책을 사용합니다.
+
+```text
+HTTP 409 Conflict
+SEAT_NOT_AVAILABLE
+```
+
+Frontend는 최신 Seat 상태를 다시 조회하도록 안내합니다.
+
+#### Redis Distributed Lock
+
+Redis는 Refresh Token 상태 관리에는 사용하지만
+MVP Seat Reservation Lock에는 사용하지 않습니다.
+
+```text
+Seat Concurrency
+→ Shared MySQL
+→ Pessimistic Row Lock
+
+Redis Distributed Lock
+→ 미사용
+```
+
+단일 Database가 모든 Backend Instance의
+공통 정합성 기준이기 때문입니다.
+
+#### 동시성 Test
+
+Lock 방식 자체는 설계 단계에서 확정했지만
+실제 동시성 Test는 M4에서 수행합니다.
+
+검증 대상:
+
+- 동일 Seat 동시 Reservation
+- 복수 Seat 동시 Reservation
+- ROUND_TRIP All-or-Nothing
+- Deadlock 여부
+- Lock 대기 시간
+- Response Time
+
+Test 결과에 따라
+Lock Timeout 또는 제한적 Retry 정책은 추가 조정할 수 있습니다.
+
+무한 Retry는 사용하지 않습니다.
+
+#### 영향 문서
+
+- `02-domain-policy.md`
+- `04-system-design.md`
+- `05-data-api-design.md`
+- `docs/diagrams/erd.md`
+
+---
+
+### 4.6 Cache 선제 도입 금지
+
+#### 결정
+
+Redis는 Refresh Token의 Server-side 상태 및 TTL 관리를 위해
+MVP 인증 Infrastructure에 포함합니다.
+
+다만 Redis를 사용하고 있다는 이유만으로
+Application Cache를 선제적으로 적용하지 않습니다.
+
+#### Cache 도입 검토 조건
+
+- External API Rate Limit
+- 반복 호출 비용
+- 높은 Latency
+- 반복 조회 Bottleneck
+- 실제 성능 Test에서 필요성 확인
+
+Cache는 문제와 효과를 측정할 수 있는 경우에만 적용합니다.
+
+---
+
+### 4.7 Kafka 선제 도입 금지
+
+#### 결정
+
+Kafka를 MVP 기본 Architecture에 포함하지 않습니다.
+
+#### 이유
+
+현재 Domain에서 Message Broker가 반드시 필요한
+Business Requirement가 존재하지 않기 때문입니다.
+
+실제 비동기 Event 분리가 필요해진 경우에만 검토합니다.
+
+---
+
+### 4.8 시간 처리 정책 확정
+
+#### 결정
+
+Flight와 Reservation에서 사용하는 절대 시각은
+UTC 기준으로 저장합니다.
+
+Backend의 절대 시각 계산 및 비교는
+Java `Instant`를 기본으로 사용합니다.
+
+각 Airport는 IANA Time Zone ID를 가집니다.
+
+MVP 기준:
+
+```text
+한국 Airport
+→ Asia/Seoul
+
+일본 Airport
+→ Asia/Tokyo
+```
+
+Backend의 현재 시각은
+주입 가능한 `Clock`을 사용합니다.
+
+#### 시간 사용 구분
+
+절대 시각 비교:
+
+```text
+Instant ↔ Instant
+```
+
+대표 대상:
+
+- 신규 Reservation 2시간 제한
+- Seat Hold 만료
+- Reservation 취소 24시간 제한
+- Flight `DEPARTED` 여부
+
+Airport Local Date / Time 판단:
+
+```text
+Instant
++
+Airport ZoneId
+→
+Local Date / Time
+```
+
+대표 대상:
+
+- 운임 시간대
+- 운임 요일
+- Passenger 탑승일 기준 연령
+- ROUND_TRIP Date Rule
+- Flight 출발일
+
+#### API / Frontend
+
+API Date / Time은
+Offset을 포함한 ISO-8601 형식을 사용합니다.
+
+예:
+
+```text
+2026-09-10T09:30:00+09:00
+```
+
+Frontend에서는 Airport 현지시각을
+24시간제 `00:00 ~ 23:59` 형식으로 표시합니다.
+
+#### Scheduler
+
+다음 Scheduled Job은
+MVP에서 기본 1분 주기로 실행합니다.
+
+```text
+Seat Hold 만료
+→ 1분
+
+Flight DEPARTED 전환
+→ 1분
+```
+
+Flight 자동 생성 Scheduler는
+위의 1분 주기 Scheduler와 별도로 동작합니다.
+
+```text
+FlightSchedule 기반 Flight 자동 생성
+→ 하루 1회
+```
+
+자동 생성 Scheduler는 실행할 때마다
+현재 필요한 Rolling Window 전체를 다시 확인하여
+누락된 Flight를 보정합니다.
+
+MVP의 자동 생성 범위는
+현재 Month를 기준으로 세 번째 다음 Calendar Month의 마지막 날까지입니다.
+
+예:
+
+```text
+2026-08-26
+→ 2026-11-30까지 Flight 확보
+
+2026-09-01
+→ 2026-12-31까지 Flight 확보
+```
+
+Scheduled Job 실행 여부만으로
+시간 기반 Business Rule을 판단하지 않습니다.
+
+Business API 진입 시에도
+Backend `Clock`을 기준으로 방어적 검증을 수행합니다.
+
+#### 결정 이유
+
+한국과 일본은 현재 모두 UTC+9이지만
+시스템을 고정 Offset에 종속시키지 않고,
+시간 계산과 Time Zone 표현을 명확하게 분리하기 위해서입니다.
+
+또한 `Clock`을 주입하여
+시간 Boundary Test를 안정적으로 수행할 수 있도록 합니다.
+
+#### 영향 문서
+
+- `04-system-design.md`
+- `05-data-api-design.md`
+- `docs/diagrams/erd.md`
+
+#### Database Type
+
+시간 관련 Database Type도 함께 확정합니다.
+
+Application과 Database 사이의 시간 해석 기준도
+UTC로 통일하며,
+JDBC / Hibernate의 Database Time Zone을 UTC 기준으로 구성합니다.
+
+```text
+절대 시각
+Java Instant
+→ MySQL DATETIME(6)
+→ UTC
+
+날짜
+Java LocalDate
+→ MySQL DATE
+
+Airport Time Zone
+IANA Zone ID
+→ MySQL VARCHAR(50)
+```
+
+대표 Mapping:
+
+```text
+departure_at
+arrival_at
+hold_expires_at
+created_at
+updated_at
+deactivated_at
+
+→ Instant
+→ DATETIME(6)
+→ UTC
+
+birth_date
+test_passport_expiry_date
+
+→ LocalDate
+→ DATE
+```
+
+범용 `deleted_at`은 사용하지 않습니다.
+
+Master Data 비활성화는:
+
+```text
+active
++
+deactivated_at
+```
+
+구조를 사용합니다.
+
+---
+
+### 4.9 Flight / Aircraft 운항 정책 확정
+
+#### 결정
+
+KOKU Airline의 반복 운항 일정과
+날짜별 실제 Flight를 분리합니다.
+
+```text
+FlightSchedule
+→ 반복 운항 Template
+
+Flight
+→ 특정 운항일의 실제 예약 대상
+```
+
+FlightSchedule은 다음 정보를 기준으로
+향후 Flight를 자동 생성합니다.
+
+- Flight Number
+- Route
+- 운항 요일
+- 출발 / 도착 Local Time
+- 기본 Aircraft
+- 활성 여부
+
+운항 요일은 `FlightScheduleDay`로 분리합니다.
+
+#### Flight Number
+
+같은 Flight Number는
+서로 다른 운항일에 반복 사용할 수 있습니다.
+
+중복 기준:
+
+```text
+flight_number
++
+departure_local_date
+```
+
+`departure_local_date`는
+출발 Airport의 `ZoneId`를 기준으로 Backend에서 계산합니다.
+
+Database 보호:
+
+```text
+UNIQUE(
+    flight_number,
+    departure_local_date
+)
+```
+
+#### Flight 자동 생성
+
+FlightSchedule 기반 Flight는
+현재 Month에서 세 번째 다음 Calendar Month의 마지막 날까지
+자동 생성하여 유지합니다.
+
+```text
+2026-08
+→ 2026-11 말일까지
+
+2026-09
+→ 2026-12 말일까지
+```
+
+자동 생성 Scheduler는 하루 1회 실행하며
+매 실행 시 필요한 전체 범위를 다시 확인합니다.
+
+따라서 서버 중단 등으로
+이전 Scheduler 실행이 누락되더라도
+다음 실행에서 누락 Flight를 보정할 수 있습니다.
+
+Scheduler 중복 생성 방지를 위해:
+
+```text
+UNIQUE(
+    flight_schedule_id,
+    departure_local_date
+)
+```
+
+를 사용합니다.
+
+`CANCELLED` Flight도 이미 생성된 Flight로 취급하므로
+Scheduler가 동일 운항일 Flight를 다시 생성하지 않습니다.
+
+#### FlightSchedule 변경
+
+FlightSchedule 변경은
+이미 생성된 Flight를 자동 수정하지 않습니다.
+
+```text
+기존 생성 Flight
+→ 유지
+
+향후 생성 Flight
+→ 변경된 FlightSchedule 적용
+```
+
+Admin 또는 SuperAdmin이 기존 Flight를 직접 수정한 경우
+수동 수정 결과가 자동 생성 규칙보다 우선합니다.
+
+```text
+Admin 수동 변경
+>
+FlightSchedule Template
+>
+자동 생성 Scheduler
+```
+
+#### Aircraft 배정
+
+FlightSchedule에는
+자동 생성 Flight에 사용할 기본 Aircraft를 지정합니다.
+
+자동 생성 시 해당 Aircraft를 초기 배정합니다.
+
+Admin 또는 SuperAdmin의 Aircraft 변경은
+다음 조건을 모두 만족할 때만 허용합니다.
+
+```text
+Flight.status = SCHEDULED
++
+미출발
++
+Reservation 연결 이력 = 0건
+```
+
+현재 활성 Reservation이 없더라도
+과거 Reservation 이력이 한 번이라도 존재하면
+Aircraft를 변경하지 않습니다.
+
+다음 Reservation 이력도 변경을 차단합니다.
+
+```text
+PENDING
+CONFIRMED
+CANCELLED
+```
+
+Aircraft 변경이 허용되는 경우:
+
+```text
+기존 Flight Seat Snapshot 제거
+        ↓
+Flight.aircraft 변경
+        ↓
+새 AircraftSeat 기준 Seat Snapshot 생성
+        ↓
+Commit
+```
+
+위 작업은 하나의 Database Transaction으로 처리합니다.
+
+Seat Snapshot 재생성에 실패하면
+Aircraft 변경 전체를 Rollback합니다.
+
+#### Aircraft Schedule Conflict
+
+동일 Aircraft에는
+고정 `60분`의 Turnaround Time을 적용합니다.
+
+```text
+previousFlight.arrival_at
++
+60 minutes
+<=
+nextFlight.departure_at
+```
+
+시간 비교는 UTC 기준 `Instant`로 수행합니다.
+
+`CANCELLED` Flight는
+Aircraft Schedule Conflict 계산에서 제외합니다.
+
+Aircraft Conflict는 단순 Unique Constraint가 아니라
+Application Validation으로 보호합니다.
+
+#### 성수기 / 비성수기 운영
+
+Admin 또는 SuperAdmin은
+운영상 필요한 경우 별도의 Flight Number를 사용하여
+임시 Flight를 수동 생성할 수 있습니다.
+
+비성수기 또는 운항 중단이 필요한 경우에는
+Flight를 `CANCELLED` 처리합니다.
+
+FlightSchedule 기반 자동 생성 Flight는
+물리 삭제하지 않습니다.
+
+물리 삭제는 다음 조건을 만족하는
+관리자 수동 생성 Flight에만 제한적으로 허용합니다.
+
+```text
+flight_schedule_id = NULL
++
+SCHEDULED
++
+미출발
++
+Reservation 연결 이력 없음
++
+운영 이력 보존이 필요한 Flight가 아님
+```
+
+#### 영향 문서
+
+- `02-domain-policy.md`
+- `04-system-design.md`
+- `05-data-api-design.md`
+- `docs/diagrams/erd.md`
+
+---
+
+## 5. 인증 설계 기록
+
+### 5.1 인증 방식
+
+MVP 인증:
+
+```text
+LOCAL
+GOOGLE
+```
+
+서비스 사용자는 `Member`,
+인증 수단은 `AuthAccount`에서 관리합니다.
+
+---
+
+### 5.2 Service Role과 Security Authority
+
+서비스 Role:
+
+```text
+MEMBER
+ADMIN
+SUPERADMIN
+```
+
+Spring Security 권한 Code:
+
+```text
+MEMBER     → USER
+ADMIN      → ADMIN
+SUPERADMIN → SUPERADMIN
+```
+
+두 개념을 혼용하지 않습니다.
+
+---
+
+### 5.3 Email 정규화
+
+다음 인증 흐름에서 동일한 Email 정규화 규칙을 사용합니다.
+
+- 회원가입
+- LOCAL 로그인
+- Google OAuth 계정 연결
+
+기준:
+
+```text
+trim()
++
+lowercase(Locale.ROOT)
+```
+
+---
+
+### 5.4 Google OAuth 계정 연결
+
+동일 Email의 LOCAL Member가 존재하더라도
+Google Email 일치만으로 자동 연결하지 않습니다.
+
+```text
+Google OAuth
+    |
+    v
+동일 Email LOCAL Member
+    |
+    v
+LOCAL Password 재인증
+    |
+    +-- 성공 → GOOGLE AuthAccount 연결
+    |
+    +-- 실패 → 연결 거부
+```
+
+---
+
+### 5.5 JWT 및 Token 정책
+
+#### 결정
+
+MVP에서는 Access Token과 Refresh Token을 분리하여 사용합니다.
+
+```text
+Access Token
+→ 일반 인증 API 호출
+
+Refresh Token
+→ Access Token 재발급
+```
+
+#### Access Token
+
+```text
+TTL
+→ 30분
+
+전달
+→ Authorization: Bearer <Access Token>
+
+Frontend 저장
+→ Memory
+
+Server-side Blacklist
+→ 사용하지 않음
+```
+
+Access Token에는 인증과 인가에 필요한
+최소한의 Claim만 포함합니다.
+
+Password, Password Hash, Refresh Token 등
+민감한 Credential은 포함하지 않습니다.
+
+#### Refresh Token
+
+```text
+TTL
+→ 7일
+
+Client 전달
+→ HttpOnly / Secure Cookie
+
+Server-side 저장
+→ Redis
+
+원문 저장
+→ 금지
+
+저장 값
+→ Hash 기반 검증 정보
+```
+
+Refresh Token의 Redis TTL은
+Token 유효기간과 동일한 7일을 적용합니다.
+
+#### Rotation
+
+Access Token 재발급 성공 시
+Refresh Token Rotation을 수행합니다.
+
+```text
+기존 Refresh Token 검증
+        ↓
+기존 Redis 정보 폐기
+        ↓
+새 Access Token 발급
+        ↓
+새 Refresh Token 발급
+        ↓
+새 Refresh Token Hash Redis 저장
+```
+
+기존 Refresh Token은 Rotation 이후 재사용할 수 없습니다.
+
+#### CSRF
+
+Refresh Token을 Cookie로 전달하므로
+Refresh 및 Logout Endpoint에는 CSRF 보호를 적용합니다.
+
+```text
+CSRF Token Cookie
++
+Request Header
+```
+
+구조를 이용하여 Spring Security 기반 검증을 수행합니다.
+
+`SameSite` Cookie 정책은 추가적인 보호 계층으로 사용하며,
+CSRF Token 검증 자체를 대체하지 않습니다.
+
+#### Logout
+
+```text
+Logout
+→ CSRF 검증
+→ Redis Refresh Token 폐기
+→ Refresh Token Cookie 제거
+→ CSRF Cookie 정리
+→ Frontend Access Token 제거
+```
+
+Access Token Blacklist는 사용하지 않습니다.
+
+#### 결정 이유
+
+Access Token은 짧은 TTL을 사용하여 Stateless 인증의 장점을 유지하고,
+Refresh Token은 Server-side 상태를 관리하여
+장기 인증 Credential의 폐기와 Rotation을 통제하기 위해서입니다.
+
+Refresh Token 원문은 Redis에도 저장하지 않아
+Server 저장소가 노출될 경우의 Token 탈취 위험을 줄입니다.
+
+#### 영향 문서
+
+- `01-project-plan.md`
+- `02-domain-policy.md`
+- `03-ui-design.md`
+- `04-system-design.md`
+- `05-data-api-design.md`
+- `figma-make-guidelines.md`
+
+---
+
+### 5.6 LOCAL 비밀번호 변경
+
+#### 결정
+
+`LOCAL` AuthAccount를 보유한 Member만
+비밀번호를 변경할 수 있습니다.
+
+비밀번호 변경 시 현재 Password 재인증을 필수로 합니다.
+
+```text
+현재 Password 입력
+        ↓
+PasswordEncoder 검증
+        ↓
+새 Password 정책 검증
+        ↓
+새 Password Hash 저장
+```
+
+현재 Password 검증에 실패하면
+비밀번호를 변경하지 않습니다.
+
+`GOOGLE` AuthAccount만 보유하고
+`LOCAL` AuthAccount가 없는 Member에게는
+LOCAL 비밀번호 변경 기능을 제공하지 않습니다.
+
+#### 영향 문서
+
+- `01-project-plan.md`
+- `02-domain-policy.md`
+- `03-ui-design.md`
+- `04-system-design.md`
+- `05-data-api-design.md`
+- `figma-make-guidelines.md`
+
+---
+
+## 6. Reservation 설계 기록
+
+### 6.1 Reservation Number
+
+사용자 공개 Reservation Number:
+
+```text
+KOKU-YYYYMMDD-XXXXXX
+```
+
+Random 문자에서 제외:
+
+```text
+I
+O
+0
+1
+```
+
+Database PK와 사용자 공개 Reservation Number를 분리합니다.
+
+Database Constraint:
+
+```text
+UNIQUE(reservation_no)
+```
+
+---
+
+### 6.2 PENDING 생성
+
+PENDING Reservation 생성과
+선택 Seat 확보는 하나의 Database Transaction으로 처리합니다.
+
+개념적 흐름:
+
+```text
+Reservation 요청 검증
+        ↓
+Passenger 입력 Normalize / Validation
+        ↓
+동일 Reservation 내 Passenger 중복 검증
+        ↓
+선택 Seat ID 중복 제거 / 검증
+        ↓
+seat_id ASC 정렬
+        ↓
+선택 Seat 전체 PESSIMISTIC_WRITE
+        ↓
+Seat 상태 검증
+        ↓
+PENDING Reservation 생성
+        ↓
+Reservation Number 생성
+        ↓
+hold_expires_at 확정
+        ↓
+ReservationFlight 생성
+        ↓
+Passenger 생성
+        ↓
+Test Passport 생성
++ SecureRandom Passport Number
++ AES-GCM Encryption
+        ↓
+ReservationPassenger 생성
+        ↓
+각 Passenger / Flight
+AgeCategory 계산
+        ↓
+Seat 필요 여부 검증
++ Infant Companion 검증
+        ↓
+PassengerFlight 생성
++ seat_id
++ companion_passenger_id
++ age_category Snapshot
+        ↓
+Passenger / Flight Membership 정합성 검증
+        ↓
+Passenger / Flight별 선택 SeatClass 기준
+최종 운임 계산 및 fare_amount Snapshot 저장
+        ↓
+Reservation.total_amount 확정
+        ↓
+선택 Seat
+AVAILABLE → HELD
+        ↓
+Seat.held_reservation_id
+→ 생성된 Reservation ID
+        ↓
+Commit
+```
+
+`ROUND_TRIP`에서는
+출국 Flight와 귀국 Flight의 선택 Seat 전체를
+동일 Transaction에서 확보합니다.
+
+```text
+일부 Seat 성공
++
+일부 Seat 실패
+
+→ 허용하지 않음
+```
+
+SeatClass별 운임은
+Backend `SeatClassFarePolicy`를 기준으로 계산합니다.
+
+최종 Passenger / Flight별 운임은
+`BigDecimal`을 사용하고
+1원 단위에서 `RoundingMode.HALF_UP`으로 반올림합니다.
+
+Reservation의 최종 금액은
+반올림이 완료된 Passenger / Flight별 운임의 합계입니다.
+
+다음 데이터 생성은 모두
+동일한 Reservation 시작 Transaction 안에서 처리합니다.
+
+```text
+Reservation
++
+ReservationFlight
++
+Passenger
++
+Test Passport 정보
++
+ReservationPassenger
++
+PassengerFlight
++
+Seat Hold
+```
+
+따라서 Passenger Validation,
+Passport 생성,
+AgeCategory 계산,
+Infant Companion Validation,
+Mapping 생성 또는 Membership 검증 중 하나라도 실패하면
+Reservation 시작 전체를 Rollback합니다.
+
+따라서 정상 Commit된 `PENDING` Reservation에
+불완전한 Reservation Mapping이 남는 것을 허용하지 않습니다.
+
+세부적인 JPA `persist` / `flush` 호출 순서는
+구현 단계의 내부 최적화 사항으로 두되,
+위 Transaction Boundary와 원자성은 변경하지 않습니다.
+
+---
+
+### 6.3 Seat Hold
+
+Hold 만료 시각은 다음 두 값 중 더 이른 시각을 기준으로 결정합니다.
+
+```text
+Reservation 시작 시각 + 1시간
+
+Reservation에 포함된 가장 이른 Flight 출발 시각
+```
+
+따라서 Seat Hold는 최대 1시간이며,
+Flight 출발 시각을 넘어 유지되지 않습니다.
+
+Hold 만료 판단은 Backend `Clock`이 최종 기준입니다.
+
+`hold_expires_at`은
+UTC 기준 절대 시각으로 저장합니다.
+
+Seat 자체에는 Hold 만료 시각을 중복 저장하지 않습니다.
+
+```text
+Seat.held_until
+→ 사용하지 않음
+
+Reservation.hold_expires_at
+→ Reservation 전체 Hold 만료 시각
+```
+
+Reservation이 Seat를 Hold하는 동안:
+
+```text
+Seat.status
+→ HELD
+
+Seat.held_reservation_id
+→ 해당 Reservation ID
+```
+
+Hold 만료 또는 PENDING Reservation 취소 시:
+
+```text
+Reservation
+PENDING → CANCELLED
+
+Seat
+HELD → AVAILABLE
+
+Seat.held_reservation_id
+→ NULL
+```
+
+하나의 Reservation이 Hold한 모든 Seat는
+동일한 `hold_expires_at`을 사용합니다.
+
+Seat Hold 만료 Scheduled Job은
+1분 주기로 실행합니다.
+
+또한 Business API 진입 시에도
+방어적으로 Hold 만료 여부를 검증합니다.
+
+```text
+Scheduled Job
+1분 주기
++
+Business API 방어 검증
+```
+
+Frontend Countdown은
+사용자 안내 목적으로만 사용하며
+Business Rule의 최종 판단 기준으로 사용하지 않습니다.
+
+---
+
+### 6.4 Payment 성공
+
+Mock Payment 성공 시:
+
+```text
+Payment
+PENDING → SUCCESS
+
+Reservation
+PENDING → CONFIRMED
+
+Seat
+HELD → RESERVED
+
+Seat.held_reservation_id
+Reservation ID → NULL
+```
+
+Payment 금액은
+PENDING Reservation 생성 시 확정된
+`Reservation.total_amount`를 그대로 사용합니다.
+
+결제 시점에 운임을 다시 계산하지 않습니다.
+
+하나의 Business Transaction으로 처리합니다.
+
+---
+
+### 6.5 Payment 실패
+
+하나의 Reservation당
+최대 3회의 Payment를 허용합니다.
+
+```text
+1차 실패
+2차 실패
+3차 실패
+    |
+    v
+Reservation CANCELLED
+Seat RELEASE
+```
+
+기존 FAILED Payment는 삭제하지 않습니다.
+
+---
+
+### 6.6 Reservation Mapping Lifecycle
+
+#### 생성
+
+Reservation Mapping은
+`PENDING` Reservation 생성 Transaction에서 함께 생성합니다.
+
+```text
+Reservation
++
+ReservationFlight
++
+Passenger
++
+Test Passport 정보
++
+ReservationPassenger
++
+PassengerFlight
++
+Seat Hold
+
+→ 하나의 Transaction
+```
+
+#### 생성 후 변경
+
+정상적으로 Commit된 `PENDING` Reservation의
+예약 구성은 MVP에서 변경하지 않습니다.
+
+불변 대상으로 보는 정보:
+
+- Reservation에 포함된 Flight
+- Reservation에 포함된 Passenger
+- Passenger의 예약 당시 기본정보
+- Passenger의 Test Passport 정보
+- Passenger와 Flight의 연결
+- Passenger별 Flight Seat 연결
+- `PassengerFlight.age_category`
+- `PassengerFlight.companion_passenger_id`
+- Passenger / Flight별 확정 운임
+
+예약 구성을 변경해야 하는 경우:
+
+```text
+기존 PENDING Reservation
+→ CANCELLED
+
+HELD Seat
+→ AVAILABLE
+
+새 Reservation
+→ 다시 시작
+```
+
+방식을 사용합니다.
+
+Payment 실패 후 재시도하는 경우에는
+기존 Mapping과 확정 운임을 그대로 사용합니다.
+
+#### 취소 후 이력
+
+Reservation이 `CANCELLED` 상태가 되어도
+다음 Mapping Row를 삭제하지 않습니다.
+
+```text
+ReservationFlight
+ReservationPassenger
+PassengerFlight
+```
+
+Seat는 현재 판매 상태로 반환할 수 있지만
+Reservation 당시의 Mapping과 운임 이력은 유지합니다.
+
+따라서 Reservation 취소를
+Mapping Entity 삭제로 구현하지 않습니다.
+
+#### JPA 삭제 정책
+
+Reservation Mapping은 이력 보존 대상이므로
+삭제가 자동 전파되는 구조를 사용하지 않습니다.
+
+```text
+orphanRemoval = true
+→ 사용하지 않음
+
+CascadeType.REMOVE
+→ 사용하지 않음
+```
+
+특히 다음 Entity로 삭제가 전파되어서는 안 됩니다.
+
+- Flight
+- Passenger
+- Seat
+
+---
+
+## 7. External Flight API 기록
+
+### 7.1 목적
+
+External Flight API는 다음 기능에만 사용합니다.
+
+- 실제 항공편 조회
+- AI 항공편 검색
+- AI 추천 근거 Data
+
+---
+
+### 7.2 내부 Transaction과 분리
+
+외부 API 호출은 다음 Transaction에 포함하지 않습니다.
+
+- Reservation 생성
+- Seat 확보
+- Payment
+- Reservation 취소
+- Seat 반환
+
+---
+
+### 7.3 Provider
+
+현재 상태:
+
+```text
+미확정
+```
+
+Provider 결정 시 기록할 항목:
+
+- Provider 이름
+- 무료 / 유료 정책
+- Rate Limit
+- 응답 Data
+- 한국 / 일본 지원 범위
+- 가격 Data 제공 여부
+- Timeout
+- Retry
+- Cache 필요 여부
+
+---
+
+## 8. AI 기능 기록
+
+### 8.1 AI 역할
+
+AI는 다음 역할만 수행합니다.
+
+- 자연어 해석
+- 검색 조건 구조화
+- 추천 설명
+- 사용자 친화적 요약
+
+---
+
+### 8.2 AI가 수행하지 않는 작업
+
+AI는 다음 작업을 수행하지 않습니다.
+
+- Reservation 생성
+- Seat 확보
+- Payment
+- Reservation 취소
+- 외부 실제 항공편 예약
+- 실제 결제
+- 실제 발권
+
+---
+
+### 8.3 AI Search Flow
+
+```text
+Natural Language
+      |
+      v
+Structured Output
+      |
+      v
+Application Validation
+      |
+      v
+Route Validation
+      |
+      v
+External Flight API
+      |
+      v
+Java Filtering
+      |
+      v
+Java Ranking
+      |
+      v
+AI Explanation
+```
+
+---
+
+### 8.4 Hallucination 방지
+
+다음 정보는 External Flight API를 Source of Truth로 사용합니다.
+
+- Airline
+- Flight Number
+- Price
+- Departure Time
+- Arrival Time
+- Stops
+
+AI가 값을 생성하거나 변경하지 않습니다.
+
+---
+
+## 9. 구현 진행 기록 Template
+
+실제 개발 시작 이후
+각 주요 작업은 다음 형식으로 기록합니다.
+
+---
+
+### YYYY-MM-DD - 작업 제목
+
+#### 작업 목적
+
+```text
+이번 작업에서 해결하려는 문제 또는 구현 목표
+```
+
+#### 관련 Issue
+
+```text
+#IssueNumber
+```
+
+#### 관련 문서
+
+- `02-domain-policy.md`
+- `04-system-design.md`
+- `05-data-api-design.md`
+
+필요한 문서만 기록합니다.
+
+#### 구현 내용
+
+- 구현 항목 1
+- 구현 항목 2
+- 구현 항목 3
+
+#### 주요 결정
+
+```text
+결정 내용
+```
+
+#### 결정 이유
+
+```text
+왜 이 방식을 선택했는지
+```
+
+#### 검토한 대안
+
+```text
+Alternative A
+Alternative B
+Alternative C
+```
+
+#### Test
+
+```text
+수행한 Test
+결과
+```
+
+#### 결과
+
+```text
+SUCCESS
+PARTIAL
+FAILED
+```
+
+#### 후속 작업
+
+- [ ] 후속 작업 1
+- [ ] 후속 작업 2
+
+#### 관련 Commit / PR
+
+```text
+Commit:
+PR:
+```
+
+---
+
+## 10. Bug / 문제 해결 기록 Template
+
+### YYYY-MM-DD - 문제 제목
+
+#### 증상
+
+```text
+발생한 문제
+```
+
+#### 재현 조건
+
+```text
+문제 재현 방법
+```
+
+#### 원인
+
+```text
+Root Cause
+```
+
+#### 해결
+
+```text
+적용한 해결 방법
+```
+
+#### 검토한 대안
+
+```text
+대안 및 제외 이유
+```
+
+#### Test
+
+```text
+회귀 Test 포함
+```
+
+#### 영향 범위
+
+```text
+Domain
+API
+Database
+Frontend
+Infrastructure
+```
+
+#### 관련 문서 수정
+
+```text
+없음
+또는
+수정한 문서
+```
+
+---
+
+## 11. Architecture Decision 기록 Template
+
+중요한 Architecture 결정은
+다음 형식으로 기록합니다.
+
+### ADR-XXX - 결정 제목
+
+#### 상태
+
+```text
+PROPOSED
+ACCEPTED
+SUPERSEDED
+REJECTED
+```
+
+#### Context
+
+```text
+해결해야 하는 Architecture 문제
+```
+
+#### Decision
+
+```text
+최종 결정
+```
+
+#### Alternatives
+
+```text
+대안
+```
+
+#### Reason
+
+```text
+선택 이유
+```
+
+#### Consequences
+
+##### 장점
+
+- 장점
+
+##### 단점
+
+- 단점
+
+#### 관련 문서
+
+- `04-system-design.md`
+- `05-data-api-design.md`
+
+필요한 문서만 기록합니다.
+
+---
+
+## 12. 동시성 Test 기록 Template
+
+### YYYY-MM-DD - Seat Concurrency Test
+
+#### 목적
+
+동일 Flight / 동일 Seat에 대한
+동시 Reservation 요청을 검증합니다.
+
+#### Test 조건
+
+```text
+Concurrent Requests:
+Flight:
+Seat:
+Backend Instance:
+Database:
+```
+
+#### Test Scenario
+
+```text
+N개의 요청
+      |
+      v
+동일 Flight / 동일 Seat
+      |
+      v
+Reservation 생성 시도
+```
+
+#### 기대 결과
+
+```text
+성공 = 1
+실패 = N - 1
+```
+
+#### 적용 방식
+
+```text
+No Lock
+Pessimistic Lock
+Optimistic Lock
+Conditional Update
+Redis Lock
+```
+
+#### 결과
+
+```text
+Success Count:
+Failure Count:
+Average Response Time:
+Max Response Time:
+```
+
+#### 정합성 확인
+
+- [ ] 중복 Reservation 없음
+- [ ] 중복 RESERVED Seat 없음
+- [ ] 실패 Transaction Rollback
+- [ ] ROUND_TRIP Partial Hold 없음
+
+#### 결론
+
+```text
+해당 방식 유지 / 변경 여부
+```
+
+---
+
+## 13. 성능 Test 기록 Template
+
+### YYYY-MM-DD - Performance Test
+
+#### 대상 API
+
+```text
+Endpoint
+```
+
+#### Test 환경
+
+```text
+Backend:
+Database:
+Instance:
+Dataset Size:
+Tool:
+```
+
+#### 변경 전
+
+```text
+Average Response:
+P95:
+P99:
+Throughput:
+Error Rate:
+Query Count:
+```
+
+#### 문제
+
+```text
+Bottleneck
+```
+
+#### 개선
+
+```text
+Query 변경
+Index 추가
+Fetch 전략 수정
+Cache
+기타
+```
+
+#### 변경 후
+
+```text
+Average Response:
+P95:
+P99:
+Throughput:
+Error Rate:
+Query Count:
+```
+
+#### 결과
+
+```text
+Improvement:
+```
+
+#### 결론
+
+```text
+적용 / 롤백 / 추가 검토
+```
+
+---
+
+## 14. External API 검증 기록 Template
+
+### YYYY-MM-DD - External Flight API 검증
+
+#### Provider
+
+```text
+Provider Name
+```
+
+#### 확인 항목
+
+- [ ] 한국 Airport 지원
+- [ ] 일본 Airport 지원
+- [ ] KR → JP 조회
+- [ ] JP → KR 조회
+- [ ] Flight Number 제공
+- [ ] Airline 제공
+- [ ] 출발 / 도착 시각 제공
+- [ ] 가격 제공
+- [ ] 직항 / 경유 정보 제공
+- [ ] Rate Limit 확인
+- [ ] Timeout 확인
+
+#### Response 예시
+
+```json
+{
+}
+```
+
+#### 문제
+
+```text
+Provider Data의 제한
+```
+
+#### Adapter Mapping
+
+```text
+Provider Field
+→
+KOKU ExternalFlight DTO
+```
+
+#### 결론
+
+```text
+채택 / 보류 / 제외
+```
+
+---
+
+## 15. AI 기능 검증 기록 Template
+
+### YYYY-MM-DD - AI Flight Search Test
+
+#### 사용자 입력
+
+```text
+자연어 Query
+```
+
+#### Structured Output
+
+```json
+{
+}
+```
+
+#### Validation 결과
+
+```text
+PASS
+FAIL
+```
+
+#### External Flight API 결과
+
+```text
+Candidate Count:
+```
+
+#### Java Filtering 결과
+
+```text
+Filtered Count:
+```
+
+#### Java Ranking 결과
+
+```text
+Top Candidate:
+```
+
+#### AI 설명 결과
+
+```text
+추천 설명
+```
+
+#### Hallucination 검증
+
+- [ ] Flight Number 변경 없음
+- [ ] Airline 변경 없음
+- [ ] Price 변경 없음
+- [ ] Departure Time 변경 없음
+- [ ] Arrival Time 변경 없음
+
+#### 결론
+
+```text
+PASS / FAIL
+```
+
+---
+
+## 16. Security 검토 기록 Template
+
+### YYYY-MM-DD - Security Review
+
+#### 대상
+
+```text
+Authentication
+Authorization
+JWT
+OAuth
+Secret
+Passenger Data
+```
+
+#### 확인 항목
+
+- [ ] Password 평문 저장 없음
+- [ ] Password Hash API 노출 없음
+- [ ] LOCAL 비밀번호 변경 시 현재 Password 재인증
+- [ ] Access Token에 불필요한 개인정보 / Credential 없음
+- [ ] Access Token Frontend 장기 Storage 저장 없음
+- [ ] Refresh Token 원문 Redis 저장 없음
+- [ ] Refresh Token Hash 기반 Server-side 관리
+- [ ] Refresh Token HttpOnly / Secure Cookie 적용
+- [ ] Refresh Token Rotation 정상 동작
+- [ ] Refresh / Logout Endpoint CSRF 검증
+- [ ] Logout 시 Redis Refresh Token 폐기
+- [ ] Token / Token Hash Log 출력 없음
+- [ ] Secret Repository 포함 없음
+- [ ] Test Passport Number 평문 Database 저장 없음
+- [ ] Test Passport Number AES-GCM Encryption 적용
+- [ ] Passport Encryption Key Repository 포함 없음
+- [ ] Passport Encryption Key Log 출력 없음
+- [ ] Test Passport Number 원문 / 복호화 값 Log 출력 없음
+- [ ] Member Reservation 상세 Passport Number Masking
+- [ ] Admin Reservation 상세 Passport Number Masking
+- [ ] Passport 원문 API Response 노출 없음
+- [ ] 권한 Backend 검증
+- [ ] 다른 Member Reservation 접근 차단
+
+#### 발견 문제
+
+```text
+문제
+```
+
+#### 수정
+
+```text
+수정 내용
+```
+
+---
+
+## 17. AI Agent 작업 기록
+
+AI Agent를 사용하여 구현 또는 Review를 수행한 경우
+중요한 변경은 필요에 따라 기록합니다.
+
+### YYYY-MM-DD - AI Agent 작업
+
+#### Agent 역할
+
+```text
+Implementer
+Reviewer
+```
+
+#### 작업 범위
+
+```text
+Issue
+```
+
+#### 변경 파일
+
+```text
+파일 목록
+```
+
+#### 설계 변경 여부
+
+```text
+NO
+YES
+```
+
+`YES`인 경우
+Human 승인과 관련 문서 수정 여부를 반드시 기록합니다.
+
+#### Review 결과
+
+```text
+PASS
+CHANGES_REQUESTED
+```
+
+#### Human Decision
+
+```text
+MERGED
+REJECTED
+REWORK
+```
+
+---
+
+## 18. Technical Debt
+
+현재 또는 구현 과정에서 발견된
+Technical Debt를 관리합니다.
+
+| ID | 영역 | 내용 | 우선순위 | 상태 |
+| --- | --- | --- | --- | --- |
+| TD-001 | Auth | JWT / Refresh Token / CSRF 세부 정책 확정 | High | Resolved |
+| TD-002 | Time | UTC / Instant / ZoneId / Clock 시간 정책 확정 | High | Resolved |
+| TD-003 | Seat | Pessimistic Row Lock 동시성 / Deadlock / 성능 검증 필요 | High | Open |
+| TD-004 | Passenger | Test Passport 보호 방식 확정 | Medium | Resolved |
+| TD-005 | External | Flight API Provider 확정 필요 | High | Open |
+| TD-006 | AI | Structured Output Contract 확정 필요 | Medium | Open |
+| TD-007 | Infra | AWS 세부 Architecture 확정 필요 | Medium | Open |
+| TD-008 | Time | MySQL Date / Time Column Type 확정 | Low | Resolved |
+| TD-009 | Flight | Flight Number / Aircraft Conflict / Turnaround / 자동 생성 정책 확정 | High | Resolved |
+
+Technical Debt가 해결되면
+관련 설계 문서를 수정한 뒤 상태를 변경합니다.
+
+예:
+
+```text
+Open
+→
+Resolved
+```
+
+---
+
+## 19. 미확정 항목 추적
+
+본 절은
+`04-system-design.md`와 `05-data-api-design.md`의
+미확정 항목을 추적하기 위한 요약입니다.
+
+본 절에서 정책을 직접 확정하지 않습니다.
+
+### Seat
+
+- [ ] `AircraftSeat`의 통로 표현 방식
+
+### Payment
+
+- [ ] SUCCESS Unique 보호
+- [ ] attempt_no Constraint
+- [ ] Idempotency 상세 정책
+
+### External
+
+- [ ] Flight API Provider
+- [ ] Timeout
+- [ ] Retry
+- [ ] Cache
+- [ ] TTL
+
+### AI
+
+- [ ] Provider / Model
+- [ ] Structured Output
+- [ ] Tool Contract
+- [ ] Candidate Limit
+- [ ] Timeout
+
+### Infrastructure
+
+- [ ] AWS Architecture
+- [ ] CD
+- [ ] Secret Management
+- [ ] Monitoring
+
+---
+
+## 20. 개발 완료 시 기록 항목
+
+MVP 개발 완료 시
+최종적으로 다음 내용을 정리합니다.
+
+### Architecture
+
+```text
+최종 Architecture
+초기 설계와 달라진 부분
+변경 이유
+```
+
+### Database
+
+```text
+최종 ERD
+주요 Constraint
+Index
+```
+
+### Concurrency
+
+```text
+최종 Seat Lock 방식
+Test 결과
+선택 이유
+```
+
+### Performance
+
+```text
+주요 성능 개선
+변경 전 / 후 결과
+```
+
+### External API
+
+```text
+최종 Provider
+제약사항
+Cache 여부
+```
+
+### AI
+
+```text
+최종 Model
+Structured Output
+추천 방식
+Hallucination 방지 방식
+```
+
+### Deployment
+
+```text
+AWS Architecture
+CI/CD
+Monitoring
+```
+
+### Technical Debt
+
+```text
+남아 있는 개선사항
+```
+
+---
+
+## 21. Development Log 변경 원칙
+
+Development Log는
+프로젝트 진행의 기록 문서입니다.
+
+설계 기준 문서보다 우선하지 않습니다.
+
+문서 우선순위:
+
+```text
+Domain Policy
+    |
+    v
+System Design
+    |
+    v
+Data & API Design
+    |
+    v
+ERD
+    |
+    v
+Development Log
+```
+
+Development Log에 기록된 내용과
+설계 문서가 충돌하는 경우
+설계 문서를 기준으로 합니다.
+
+구현 과정에서 기존 설계가 변경된 경우:
+
+```text
+문제 발견
+    |
+    v
+Human Review
+    |
+    v
+관련 설계 문서 수정
+    |
+    v
+구현 수정
+    |
+    v
+Development Log 기록
+```
+
+순서를 유지합니다.
+
+Development Log만 수정하여
+Architecture 또는 Business Rule을 변경하지 않습니다.
