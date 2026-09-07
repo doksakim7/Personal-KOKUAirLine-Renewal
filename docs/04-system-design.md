@@ -4533,96 +4533,96 @@ MVP System Design이 완료된 것으로 판단합니다.
 
 ### Architecture
 
-- [ ] Frontend / Backend 기본 Architecture가 정의되어 있습니다.
-- [ ] Backend Layer 역할이 정의되어 있습니다.
-- [ ] 내부 시스템과 외부 시스템의 경계가 정의되어 있습니다.
+- [x] Frontend / Backend 기본 Architecture가 정의되어 있습니다.
+- [x] Backend Layer 역할이 정의되어 있습니다.
+- [x] 내부 시스템과 외부 시스템의 경계가 정의되어 있습니다.
 
 ### Authentication / Authorization
 
-- [ ] LOCAL 인증 흐름이 정의되어 있습니다.
-- [ ] Google OAuth 흐름이 정의되어 있습니다.
-- [ ] Member / AuthAccount 책임이 구분되어 있습니다.
-- [ ] Spring Security 권한 구조가 정의되어 있습니다.
-- [ ] JWT 및 Token 정책이 최종 확정되어 있습니다.
+- [x] LOCAL 인증 흐름이 정의되어 있습니다.
+- [x] Google OAuth 흐름이 정의되어 있습니다.
+- [x] Member / AuthAccount 책임이 구분되어 있습니다.
+- [x] Spring Security 권한 구조가 정의되어 있습니다.
+- [x] JWT 및 Token 정책이 최종 확정되어 있습니다.
 
 ### Transaction / Concurrency
 
-- [ ] Reservation 시작 Transaction이 정의되어 있습니다.
-- [ ] Mock Payment Transaction이 정의되어 있습니다.
-- [ ] Reservation 취소 Transaction이 정의되어 있습니다.
-- [ ] Seat Hold 만료 Transaction이 정의되어 있습니다.
-- [ ] Seat 동시성 처리 방향이 정의되어 있습니다.
-- [ ] 동시성 테스트 방향이 정의되어 있습니다.
+- [x] Reservation 시작 Transaction이 정의되어 있습니다.
+- [x] Mock Payment Transaction이 정의되어 있습니다.
+- [x] Reservation 취소 Transaction이 정의되어 있습니다.
+- [x] Seat Hold 만료 Transaction이 정의되어 있습니다.
+- [x] Seat 동시성 처리 방향이 정의되어 있습니다.
+- [x] 동시성 테스트 방향이 정의되어 있습니다.
 
 ### Flight / Aircraft
 
-- [ ] Flight Number의 운항일 중복 기준이 정의되어 있습니다.
-- [ ] 출발 Airport Local Date 계산 기준이 정의되어 있습니다.
-- [ ] Aircraft Schedule Conflict 검증 방식이 정의되어 있습니다.
-- [ ] MVP Turnaround Time 60분 정책이 정의되어 있습니다.
-- [ ] 운항 일정 기반 Flight 자동 생성 구조가 정의되어 있습니다.
-- [ ] Flight 자동 생성 Rolling Window가 정의되어 있습니다.
-- [ ] Flight 자동 생성 Scheduler와 누락 보정 방식이 정의되어 있습니다.
-- [ ] CANCELLED Flight 재생성 방지 원칙이 정의되어 있습니다.
-- [ ] 운항 일정 변경이 기존 Flight를 덮어쓰지 않는 원칙이 정의되어 있습니다.
-- [ ] Admin 수동 Flight 수정이 자동 생성보다 우선하는 원칙이 정의되어 있습니다.
+- [x] Flight Number의 운항일 중복 기준이 정의되어 있습니다.
+- [x] 출발 Airport Local Date 계산 기준이 정의되어 있습니다.
+- [x] Aircraft Schedule Conflict 검증 방식이 정의되어 있습니다.
+- [x] MVP Turnaround Time 60분 정책이 정의되어 있습니다.
+- [x] 운항 일정 기반 Flight 자동 생성 구조가 정의되어 있습니다.
+- [x] Flight 자동 생성 Rolling Window가 정의되어 있습니다.
+- [x] Flight 자동 생성 Scheduler와 누락 보정 방식이 정의되어 있습니다.
+- [x] CANCELLED Flight 재생성 방지 원칙이 정의되어 있습니다.
+- [x] 운항 일정 변경이 기존 Flight를 덮어쓰지 않는 원칙이 정의되어 있습니다.
+- [x] Admin 수동 Flight 수정이 자동 생성보다 우선하는 원칙이 정의되어 있습니다.
 
 ### Time
 
-- [ ] Backend 시간 기준이 정의되어 있습니다.
-- [ ] Time Zone 처리 원칙이 정의되어 있습니다.
-- [ ] Database 시간 저장 기준이 확정되어 있습니다.
-- [ ] Flight `DEPARTED` 처리 방식이 정의되어 있습니다.
-- [ ] Seat Hold 만료 처리 방식이 정의되어 있습니다.
+- [x] Backend 시간 기준이 정의되어 있습니다.
+- [x] Time Zone 처리 원칙이 정의되어 있습니다.
+- [x] Database 시간 저장 기준이 확정되어 있습니다.
+- [x] Flight `DEPARTED` 처리 방식이 정의되어 있습니다.
+- [x] Seat Hold 만료 처리 방식이 정의되어 있습니다.
 
 ### Passenger / Passport
 
-- [ ] Passenger Normalize / Validation 방식이 정의되어 있습니다.
-- [ ] Passenger를 Reservation-scoped Snapshot으로 관리하는 원칙이 정의되어 있습니다.
-- [ ] Flight별 `AgeCategory` 계산 및 Snapshot 방식이 정의되어 있습니다.
-- [ ] Infant Companion의 Flight별 Validation 방식이 정의되어 있습니다.
-- [ ] AgeCategory별 Seat 필요 여부가 정의되어 있습니다.
-- [ ] 테스트용 Passport 생성 시점과 생성 방식이 정의되어 있습니다.
-- [ ] Passport Number Encryption 방식이 정의되어 있습니다.
-- [ ] Passport Number API / UI Masking 원칙이 정의되어 있습니다.
-- [ ] Passport Encryption Key 관리 원칙이 정의되어 있습니다.
+- [x] Passenger Normalize / Validation 방식이 정의되어 있습니다.
+- [x] Passenger를 Reservation-scoped Snapshot으로 관리하는 원칙이 정의되어 있습니다.
+- [x] Flight별 `AgeCategory` 계산 및 Snapshot 방식이 정의되어 있습니다.
+- [x] Infant Companion의 Flight별 Validation 방식이 정의되어 있습니다.
+- [x] AgeCategory별 Seat 필요 여부가 정의되어 있습니다.
+- [x] 테스트용 Passport 생성 시점과 생성 방식이 정의되어 있습니다.
+- [x] Passport Number Encryption 방식이 정의되어 있습니다.
+- [x] Passport Number API / UI Masking 원칙이 정의되어 있습니다.
+- [x] Passport Encryption Key 관리 원칙이 정의되어 있습니다.
 
 ### External / AI
 
-- [ ] External Flight API 호출 구조가 정의되어 있습니다.
-- [ ] 지원 Route 사전 검증 방식이 정의되어 있습니다.
-- [ ] External API 장애 격리 원칙이 정의되어 있습니다.
-- [ ] Cache 도입 원칙이 정의되어 있습니다.
-- [ ] AI 검색 Architecture가 정의되어 있습니다.
-- [ ] AI와 Application의 역할이 명확하게 분리되어 있습니다.
-- [ ] AI Hallucination 방지 원칙이 정의되어 있습니다.
+- [x] External Flight API 호출 구조가 정의되어 있습니다.
+- [x] 지원 Route 사전 검증 방식이 정의되어 있습니다.
+- [x] External API 장애 격리 원칙이 정의되어 있습니다.
+- [x] Cache 도입 원칙이 정의되어 있습니다.
+- [x] AI 검색 Architecture가 정의되어 있습니다.
+- [x] AI와 Application의 역할이 명확하게 분리되어 있습니다.
+- [x] AI Hallucination 방지 원칙이 정의되어 있습니다.
 
 ### Security / Logging
 
-- [ ] Secret 관리 원칙이 정의되어 있습니다.
-- [ ] Logging 금지 정보가 정의되어 있습니다.
-- [ ] 테스트용 Passenger 정보 보호 원칙이 정의되어 있습니다.
-- [ ] 관리자 Audit 대상이 정의되어 있습니다.
+- [x] Secret 관리 원칙이 정의되어 있습니다.
+- [x] Logging 금지 정보가 정의되어 있습니다.
+- [x] 테스트용 Passenger 정보 보호 원칙이 정의되어 있습니다.
+- [x] 관리자 Audit 대상이 정의되어 있습니다.
 
 ### Frontend / i18n
 
-- [ ] Backend와 Frontend의 책임이 구분되어 있습니다.
-- [ ] `ko` / `ja` Locale 관리 원칙이 정의되어 있습니다.
-- [ ] Locale 저장 방향이 정의되어 있습니다.
+- [x] Backend와 Frontend의 책임이 구분되어 있습니다.
+- [x] `ko` / `ja` Locale 관리 원칙이 정의되어 있습니다.
+- [x] Locale 저장 방향이 정의되어 있습니다.
 
 ### Infrastructure / Delivery
 
-- [ ] Local Docker 환경이 정의되어 있습니다.
-- [ ] CI 기본 구조가 정의되어 있습니다.
-- [ ] Human Gate가 유지됩니다.
-- [ ] AWS 배포 기본 방향이 정의되어 있습니다.
-- [ ] CD 도입 시점이 정의되어 있습니다.
+- [x] Local Docker 환경이 정의되어 있습니다.
+- [x] CI 기본 구조가 정의되어 있습니다.
+- [x] Human Gate가 유지됩니다.
+- [x] AWS 배포 기본 방향이 정의되어 있습니다.
+- [x] CD 도입 시점이 정의되어 있습니다.
 
 ### AI Development Workflow
 
-- [ ] AI Agent가 임의로 변경할 수 없는 기술 영역이 정의되어 있습니다.
-- [ ] Architecture 변경 시 Human 승인 절차가 정의되어 있습니다.
-- [ ] Implementer / Reviewer 역할이 분리되어 있습니다.
+- [x] AI Agent가 임의로 변경할 수 없는 기술 영역이 정의되어 있습니다.
+- [x] Architecture 변경 시 Human 승인 절차가 정의되어 있습니다.
+- [x] Implementer / Reviewer 역할이 분리되어 있습니다.
 
 ---
 

@@ -1319,14 +1319,26 @@ FlightSchedule 1 : N Flight
 하나의 FlightSchedule은
 하나 이상의 운항 요일을 가질 수 있습니다.
 
-Supporting Table 초안:
+Supporting Entity 초안:
 
 ```text
 flight_schedule_day
 --------------------------------
+id
 flight_schedule_id
 day_of_week
 ```
+
+Primary Key:
+
+```text
+id
+→ BIGINT
+→ AUTO_INCREMENT
+→ 단일 Primary Key
+```
+
+Composite Primary Key는 사용하지 않습니다.
 
 `day_of_week`은 다음 Canonical Enum 값을 사용합니다.
 
@@ -3135,7 +3147,7 @@ Application에서
 `successful_reservation_id`를 직접 설정하거나 수정하지 않습니다.
 
 구체적인 Constraint는
-18.5 및 21장에서 정의합니다.
+18.4 및 21장에서 정의합니다.
 
 ---
 
@@ -3211,7 +3223,7 @@ Application Business Validation으로 검증합니다.
 
 ---
 
-### 18.5 Payment 성공 이력 보호
+### 18.4 Payment 성공 이력 보호
 
 하나의 Reservation에서는
 성공한 Payment 이력이 최대 하나만 존재할 수 있습니다.
@@ -3294,7 +3306,7 @@ Database
 
 ---
 
-### 18.6 실패 이력
+### 18.5 실패 이력
 
 `FAILED` Payment는 삭제하거나 덮어쓰지 않습니다.
 
@@ -3303,7 +3315,7 @@ Database
 
 ---
 
-### 18.7 환불
+### 18.6 환불
 
 Reservation 취소로 Mock 환불이 발생하면
 성공한 Payment를:
@@ -4277,7 +4289,7 @@ UI Design에서 필요한 최소 정보를 제공합니다.
   "arrivalAt": "2026-09-10T11:50:00+09:00",
   "status": "SCHEDULED",
   "bookable": true,
-  "economyFare": 270000
+  "economyFare": 240000
 }
 ```
 
@@ -5256,35 +5268,120 @@ Backend는 다음을 검증합니다.
 
 ---
 
-## 36. SuperAdmin Master Data API
+## 36. Admin / SuperAdmin Master Data API
 
-SuperAdmin만 다음 변경 API를 사용할 수 있습니다.
+Admin과 SuperAdmin은
+Airport, Route, Aircraft 및 AircraftSeat Master Data를 조회할 수 있습니다.
 
-#### Airport
+Master Data의 생성, 수정 및 비활성화는
+SuperAdmin만 수행할 수 있습니다.
+
+### 36.1 Airport
+
+Admin / SuperAdmin 조회:
+
+```text
+GET /api/v1/admin/airports
+GET /api/v1/admin/airports/{airportId}
+```
+
+SuperAdmin 변경:
 
 ```text
 POST  /api/v1/admin/airports
 PATCH /api/v1/admin/airports/{airportId}
 ```
 
-#### Route
+일반 KOKU Flight 검색 Form에서
+Guest와 Member가 지원 Airport 목록을 조회할 수 있도록
+공개 조회 API를 제공합니다.
+
+```text
+GET /api/v1/airports
+```
+
+공개 Airport 조회 API에서는
+활성 상태의 Airport만 반환합니다.
+
+### 36.2 Route
+
+Admin / SuperAdmin 조회:
+
+```text
+GET /api/v1/admin/routes
+GET /api/v1/admin/routes/{routeId}
+```
+
+SuperAdmin 변경:
 
 ```text
 POST  /api/v1/admin/routes
 PATCH /api/v1/admin/routes/{routeId}
 ```
 
-#### Aircraft
+### 36.3 Aircraft
+
+Admin / SuperAdmin 조회:
+
+```text
+GET /api/v1/admin/aircraft
+GET /api/v1/admin/aircraft/{aircraftId}
+```
+
+SuperAdmin 변경:
 
 ```text
 POST  /api/v1/admin/aircraft
 PATCH /api/v1/admin/aircraft/{aircraftId}
 ```
 
+### 36.4 AircraftSeat
+
+Admin / SuperAdmin은
+특정 Aircraft의 Seat Configuration을 조회할 수 있습니다.
+
+```text
+GET /api/v1/admin/aircraft/{aircraftId}/seats
+GET /api/v1/admin/aircraft/{aircraftId}/seats/{aircraftSeatId}
+```
+
+AircraftSeat의 생성, 수정 및 비활성화는
+SuperAdmin만 수행할 수 있습니다.
+
+```text
+POST  /api/v1/admin/aircraft/{aircraftId}/seats
+PATCH /api/v1/admin/aircraft/{aircraftId}/seats/{aircraftSeatId}
+```
+
+AircraftSeat를 물리 DELETE하지 않고
+`active`와 `deactivated_at`을 사용하여 비활성화합니다.
+
+AircraftSeat 생성 또는 수정 시 Backend는 최소 다음을 검증합니다.
+
+```text
+Aircraft 존재 여부
+Aircraft 활성 상태
+Seat Number 중복 여부
+Row / Column 값 유효성
+SeatClass 유효성
+```
+
+동일 Aircraft에서는 다음 Constraint를 만족해야 합니다.
+
+```text
+UNIQUE(
+    aircraft_id,
+    seat_no
+)
+```
+
+이미 생성된 Flight의 Seat Snapshot은
+AircraftSeat 변경으로 자동 수정하지 않습니다.
+
 Master Data는
 물리 DELETE보다 비활성화를 사용합니다.
 
-구체적인 Endpoint에서 `/admin`과 `/superadmin`을 구분할지는
+구체적인 Endpoint에서 `/admin`과 `/superadmin`을 분리할지는
 Spring Security 권한 구조 및 API Naming 검토 후 결정합니다.
 
 ---
@@ -5529,6 +5626,8 @@ Cursor Pagination이 필요하다고 판단되면 이후 변경할 수 있습니
 | 내 Reservation 조회 | X | O | 자신의 예약에 한함 | 자신의 예약에 한함 |
 | Admin Reservation 조회 | X | X | O | O |
 | Flight 관리 | X | X | O | O |
+| Public Airport 조회 | O | O | O | O |
+| Admin Master Data 조회 | X | X | O | O |
 | Master Data 변경 | X | X | X | O |
 | Reservation 강제 취소 | X | X | X | O |
 
@@ -5816,81 +5915,81 @@ MVP Data & API Design이 완료된 것으로 판단합니다.
 
 ### Data Model
 
-- [ ] 핵심 Entity가 정의되어 있습니다.
-- [ ] Member와 AuthAccount 관계가 정의되어 있습니다.
-- [ ] Airport와 Route 관계가 정의되어 있습니다.
-- [ ] Aircraft와 Seat Configuration 관계가 정의되어 있습니다.
-- [ ] Flight와 Seat 관계가 정의되어 있습니다.
-- [ ] Reservation과 Flight 관계가 정의되어 있습니다.
-- [ ] Reservation과 Passenger 관계가 정의되어 있습니다.
-- [ ] Passenger의 Flight별 Seat 구조가 정의되어 있습니다.
-- [ ] Infant Companion 표현 방식이 정의되어 있습니다.
-- [ ] Reservation과 Payment 관계가 정의되어 있습니다.
-- [ ] Audit Log 구조가 정의되어 있습니다.
-- [ ] FlightSchedule과 Flight 관계가 정의되어 있습니다.
-- [ ] FlightSchedule의 운항 요일 구조가 정의되어 있습니다.
+- [x] 핵심 Entity가 정의되어 있습니다.
+- [x] Member와 AuthAccount 관계가 정의되어 있습니다.
+- [x] Airport와 Route 관계가 정의되어 있습니다.
+- [x] Aircraft와 Seat Configuration 관계가 정의되어 있습니다.
+- [x] Flight와 Seat 관계가 정의되어 있습니다.
+- [x] Reservation과 Flight 관계가 정의되어 있습니다.
+- [x] Reservation과 Passenger 관계가 정의되어 있습니다.
+- [x] Passenger의 Flight별 Seat 구조가 정의되어 있습니다.
+- [x] Infant Companion 표현 방식이 정의되어 있습니다.
+- [x] Reservation과 Payment 관계가 정의되어 있습니다.
+- [x] Audit Log 구조가 정의되어 있습니다.
+- [x] FlightSchedule과 Flight 관계가 정의되어 있습니다.
+- [x] FlightSchedule의 운항 요일 구조가 정의되어 있습니다.
 
 ### Constraint
 
-- [ ] Member Email Unique가 정의되어 있습니다.
-- [ ] Airport IATA Unique가 정의되어 있습니다.
-- [ ] Route 중복 방지가 정의되어 있습니다.
-- [ ] Flight Seat 중복 방지가 정의되어 있습니다.
-- [ ] Reservation 번호 Unique가 정의되어 있습니다.
-- [ ] Payment Idempotency Unique가 정의되어 있습니다.
-- [ ] 필요한 Foreign Key가 정의되어 있습니다.
-- [ ] Flight Number + Departure Local Date Unique가 정의되어 있습니다.
-- [ ] FlightSchedule + Departure Local Date 중복 생성 방지가 정의되어 있습니다.
-- [ ] FlightSchedule 운항 요일 중복 방지가 정의되어 있습니다.
-- [ ] Aircraft Schedule Conflict Validation 구조가 정의되어 있습니다.
+- [x] Member Email Unique가 정의되어 있습니다.
+- [x] Airport IATA Unique가 정의되어 있습니다.
+- [x] Route 중복 방지가 정의되어 있습니다.
+- [x] Flight Seat 중복 방지가 정의되어 있습니다.
+- [x] Reservation 번호 Unique가 정의되어 있습니다.
+- [x] Payment Idempotency Unique가 정의되어 있습니다.
+- [x] 필요한 Foreign Key가 정의되어 있습니다.
+- [x] Flight Number + Departure Local Date Unique가 정의되어 있습니다.
+- [x] FlightSchedule + Departure Local Date 중복 생성 방지가 정의되어 있습니다.
+- [x] FlightSchedule 운항 요일 중복 방지가 정의되어 있습니다.
+- [x] Aircraft Schedule Conflict Validation 구조가 정의되어 있습니다.
 
 ### Reservation
 
-- [ ] ONE_WAY / ROUND_TRIP Mapping이 정의되어 있습니다.
-- [ ] Journey Role 표현 방식이 정의되어 있습니다.
-- [ ] PENDING 생성 시 운임 저장 구조가 정의되어 있습니다.
-- [ ] Hold 만료시각 저장 구조가 정의되어 있습니다.
-- [ ] Reservation 번호 생성 구조가 정의되어 있습니다.
+- [x] ONE_WAY / ROUND_TRIP Mapping이 정의되어 있습니다.
+- [x] Journey Role 표현 방식이 정의되어 있습니다.
+- [x] PENDING 생성 시 운임 저장 구조가 정의되어 있습니다.
+- [x] Hold 만료시각 저장 구조가 정의되어 있습니다.
+- [x] Reservation 번호 생성 구조가 정의되어 있습니다.
 
 ### Passenger
 
-- [ ] Passenger 기본정보 Column이 정의되어 있습니다.
-- [ ] 연령을 Flight별로 계산하는 구조가 정의되어 있습니다.
-- [ ] Test Passport 저장 구조가 정의되어 있습니다.
-- [ ] Test Passport 보호 정책이 확정되어 있습니다.
-- [ ] Child Seat Validation에 필요한 데이터가 정의되어 있습니다.
-- [ ] Infant Companion 관계가 정의되어 있습니다.
+- [x] Passenger 기본정보 Column이 정의되어 있습니다.
+- [x] 연령을 Flight별로 계산하는 구조가 정의되어 있습니다.
+- [x] Test Passport 저장 구조가 정의되어 있습니다.
+- [x] Test Passport 보호 정책이 확정되어 있습니다.
+- [x] Child Seat Validation에 필요한 데이터가 정의되어 있습니다.
+- [x] Infant Companion 관계가 정의되어 있습니다.
 
 ### Payment
 
-- [ ] Payment가 개별 결제 시도를 나타내도록 정의되어 있습니다.
-- [ ] Payment 최대 3회 구조가 정의되어 있습니다.
-- [ ] Payment Idempotency 구조가 정의되어 있습니다.
-- [ ] SUCCESS / FAILED / CANCELLED / REFUNDED 상태 처리가 정의되어 있습니다.
+- [x] Payment가 개별 결제 시도를 나타내도록 정의되어 있습니다.
+- [x] Payment 최대 3회 구조가 정의되어 있습니다.
+- [x] Payment Idempotency 구조가 정의되어 있습니다.
+- [x] SUCCESS / FAILED / CANCELLED / REFUNDED 상태 처리가 정의되어 있습니다.
 
 ### API
 
-- [ ] 인증 API Contract가 정의되어 있습니다.
-- [ ] Member API Contract가 정의되어 있습니다.
-- [ ] Flight 검색 / 상세 API가 정의되어 있습니다.
-- [ ] Seat 조회 API가 정의되어 있습니다.
-- [ ] Reservation 생성 API가 정의되어 있습니다.
-- [ ] Reservation 조회 / 취소 API가 정의되어 있습니다.
-- [ ] Mock Payment API가 정의되어 있습니다.
-- [ ] Admin / SuperAdmin API가 정의되어 있습니다.
-- [ ] External Flight API Contract가 정의되어 있습니다.
-- [ ] AI Flight Search API Contract가 정의되어 있습니다.
-- [ ] Error Response Contract가 정의되어 있습니다.
-- [ ] Admin FlightSchedule 관리 API가 정의되어 있습니다.
-- [ ] 제한적인 Flight 물리 삭제 API 조건이 정의되어 있습니다.
+- [x] 인증 API Contract가 정의되어 있습니다.
+- [x] Member API Contract가 정의되어 있습니다.
+- [x] Flight 검색 / 상세 API가 정의되어 있습니다.
+- [x] Seat 조회 API가 정의되어 있습니다.
+- [x] Reservation 생성 API가 정의되어 있습니다.
+- [x] Reservation 조회 / 취소 API가 정의되어 있습니다.
+- [x] Mock Payment API가 정의되어 있습니다.
+- [x] Admin / SuperAdmin API가 정의되어 있습니다.
+- [x] External Flight API Contract가 정의되어 있습니다.
+- [x] AI Flight Search API Contract가 정의되어 있습니다.
+- [x] Error Response Contract가 정의되어 있습니다.
+- [x] Admin FlightSchedule 관리 API가 정의되어 있습니다.
+- [x] 제한적인 Flight 물리 삭제 API 조건이 정의되어 있습니다.
 
 ### Security / Boundary
 
-- [ ] 내부 Primary Key와 공개 식별자가 구분되어 있습니다.
-- [ ] Password Hash가 API에 노출되지 않습니다.
-- [ ] Passport 정보 노출 정책이 정의되어 있습니다.
-- [ ] 외부 Flight Data와 내부 Flight Entity가 분리되어 있습니다.
-- [ ] AI가 Transaction API를 직접 실행하지 않습니다.
+- [x] 내부 Primary Key와 공개 식별자가 구분되어 있습니다.
+- [x] Password Hash가 API에 노출되지 않습니다.
+- [x] Passport 정보 노출 정책이 정의되어 있습니다.
+- [x] 외부 Flight Data와 내부 Flight Entity가 분리되어 있습니다.
+- [x] AI가 Transaction API를 직접 실행하지 않습니다.
 
 ---
 

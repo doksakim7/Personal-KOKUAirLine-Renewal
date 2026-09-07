@@ -27,113 +27,114 @@ ERD에서도 Draft 상태로 표현합니다.
 erDiagram
 
     MEMBER {
-    BIGINT id PK
-    VARCHAR email UK
-    VARCHAR role
-    VARCHAR status
-    DATETIME(6) created_at
-    DATETIME(6) updated_at
+        BIGINT id PK
+        VARCHAR email UK
+        VARCHAR role
+        VARCHAR status
+        DATETIME(6) created_at
+        DATETIME(6) updated_at
     }
 
     AUTH_ACCOUNT {
-    BIGINT id PK
-    BIGINT member_id FK
-    VARCHAR provider
-    VARCHAR provider_subject
-    VARCHAR password_hash
-    DATETIME(6) created_at
-    DATETIME(6) updated_at
+        BIGINT id PK
+        BIGINT member_id FK
+        VARCHAR provider
+        VARCHAR provider_subject
+        VARCHAR password_hash
+        DATETIME(6) created_at
+        DATETIME(6) updated_at
     }
 
     AIRPORT {
-    BIGINT id PK
-    VARCHAR(3) iata_code UK
-    VARCHAR country_code
-    VARCHAR(50) timezone
-    BOOLEAN active
-    DATETIME(6) deactivated_at
-    DATETIME(6) created_at
-    DATETIME(6) updated_at
+        BIGINT id PK
+        VARCHAR(3) iata_code UK
+        VARCHAR country_code
+        VARCHAR(50) timezone
+        BOOLEAN active
+        DATETIME(6) deactivated_at
+        DATETIME(6) created_at
+        DATETIME(6) updated_at
     }
 
     ROUTE {
-    BIGINT id PK
-    BIGINT departure_airport_id FK
-    BIGINT arrival_airport_id FK
-    BOOLEAN active
-    DATETIME(6) deactivated_at
-    DATETIME(6) created_at
-    DATETIME(6) updated_at
+        BIGINT id PK
+        BIGINT departure_airport_id FK
+        BIGINT arrival_airport_id FK
+        BOOLEAN active
+        DATETIME(6) deactivated_at
+        DATETIME(6) created_at
+        DATETIME(6) updated_at
     }
 
     AIRCRAFT {
-    BIGINT id PK
-    VARCHAR aircraft_code
-    VARCHAR model_name
-    BOOLEAN active
-    DATETIME(6) deactivated_at
-    DATETIME(6) created_at
-    DATETIME(6) updated_at
+        BIGINT id PK
+        VARCHAR aircraft_code
+        VARCHAR model_name
+        BOOLEAN active
+        DATETIME(6) deactivated_at
+        DATETIME(6) created_at
+        DATETIME(6) updated_at
     }
 
     AIRCRAFT_SEAT {
-    BIGINT id PK
-    BIGINT aircraft_id FK
-    VARCHAR seat_no
-    INT row_no
-    VARCHAR seat_column
-    VARCHAR seat_class
-    BOOLEAN active
-    DATETIME(6) deactivated_at
-    DATETIME(6) created_at
-    DATETIME(6) updated_at
+        BIGINT id PK
+        BIGINT aircraft_id FK
+        VARCHAR seat_no
+        INT row_no
+        VARCHAR seat_column
+        VARCHAR seat_class
+        BOOLEAN active
+        DATETIME(6) deactivated_at
+        DATETIME(6) created_at
+        DATETIME(6) updated_at
     }
 
     FLIGHT_SCHEDULE {
-    BIGINT id PK
-    VARCHAR flight_number
-    BIGINT route_id FK
-    BIGINT default_aircraft_id FK
-    TIME departure_local_time
-    TIME arrival_local_time
-    INT arrival_day_offset
-    BOOLEAN active
-    DATETIME(6) deactivated_at
-    DATETIME(6) created_at
-    DATETIME(6) updated_at
+        BIGINT id PK
+        VARCHAR flight_number
+        BIGINT route_id FK
+        BIGINT default_aircraft_id FK
+        TIME departure_local_time
+        TIME arrival_local_time
+        INT arrival_day_offset
+        BOOLEAN active
+        DATETIME(6) deactivated_at
+        DATETIME(6) created_at
+        DATETIME(6) updated_at
     }
 
     FLIGHT_SCHEDULE_DAY {
-    BIGINT flight_schedule_id FK
-    VARCHAR day_of_week
+        BIGINT id PK
+        BIGINT flight_schedule_id FK
+        VARCHAR day_of_week
     }
 
-        FLIGHT {
-    BIGINT id PK
-    BIGINT flight_schedule_id FK
-    VARCHAR flight_number
-    BIGINT route_id FK
-    BIGINT aircraft_id FK
-    DATE departure_local_date
-    DATETIME(6) departure_at
-    DATETIME(6) arrival_at
-    VARCHAR status
-    VARCHAR cancellation_reason
-    DATETIME(6) created_at
-    DATETIME(6) updated_at
+    FLIGHT {
+        BIGINT id PK
+        BIGINT flight_schedule_id FK
+        VARCHAR flight_number
+        BIGINT route_id FK
+        BIGINT aircraft_id FK
+        DATE departure_local_date
+        DATETIME(6) departure_at
+        DATETIME(6) arrival_at
+        VARCHAR status
+        VARCHAR cancellation_reason
+        DATETIME(6) created_at
+        DATETIME(6) updated_at
     }
 
     SEAT {
-    BIGINT id PK
-    BIGINT flight_id FK
-    VARCHAR seat_no
-    INT row_no
-    VARCHAR seat_column
-    VARCHAR seat_class
-    VARCHAR status
-    BIGINT held_reservation_id FK
-    DATETIME(6) created_at
-    DATETIME(6) updated_at
+        BIGINT id PK
+        BIGINT flight_id FK
+        VARCHAR seat_no
+        INT row_no
+        VARCHAR seat_column
+        VARCHAR seat_class
+        VARCHAR status
+        BIGINT held_reservation_id FK
+        DATETIME(6) created_at
+        DATETIME(6) updated_at
     }
 
     MEMBER ||--o{ AUTH_ACCOUNT : has
@@ -142,7 +143,7 @@ erDiagram
     AIRPORT ||--o{ ROUTE : departure
     AIRPORT ||--o{ ROUTE : arrival
 
-        ROUTE ||--o{ FLIGHT_SCHEDULE : defines
+    ROUTE ||--o{ FLIGHT_SCHEDULE : defines
     ROUTE ||--o{ FLIGHT : contains
 
     AIRCRAFT ||--o{ AIRCRAFT_SEAT : configures
@@ -157,83 +158,83 @@ erDiagram
     RESERVATION o|--o{ SEAT : temporarily_holds
 
     RESERVATION {
-    BIGINT id PK
-    VARCHAR reservation_no UK
-    BIGINT member_id FK
-    VARCHAR trip_type
-    VARCHAR status
-    DECIMAL(15,0) total_amount
-    DATETIME(6) hold_expires_at
-    VARCHAR cancel_reason
-    DATETIME(6) created_at
-    DATETIME(6) updated_at
+        BIGINT id PK
+        VARCHAR reservation_no UK
+        BIGINT member_id FK
+        VARCHAR trip_type
+        VARCHAR status
+        DECIMAL(15,0) total_amount
+        DATETIME(6) hold_expires_at
+        VARCHAR cancel_reason
+        DATETIME(6) created_at
+        DATETIME(6) updated_at
     }
 
     RESERVATION_FLIGHT {
-    BIGINT id PK
-    BIGINT reservation_id FK
-    BIGINT flight_id FK
-    VARCHAR journey_role
-    INT sequence
-    DATETIME(6) created_at
+        BIGINT id PK
+        BIGINT reservation_id FK
+        BIGINT flight_id FK
+        VARCHAR journey_role
+        INT sequence
+        DATETIME(6) created_at
     }
 
     PASSENGER {
-    BIGINT id PK
-    VARCHAR(50) last_name
-    VARCHAR(50) first_name
-    DATE birth_date
-    VARCHAR(10) gender
-    CHAR(2) nationality
-    VARBINARY(128) test_passport_no_ciphertext
-    BINARY(12) test_passport_no_iv
-    CHAR(2) test_passport_country
-    DATE test_passport_expiry_date
-    DATETIME(6) created_at
-    DATETIME(6) updated_at
+        BIGINT id PK
+        VARCHAR(50) last_name
+        VARCHAR(50) first_name
+        DATE birth_date
+        VARCHAR(10) gender
+        CHAR(2) nationality
+        VARBINARY(128) test_passport_no_ciphertext
+        BINARY(12) test_passport_no_iv
+        CHAR(2) test_passport_country
+        DATE test_passport_expiry_date
+        DATETIME(6) created_at
+        DATETIME(6) updated_at
     }
 
     RESERVATION_PASSENGER {
-    BIGINT id PK
-    BIGINT reservation_id FK
-    BIGINT passenger_id FK
-    INT sequence
-    DATETIME(6) created_at
+        BIGINT id PK
+        BIGINT reservation_id FK
+        BIGINT passenger_id FK
+        INT sequence
+        DATETIME(6) created_at
     }
 
     PASSENGER_FLIGHT {
-    BIGINT id PK
-    BIGINT reservation_id FK
-    BIGINT passenger_id FK
-    BIGINT flight_id FK
-    BIGINT seat_id FK
-    BIGINT companion_passenger_id FK
-    VARCHAR(10) age_category
-    DECIMAL(15,0) fare_amount
-    DATETIME(6) created_at
+        BIGINT id PK
+        BIGINT reservation_id FK
+        BIGINT passenger_id FK
+        BIGINT flight_id FK
+        BIGINT seat_id FK
+        BIGINT companion_passenger_id FK
+        VARCHAR(10) age_category
+        DECIMAL(15,0) fare_amount
+        DATETIME(6) created_at
     }
 
     PAYMENT {
-    BIGINT id PK
-    BIGINT reservation_id FK
-    INT attempt_no
-    VARCHAR(20) status
-    DECIMAL(15,0) amount
-    VARCHAR(100) idempotency_key
-    CHAR(64) request_hash
-    BIGINT successful_reservation_id UK
-    DATETIME(6) created_at
-    DATETIME(6) updated_at
+        BIGINT id PK
+        BIGINT reservation_id FK
+        INT attempt_no
+        VARCHAR(20) status
+        DECIMAL(15,0) amount
+        VARCHAR(100) idempotency_key
+        CHAR(64) request_hash
+        BIGINT successful_reservation_id UK
+        DATETIME(6) created_at
+        DATETIME(6) updated_at
     }
 
     AUDIT_LOG {
-    BIGINT id PK
-    BIGINT actor_member_id FK
-    VARCHAR action_type
-    VARCHAR target_type
-    BIGINT target_id
-    VARCHAR reason
-    DATETIME(6) created_at
+        BIGINT id PK
+        BIGINT actor_member_id FK
+        VARCHAR action_type
+        VARCHAR target_type
+        BIGINT target_id
+        VARCHAR reason
+        DATETIME(6) created_at
     }
 
     RESERVATION ||--|{ RESERVATION_FLIGHT : contains

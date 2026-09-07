@@ -470,7 +470,9 @@ UNAVAILABLE → AVAILABLE
 
 Figma Make는 편도와 왕복 Reservation의 Happy Path를 구분하여 이해해야 합니다.
 
-#### Flight 선택 완료 UI 통일
+---
+
+### 10.1 Flight 선택 완료 UI 통일
 
 Figma Make는 `ONE_WAY`와 `ROUND_TRIP`에서
 Flight 선택 완료 후 동일한 UX 패턴을 사용합니다.
@@ -491,7 +493,7 @@ Desktop과 Mobile 모두
 
 ---
 
-### 10.1 편도 예약
+### 10.2 편도 예약
 
 ```text
 Home
@@ -534,7 +536,7 @@ Figma Make는 ONE_WAY Flight 선택과 예약 절차 시작을
 
 ---
 
-### 10.2 왕복 예약
+### 10.3 왕복 예약
 
 ```text
 Home
@@ -668,7 +670,7 @@ Flight 선택 이전에는
 
 ---
 
-### 10.3 Responsive Reservation Step
+### 10.4 Responsive Reservation Step
 
 Desktop에서는 다음과 같이 전체 Step을 가로로 표시할 수 있습니다.
 
@@ -692,7 +694,7 @@ ROUND_TRIP의 Seat 단계에서는
 
 ---
 
-### 10.4 Reservation 번호 표시
+### 10.5 Reservation 번호 표시
 
 `PENDING` Reservation이 정상적으로 생성된 이후에는
 Domain Policy에서 정의한 공개 Reservation 번호를 사용자에게 표시합니다.
@@ -1184,7 +1186,7 @@ SeatClass
 ECONOMY
 
 확정 운임
-270,000원
+240,000원
 ```
 
 검색 단계의 `ECONOMY` 기준 예상 운임과

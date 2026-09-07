@@ -509,6 +509,63 @@ Payment 성공 이력
 → Reservation당 SUCCESS / REFUNDED 이력 최대 1개
 ```
 
+FlightScheduleDay 관련 Data 정책도 확정되었습니다.
+
+```text
+FlightScheduleDay
+→ 명시적 Entity
+→ BIGINT id 단일 Primary Key
+
+Composite Primary Key
+→ 사용하지 않음
+
+운항 요일 중복 방지
+→ UNIQUE(
+    flight_schedule_id,
+    day_of_week
+)
+```
+
+Master Data 관련 API 정책도 확정되었습니다.
+
+```text
+Public Airport 조회
+→ Guest / Member / Admin / SuperAdmin
+→ 활성 Airport만 조회
+
+Admin / SuperAdmin
+→ Airport 조회
+→ Route 조회
+→ Aircraft 조회
+→ AircraftSeat Configuration 조회
+
+SuperAdmin
+→ Airport 생성 / 수정 / 비활성화
+→ Route 생성 / 수정 / 비활성화
+→ Aircraft 생성 / 수정 / 비활성화
+→ AircraftSeat 생성 / 수정 / 비활성화
+
+AircraftSeat
+→ 물리 DELETE하지 않음
+→ active + deactivated_at 사용
+
+기존 Flight Seat Snapshot
+→ AircraftSeat Master Data 변경으로 자동 수정하지 않음
+```
+
+API Authorization의 기본 방향은 다음과 같이 정리되었습니다.
+
+```text
+Public Airport 조회
+→ 모든 Role 허용
+
+Admin Master Data 조회
+→ Admin / SuperAdmin
+
+Master Data 변경
+→ SuperAdmin
+```
+
 ---
 
 ### 3.6 ERD
@@ -541,6 +598,8 @@ Draft 작성 완료
 - Test Passport Number의 AES-GCM 암호화 저장 구조
 - `FlightSchedule`
 - `FlightScheduleDay`
+- `FlightScheduleDay.id` → `BIGINT` 단일 Primary Key
+- `FlightScheduleDay(flight_schedule_id, day_of_week)` Unique Constraint
 - Flight의 `flight_schedule_id`
 - Flight의 `departure_local_date`
 - Flight Number + Departure Local Date Unique
@@ -1464,10 +1523,14 @@ SCHEDULED
 +
 미출발
 +
-Reservation 연결 이력 없음
+Reservation 연결 이력 = 0건
 +
 운영 이력 보존이 필요한 Flight가 아님
 ```
+
+과거에 Reservation이 한 번이라도 연결된 Flight는
+현재 해당 Reservation이 모두 `CANCELLED` 상태이더라도
+물리적으로 삭제하지 않습니다.
 
 #### 영향 문서
 
@@ -3022,6 +3085,11 @@ Architecture 또는 Data Policy를 직접 확정하지 않습니다.
 - [ ] AI에 전달할 최대 Flight 후보 수
 - [ ] AI Timeout
 - [ ] AI Retry 여부
+
+### Audit
+
+- [ ] Audit Target 구조 최종 확정
+- [ ] Audit 변경 전 / 후 값 저장 여부
 
 ### Infrastructure
 

@@ -916,7 +916,7 @@ ICN                 NRT
 2026.09.10
 
 ECONOMY 기준 예상 운임
-270,000원
+240,000원
 
 예약 가능
 
@@ -971,7 +971,7 @@ ICN → NGO
 09:30 → 11:50
 
 ECONOMY 기준 예상 운임
-270,000원
+240,000원
 ```
 
 Flight 선택 완료 후 인증 상태에 따라
@@ -1504,34 +1504,9 @@ Reservation은 한 명 이상의 Passenger를 포함할 수 있습니다.
 
 Passenger별로 다음 정보를 입력합니다.
 
-### 14.1 ROUND_TRIP Flight Summary
+---
 
-`ROUND_TRIP` Passenger 정보 입력 화면에서는
-현재 Reservation에 포함된 출국 Flight와 귀국 Flight의 요약 정보를 모두 표시합니다.
-
-두 Flight는 하나의 `ROUND_TRIP` Reservation에 포함된 여정으로 표현하며,
-귀국 Flight만 단독으로 표시하지 않습니다.
-
-최소 다음 정보를 구분하여 표시합니다.
-
-- 출국 Flight
-  - Flight Number
-  - 출발 / 도착 Airport
-  - 출발 Date
-  - 출발 / 도착 Time
-- 귀국 Flight
-  - Flight Number
-  - 출발 / 도착 Airport
-  - 출발 Date
-  - 출발 / 도착 Time
-
-Desktop에서는 두 Flight Summary를 나란히 또는 명확하게 구분된 영역으로 표현할 수 있으며,
-Mobile에서는 출국 Flight → 귀국 Flight 순서의 1 Column Layout으로 배치할 수 있습니다.
-
-Passenger 구성은 출국 Flight와 귀국 Flight에 공통으로 적용하며,
-Flight별로 별도의 Passenger 입력 Form을 제공하지 않습니다.
-
-#### 기본 정보
+### 14.1 기본 정보
 
 - 테스트용 영문 성 (여권 영문명 형식)
 - 테스트용 영문 이름 (여권 영문명 형식)
@@ -1539,7 +1514,9 @@ Flight별로 별도의 Passenger 입력 Form을 제공하지 않습니다.
 - 성별
 - 국적
 
-#### 테스트용 여권 정보
+---
+
+### 14.2 테스트용 여권 정보
 
 Passenger 입력 화면에서는
 사용자가 실제 Passport 정보를 입력하지 않습니다.
@@ -1573,11 +1550,11 @@ Seat 선택 및 Reservation 시작이 정상적으로 처리되어
 
 대신 다음 안내를 제공합니다.
 
-> *본 서비스는 포트폴리오용 가상 항공사 서비스입니다.*
+> **본 서비스는 포트폴리오용 가상 항공사 서비스입니다.**
 >
-> *실제 탑승객의 개인정보나 실제 여권 정보를 입력하지 마세요.*
+> **실제 탑승객의 개인정보나 실제 여권 정보를 입력하지 마세요.**
 >
-> *테스트용 여권 정보는 예약 시작 성공 시 시스템에서 자동 생성됩니다.*
+> **테스트용 여권 정보는 예약 시작 성공 시 시스템에서 자동 생성됩니다.**
 
 `PENDING` Reservation 생성 이후의
 예약 확인 및 Reservation 상세 화면에서는
@@ -1589,7 +1566,36 @@ Frontend에서 원문 Passport Number를 취급하지 않습니다.
 
 ---
 
-### 14.2 Passenger 추가 및 삭제
+### 14.3 ROUND_TRIP Flight Summary
+
+`ROUND_TRIP` Passenger 정보 입력 화면에서는
+현재 Reservation에 포함된 출국 Flight와 귀국 Flight의 요약 정보를 모두 표시합니다.
+
+두 Flight는 하나의 `ROUND_TRIP` Reservation에 포함된 여정으로 표현하며,
+귀국 Flight만 단독으로 표시하지 않습니다.
+
+최소 다음 정보를 구분하여 표시합니다.
+
+- 출국 Flight
+  - Flight Number
+  - 출발 / 도착 Airport
+  - 출발 Date
+  - 출발 / 도착 Time
+- 귀국 Flight
+  - Flight Number
+  - 출발 / 도착 Airport
+  - 출발 Date
+  - 출발 / 도착 Time
+
+Desktop에서는 두 Flight Summary를 나란히 또는 명확하게 구분된 영역으로 표현할 수 있으며,
+Mobile에서는 출국 Flight → 귀국 Flight 순서의 1 Column Layout으로 배치할 수 있습니다.
+
+Passenger 구성은 출국 Flight와 귀국 Flight에 공통으로 적용하며,
+Flight별로 별도의 Passenger 입력 Form을 제공하지 않습니다.
+
+---
+
+### 14.4 Passenger 추가 및 삭제
 
 하나의 Reservation에는 여러 Passenger가 포함될 수 있으므로
 사용자는 Passenger 입력 화면에서 탑승객을 추가하거나 삭제할 수 있습니다.
@@ -1771,33 +1777,42 @@ KO101
 ICN → NRT
 
 Passenger 1
+
 KIM JIHUN
 
 Seat
+
 12A
 
 SeatClass
+
 ECONOMY
 
 확정 운임
-270,000원
+
+240,000원
 
 
 Passenger 2
+
 KIM MINSU (Child)
 
 Seat
+
 12B
 
 SeatClass
+
 PREMIUM_ECONOMY
 
 확정 운임
-210,600원
+
+187,200원
 
 
 최종 Mock 결제 금액
-480,600원
+
+427,200원
 
 Hold 남은 시간
 00:42:31
@@ -3242,7 +3257,7 @@ KO101
 09:30 ICN ---------------------- 11:50 NRT
 
 ECONOMY 기준 예상 운임
-270,000원
+240,000원
 
 예약 가능
 
@@ -3253,6 +3268,9 @@ ECONOMY 기준 예상 운임
 KO205
 
 14:00 ICN ---------------------- 16:20 NRT
+
+ECONOMY 기준 예상 운임
+220,000원
 
 예약 마감
 
@@ -3274,7 +3292,7 @@ KO101
 09:30 → 11:50
 
 ECONOMY 기준 예상 운임
-270,000원
+240,000원
 [선택]
 
 --------------------------------
@@ -3290,7 +3308,7 @@ KO102
 17:00 → 19:30
 
 ECONOMY 기준 예상 운임
-270,000원
+220,000원
 [선택]
 ```
 
@@ -3355,7 +3373,7 @@ SeatClass
 BUSINESS / BUSINESS
 
 최종 Mock 결제 금액
-480,000원
+768,000원
 
 남은 Hold 시간
 00:31:52
@@ -3392,7 +3410,7 @@ KIM MINSU
 Seat 1B / BUSINESS
 
 Reservation 금액
-480,000원
+768,000원
 
 Payment
 결제 완료
@@ -3518,7 +3536,7 @@ KO101
 11:50 NRT
 
 ECONOMY 기준 예상 운임
-270,000원
+240,000원
 
 예약 가능
 
@@ -3534,7 +3552,7 @@ KO205
 16:20 NRT
 
 ECONOMY 기준 예상 운임
-270,000원
+220,000원
 
 예약 마감
 
@@ -3555,7 +3573,7 @@ KO101
 09:30 → 11:50
 
 ECONOMY 기준 예상 운임
-270,000원
+240,000원
 
 [출국편 선택]
 
@@ -3575,7 +3593,7 @@ KO102
 17:00 → 19:30
 
 ECONOMY 기준 예상 운임
-270,000원
+220,000원
 
 [귀국편 선택]
 ```
@@ -3638,7 +3656,7 @@ SeatClass
 BUSINESS / BUSINESS
 
 최종 Mock 결제 금액
-480,000원
+768,000원
 
 Hold 남은 시간
 00:31:52
@@ -3680,40 +3698,40 @@ Hold 남은 시간
 
 다음 조건을 충족하면 MVP UI 설계가 완료된 것으로 판단합니다.
 
-- [ ] Guest 주요 화면이 정의되어 있습니다.
-- [ ] Member 주요 화면이 정의되어 있습니다.
-- [ ] Admin 및 SuperAdmin 주요 화면이 정의되어 있습니다.
-- [ ] KOKU Flight 검색 흐름이 정의되어 있습니다.
-- [ ] 편도 / 왕복 검색 흐름이 정의되어 있습니다.
-- [ ] 왕복 출국 / 귀국 Flight 선택 흐름이 정의되어 있습니다.
-- [ ] 왕복 Seat 선택 및 예약 확인 UI가 정의되어 있습니다.
-- [ ] 왕복 결제 / 취소 / Flight 취소 정책이 Domain Policy와 동기화되어 있습니다.
-- [ ] 로그인 및 회원가입 흐름이 정의되어 있습니다.
-- [ ] Google OAuth 및 동일 Email 계정 연동 흐름이 정의되어 있습니다.
-- [ ] LOCAL 비밀번호 변경 및 현재 Password 재인증 UI 흐름이 정의되어 있습니다.
-- [ ] Seat 선택 및 Hold 흐름이 정의되어 있습니다.
-- [ ] `ECONOMY`, `PREMIUM_ECONOMY`, `BUSINESS` SeatClass의 UI 표현이 정의되어 있습니다.
-- [ ] Passenger / Flight별 SeatClass 선택과 왕복 구간별 서로 다른 SeatClass 선택 UI가 정의되어 있습니다.
-- [ ] 검색 단계의 `ECONOMY` 기준 예상 운임과 Reservation 생성 이후 최종 확정 금액이 명확하게 구분되어 있습니다.
-- [ ] Passenger 입력 흐름이 정의되어 있습니다.
-- [ ] Child 및 Infant UI 규칙이 정의되어 있습니다.
-- [ ] Mock 결제 성공 / 실패 / 재시도 흐름이 정의되어 있습니다.
-- [ ] Reservation 조회 및 취소 흐름이 정의되어 있습니다.
-- [ ] Flight 취소 UI가 정의되어 있습니다.
-- [ ] Aircraft 변경의 Reservation 이력 기반 제한 UI가 Domain Policy와 동기화되어 있습니다.
-- [ ] Admin / SuperAdmin의 Flight Seat 운영상 판매 중지 / 복구 UI가 정의되어 있습니다.
-- [ ] SuperAdmin 강제 취소 UI가 정의되어 있습니다.
-- [ ] 내부 KOKU Flight와 외부 실제 항공편 UI가 명확하게 구분되어 있습니다.
-- [ ] AI 항공편 검색 흐름이 정의되어 있습니다.
-- [ ] Loading / Empty / Error 상태가 정의되어 있습니다.
-- [ ] 한국어 / 일본어 UI 정책이 정의되어 있습니다.
-- [ ] 주요 Low-Fidelity Wireframe이 정의되어 있습니다.
-- [ ] 주요 Customer UI의 Desktop / Mobile Layout 정책이 정의되어 있습니다.
-- [ ] Mobile Navigation 정책이 정의되어 있습니다.
-- [ ] Mobile에서 검색 / Flight 선택 / Passenger / Seat / Payment 흐름이 정의되어 있습니다.
-- [ ] Desktop과 Mobile에서 동일한 주요 Customer 기능을 제공하도록 정의되어 있습니다.
-- [ ] 주요 Mobile Low-Fidelity Wireframe이 정의되어 있습니다.
-- [ ] Admin / SuperAdmin의 Mobile 최적화가 MVP 필수 범위가 아님을 명확히 정의했습니다.
+- [x] Guest 주요 화면이 정의되어 있습니다.
+- [x] Member 주요 화면이 정의되어 있습니다.
+- [x] Admin 및 SuperAdmin 주요 화면이 정의되어 있습니다.
+- [x] KOKU Flight 검색 흐름이 정의되어 있습니다.
+- [x] 편도 / 왕복 검색 흐름이 정의되어 있습니다.
+- [x] 왕복 출국 / 귀국 Flight 선택 흐름이 정의되어 있습니다.
+- [x] 왕복 Seat 선택 및 예약 확인 UI가 정의되어 있습니다.
+- [x] 왕복 결제 / 취소 / Flight 취소 정책이 Domain Policy와 동기화되어 있습니다.
+- [x] 로그인 및 회원가입 흐름이 정의되어 있습니다.
+- [x] Google OAuth 및 동일 Email 계정 연동 흐름이 정의되어 있습니다.
+- [x] LOCAL 비밀번호 변경 및 현재 Password 재인증 UI 흐름이 정의되어 있습니다.
+- [x] Seat 선택 및 Hold 흐름이 정의되어 있습니다.
+- [x] `ECONOMY`, `PREMIUM_ECONOMY`, `BUSINESS` SeatClass의 UI 표현이 정의되어 있습니다.
+- [x] Passenger / Flight별 SeatClass 선택과 왕복 구간별 서로 다른 SeatClass 선택 UI가 정의되어 있습니다.
+- [x] 검색 단계의 `ECONOMY` 기준 예상 운임과 Reservation 생성 이후 최종 확정 금액이 명확하게 구분되어 있습니다.
+- [x] Passenger 입력 흐름이 정의되어 있습니다.
+- [x] Child 및 Infant UI 규칙이 정의되어 있습니다.
+- [x] Mock 결제 성공 / 실패 / 재시도 흐름이 정의되어 있습니다.
+- [x] Reservation 조회 및 취소 흐름이 정의되어 있습니다.
+- [x] Flight 취소 UI가 정의되어 있습니다.
+- [x] Aircraft 변경의 Reservation 이력 기반 제한 UI가 Domain Policy와 동기화되어 있습니다.
+- [x] Admin / SuperAdmin의 Flight Seat 운영상 판매 중지 / 복구 UI가 정의되어 있습니다.
+- [x] SuperAdmin 강제 취소 UI가 정의되어 있습니다.
+- [x] 내부 KOKU Flight와 외부 실제 항공편 UI가 명확하게 구분되어 있습니다.
+- [x] AI 항공편 검색 흐름이 정의되어 있습니다.
+- [x] Loading / Empty / Error 상태가 정의되어 있습니다.
+- [x] 한국어 / 일본어 UI 정책이 정의되어 있습니다.
+- [x] 주요 Low-Fidelity Wireframe이 정의되어 있습니다.
+- [x] 주요 Customer UI의 Desktop / Mobile Layout 정책이 정의되어 있습니다.
+- [x] Mobile Navigation 정책이 정의되어 있습니다.
+- [x] Mobile에서 검색 / Flight 선택 / Passenger / Seat / Payment 흐름이 정의되어 있습니다.
+- [x] Desktop과 Mobile에서 동일한 주요 Customer 기능을 제공하도록 정의되어 있습니다.
+- [x] 주요 Mobile Low-Fidelity Wireframe이 정의되어 있습니다.
+- [x] Admin / SuperAdmin의 Mobile 최적화가 MVP 필수 범위가 아님을 명확히 정의했습니다.
 
 ---
 

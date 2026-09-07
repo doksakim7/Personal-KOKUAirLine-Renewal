@@ -235,16 +235,16 @@ MVP에서는 다음 두 인증 방식을 지원합니다.
 예:
 
 ```text
- User@Test.com
- user@test.com
- USER@TEST.COM
- ```
+User@Test.com
+user@test.com
+USER@TEST.COM
+```
 
- 위 Email은 모두 다음과 동일한 Email로 취급합니다.
+위 Email은 모두 다음과 동일한 Email로 취급합니다.
 
 ```text
- user@test.com
-  ```
+user@test.com
+```
 
 일반 회원가입, 일반 로그인 및 Google OAuth 계정 연동에서
 Email을 비교할 때 동일한 정규화 규칙을 적용합니다.
@@ -1126,15 +1126,19 @@ Admin 또는 SuperAdmin은
 일반적인 운영 조정에서는
 Flight를 물리적으로 삭제하기보다 `CANCELLED` 상태로 관리하는 것을 원칙으로 합니다.
 
-단, 다음 조건을 모두 만족하는 잘못 생성된 Flight는
-제한적으로 물리 삭제할 수 있습니다.
+FlightSchedule 기반으로 자동 생성된 Flight는
+물리적으로 삭제하지 않습니다.
+
+단, Admin 또는 SuperAdmin이 수동으로 잘못 생성한 Flight 중
+다음 조건을 모두 만족하는 경우에만 제한적으로 물리 삭제할 수 있습니다.
 
 - `SCHEDULED` 상태
 - 아직 출발하지 않음
-- 연결된 `PENDING` 또는 `CONFIRMED` Reservation이 없음
+- Reservation이 한 번도 연결된 적이 없음
 - 운영 이력 보존이 필요하지 않은 잘못 생성된 Flight
 
 Reservation이 한 번이라도 연결된 Flight는
+현재 연결된 Reservation이 모두 `CANCELLED` 상태이더라도
 물리적으로 삭제하지 않습니다.
 
 `CANCELLED` Flight 역시
