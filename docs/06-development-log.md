@@ -262,9 +262,23 @@ docs/04-system-design.md
 
 주요 미확정 항목:
 
+- Reservation Transaction 내부 세부 Persist / Flush 순서
+- Seat 동시성 실패 시 API Error 세부 처리 방식
 - External Flight API Provider
-- Cache 적용 범위 및 TTL
+- External Flight API Connection / Read Timeout
+- External Flight API Retry / Backoff
+- External Flight API Cache 적용 여부 및 TTL
+- AI Model / Provider
+- AI Structured Output 구체 구조
+- Spring AI Tool Contract
+- AI 최대 Flight 후보 수
+- AI Timeout / Retry
 - AWS 세부 Architecture
+- Backend / Frontend 배포 방식
+- RDS 구성
+- 운영 환경 Secret 관리 방식
+- Monitoring 방식
+- CD Workflow
 
 인증 및 Token 정책은 다음과 같이 확정되었습니다.
 
@@ -362,10 +376,17 @@ Entity 관계 및 API 기본 구조 정의
 주요 미확정 항목:
 
 - `AircraftSeat`의 통로 표현 방식
-- Payment SUCCESS Database 보호 방식
-- API Error 상세 Mapping
-- External Flight DTO
-- AI Structured Output
+- Reservation Number Collision 재시도 횟수
+- Cancellation Reason 상세 코드 구조
+- `/api/v1` Version Prefix 최종 적용 여부
+- 공통 Success Response Wrapper 여부
+- Pagination Response 형식
+- Validation Error `details` 구조
+- HTTP Status Code 상세 Mapping
+- External Flight DTO 최종 Field
+- AI Structured Output DTO
+- AI Recommendation 최대 후보 수
+- Spring AI Tool Contract
 
 Seat 관련 Data / API 정책은 다음과 같이 확정되었습니다.
 
@@ -460,6 +481,34 @@ Passport API
 → Masked 값만 반환
 ```
 
+Payment 관련 Data 정책도 확정되었습니다.
+
+```text
+Payment
+→ 하나의 Row가 하나의 Mock Payment 시도
+
+Payment.attempt_no
+→ Reservation당 1 ~ 3
+→ UNIQUE(reservation_id, attempt_no)
+
+Payment.idempotency_key
+→ Mock Payment 요청의 Idempotency 식별자
+→ UNIQUE(reservation_id, idempotency_key)
+
+Payment.request_hash
+→ Canonical Payment Request의 SHA-256 Hash
+→ CHAR(64)
+
+Payment.successful_reservation_id
+→ Generated Column
+→ SUCCESS / REFUNDED 상태에서 reservation_id
+→ 그 외 상태에서는 NULL
+
+Payment 성공 이력
+→ UNIQUE(successful_reservation_id)
+→ Reservation당 SUCCESS / REFUNDED 이력 최대 1개
+```
+
 ---
 
 ### 3.6 ERD
@@ -516,6 +565,15 @@ Draft 작성 완료
 - `PassengerFlight.fare_amount` → `DECIMAL(15,0)`
 - Reservation Mapping 핵심 Unique Constraint
 - `PassengerFlight` Membership Application Validation
+- `Payment.attempt_no`
+- `Payment.idempotency_key`
+- `Payment.request_hash`
+- `Payment.successful_reservation_id`
+- `Payment(reservation_id, attempt_no)` Unique Constraint
+- `Payment(reservation_id, idempotency_key)` Unique Constraint
+- `Payment(successful_reservation_id)` Unique Constraint
+- `SUCCESS` / `REFUNDED` Payment 성공 이력 Database 보호
+- `AuditLog`
 
 Refresh Token은 Redis에서 관리하므로
 관계형 Database Entity 또는 ERD Table로 추가하지 않습니다.
@@ -1886,6 +1944,35 @@ Business Rule의 최종 판단 기준으로 사용하지 않습니다.
 
 ### 6.4 Payment 성공
 
+Mock Payment 처리는
+대상 Reservation Row에 `PESSIMISTIC_WRITE` Lock을 획득한
+하나의 Database Transaction에서 처리합니다.
+
+기본 흐름:
+
+```text
+Reservation
+PESSIMISTIC_WRITE
+        ↓
+Idempotency-Key 기존 Payment 조회
+        ↓
+동일 Key 존재 시 request_hash 비교
+        ↓
+새로운 Payment 요청인 경우
+Payment 가능 상태 검증
+        ↓
+SUCCESS / REFUNDED 기존 이력 검증
+        ↓
+기존 Payment 시도 횟수 검증
+        ↓
+다음 attempt_no 결정
+        ↓
+Payment
+PENDING 생성
+        ↓
+Mock Payment 처리
+```
+
 Mock Payment 성공 시:
 
 ```text
@@ -1902,32 +1989,173 @@ Seat.held_reservation_id
 Reservation ID → NULL
 ```
 
+위 상태 전이는 하나의 Business Transaction으로 처리하며,
+일부 상태 변경만 Commit되는 것을 허용하지 않습니다.
+
 Payment 금액은
 PENDING Reservation 생성 시 확정된
 `Reservation.total_amount`를 그대로 사용합니다.
 
 결제 시점에 운임을 다시 계산하지 않습니다.
 
-하나의 Business Transaction으로 처리합니다.
+성공한 Payment 이력은
+다음 상태를 모두 포함합니다.
+
+```text
+SUCCESS
+REFUNDED
+```
+
+Application에서는
+Reservation `PESSIMISTIC_WRITE` Lock과
+기존 성공 Payment 이력 검증으로 중복 성공을 방지합니다.
+
+Database에서는:
+
+```text
+Payment.successful_reservation_id
+→ Generated Column
+
+SUCCESS / REFUNDED
+→ reservation_id
+
+그 외 상태
+→ NULL
+
+UNIQUE(successful_reservation_id)
+```
+
+구조를 사용하여
+동일 Reservation에 둘 이상의 성공 Payment 이력이
+생성되지 않도록 보호합니다.
 
 ---
 
 ### 6.5 Payment 실패
 
 하나의 Reservation당
-최대 3회의 Payment를 허용합니다.
+최대 3개의 Payment를 생성할 수 있습니다.
 
 ```text
-1차 실패
-2차 실패
-3차 실패
-    |
-    v
-Reservation CANCELLED
-Seat RELEASE
+attempt_no
+→ 1
+→ 2
+→ 3
 ```
 
-기존 FAILED Payment는 삭제하지 않습니다.
+`attempt_no`는
+Reservation `PESSIMISTIC_WRITE` Lock을 획득한
+동일 Transaction 안에서 결정합니다.
+
+Database에서는:
+
+```text
+UNIQUE(
+  reservation_id,
+  attempt_no
+)
+```
+
+Constraint로 동일 Reservation의
+Payment 시도 번호 중복을 방지합니다.
+
+동일 Idempotency 요청의 재처리는
+새로운 Payment를 생성하지 않으므로
+`attempt_no`를 증가시키지 않습니다.
+
+1회 또는 2회 Payment가 실패하고
+Seat Hold가 아직 유효한 경우:
+
+```text
+Payment
+PENDING → FAILED
+
+Reservation
+→ PENDING 유지
+
+Seat
+→ HELD 유지
+```
+
+세 번째 Payment까지 실패한 경우:
+
+```text
+Payment
+PENDING → FAILED
+
+Reservation
+PENDING → CANCELLED
+
+Seat
+HELD → AVAILABLE
+
+Seat.held_reservation_id
+→ NULL
+```
+
+기존 `FAILED` Payment는 삭제하거나 덮어쓰지 않고
+결제 시도 이력으로 유지합니다.
+
+#### Payment Idempotency
+
+Mock Payment API는
+`Idempotency-Key`를 필수로 사용합니다.
+
+Idempotency 범위는:
+
+```text
+Reservation
++
+Idempotency-Key
+```
+
+입니다.
+
+Database에서는:
+
+```text
+UNIQUE(
+  reservation_id,
+  idempotency_key
+)
+```
+
+Constraint를 사용합니다.
+
+Payment Request가 논리적으로 동일한지 검증하기 위해
+Canonical Payment Request를 생성하고
+SHA-256 Hash를 계산하여
+`Payment.request_hash`에 저장합니다.
+
+Canonical 값:
+
+```text
+MOCK_PAYMENT
++
+Reservation.id
++
+Reservation.total_amount
+```
+
+동일 `Idempotency-Key`와 동일 `request_hash` 요청은:
+
+```text
+새로운 Payment 생성 없음
+attempt_no 증가 없음
+기존 Payment 결과 반환
+```
+
+으로 처리합니다.
+
+동일 `Idempotency-Key`를 사용했지만
+`request_hash`가 다른 요청은:
+
+```text
+HTTP 409 Conflict
+PAYMENT_IDEMPOTENCY_CONFLICT
+```
+
+로 처리합니다.
 
 ---
 
@@ -2754,40 +2982,56 @@ Resolved
 `04-system-design.md`와 `05-data-api-design.md`의
 미확정 항목을 추적하기 위한 요약입니다.
 
-본 절에서 정책을 직접 확정하지 않습니다.
+본 절에서 새로운 Business Rule,
+Architecture 또는 Data Policy를 직접 확정하지 않습니다.
 
-### Seat
+### Reservation / Seat
 
+- [ ] Reservation Transaction 내부 세부 Persist / Flush 순서
+- [ ] Seat 동시성 실패 시 API Error 세부 처리 방식
 - [ ] `AircraftSeat`의 통로 표현 방식
+- [ ] Reservation Number Collision 재시도 횟수
+- [ ] Cancellation Reason 상세 코드 구조
 
-### Payment
+### API
 
-- [ ] SUCCESS Unique 보호
-- [ ] attempt_no Constraint
-- [ ] Idempotency 상세 정책
+- [ ] `/api/v1` Version Prefix 최종 적용 여부
+- [ ] 공통 Success Response Wrapper 여부
+- [ ] Pagination Response 형식
+- [ ] Validation Error `details` 구조
+- [ ] HTTP Status Code 상세 Mapping
 
-### External
+### External Flight API
 
-- [ ] Flight API Provider
-- [ ] Timeout
-- [ ] Retry
-- [ ] Cache
-- [ ] TTL
+- [ ] 실제 External Flight API Provider
+- [ ] External Flight DTO 최종 Field
+- [ ] Connection Timeout
+- [ ] Read Timeout
+- [ ] Retry 정책
+- [ ] Retry 횟수
+- [ ] Backoff 방식
+- [ ] Cache 적용 여부
+- [ ] Cache TTL
 
 ### AI
 
-- [ ] Provider / Model
-- [ ] Structured Output
-- [ ] Tool Contract
-- [ ] Candidate Limit
-- [ ] Timeout
+- [ ] AI Model / Provider
+- [ ] AI Structured Output 구체 구조
+- [ ] AI Structured Output DTO
+- [ ] Spring AI Tool Contract
+- [ ] AI에 전달할 최대 Flight 후보 수
+- [ ] AI Timeout
+- [ ] AI Retry 여부
 
 ### Infrastructure
 
-- [ ] AWS Architecture
-- [ ] CD
-- [ ] Secret Management
-- [ ] Monitoring
+- [ ] AWS 세부 Architecture
+- [ ] Backend 배포 방식
+- [ ] Frontend 배포 방식
+- [ ] RDS 구성
+- [ ] 운영 환경 Secret 관리 방식
+- [ ] Monitoring 방식
+- [ ] CD Workflow
 
 ---
 

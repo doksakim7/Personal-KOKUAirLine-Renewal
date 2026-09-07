@@ -217,9 +217,11 @@ erDiagram
     BIGINT id PK
     BIGINT reservation_id FK
     INT attempt_no
-    VARCHAR status
+    VARCHAR(20) status
     DECIMAL(15,0) amount
-    VARCHAR idempotency_key
+    VARCHAR(100) idempotency_key
+    CHAR(64) request_hash
+    BIGINT successful_reservation_id UK
     DATETIME(6) created_at
     DATETIME(6) updated_at
     }
@@ -1109,14 +1111,50 @@ attempt_no = 2
 attempt_no = 3
 ```
 
+동일 Reservation에서
+동일한 Payment 시도 번호를 중복 사용할 수 없습니다.
+
+```text
+UNIQUE(
+  reservation_id,
+  attempt_no
+)
+```
+
+`attempt_no`는 `1 ~ 3` 범위만 사용합니다.
+
+다음 시도 번호는
+`04-system-design.md`와 `05-data-api-design.md`에 따라
+Reservation Row의 `PESSIMISTIC_WRITE` Lock을 획득한
+동일 Transaction 안에서 결정합니다.
+
+동일 Idempotency 요청의 재처리는
+새로운 Payment를 생성하지 않으므로
+`attempt_no`도 증가시키지 않습니다.
+
 ---
 
 ### 5.2 Payment Idempotency
 
-동일 Mock Payment 요청의 중복 처리를 방지하기 위해
-Payment에 `idempotency_key`를 저장합니다.
+Mock Payment 요청에는
+다음 Header를 사용합니다.
 
-초안 Constraint:
+```text
+Idempotency-Key
+```
+
+Idempotency는
+동일 Reservation의 Payment 범위에서 적용합니다.
+
+Payment에는 다음 값을 저장합니다.
+
+```text
+idempotency_key
+request_hash
+```
+
+동일 Reservation에서
+동일 Idempotency Key를 둘 이상의 Payment에 사용할 수 없습니다.
 
 ```text
 UNIQUE(
@@ -1125,11 +1163,160 @@ UNIQUE(
 )
 ```
 
-하나의 Reservation에는
-최대 하나의 `SUCCESS` Payment만 존재해야 합니다.
+따라서:
 
-구체적인 Database 보호 방식은
-MySQL 및 Transaction 구조를 검토한 뒤 확정합니다.
+```text
+Reservation A + Key X
+→ 가능
+
+Reservation B + Key X
+→ 가능
+
+Reservation A + Key X
+→ 중복 불가
+```
+
+입니다.
+
+`request_hash`는
+Canonical Payment Request를
+SHA-256으로 Hash한 결과입니다.
+
+```text
+Canonical Payment Request
+        ↓
+SHA-256
+        ↓
+request_hash
+```
+
+Database에는 lowercase Hex String으로 저장합니다.
+
+```text
+request_hash
+→ CHAR(64)
+```
+
+MVP의 Canonical Payment Request는:
+
+```text
+MOCK_PAYMENT
++
+Reservation.id
++
+Reservation.total_amount
+```
+
+를 기준으로 합니다.
+
+동일 `Idempotency-Key`와 동일 `request_hash` 요청은:
+
+```text
+새로운 Payment 생성 없음
+attempt_no 증가 없음
+기존 Payment 결과 반환
+```
+
+으로 처리합니다.
+
+동일 Key를 사용했지만
+`request_hash`가 다른 경우:
+
+```text
+HTTP 409 Conflict
+PAYMENT_IDEMPOTENCY_CONFLICT
+```
+
+로 처리합니다.
+
+---
+
+### 5.3 Payment 성공 이력 보호
+
+하나의 Reservation에는
+성공한 Payment 이력이 최대 하나만 존재할 수 있습니다.
+
+다음 상태는 모두 성공 이력으로 취급합니다.
+
+```text
+SUCCESS
+REFUNDED
+```
+
+`REFUNDED`도 과거에 정상적인 Payment 성공이 발생했던
+Payment이므로 성공 이력 보호 대상에 포함합니다.
+
+Database에서는
+Generated Column인:
+
+```text
+successful_reservation_id
+```
+
+를 사용합니다.
+
+논리적인 값:
+
+```text
+Payment.status = SUCCESS
+또는
+Payment.status = REFUNDED
+
+→ successful_reservation_id = reservation_id
+
+그 외
+
+→ successful_reservation_id = NULL
+```
+
+Database Constraint:
+
+```text
+UNIQUE(
+  successful_reservation_id
+)
+```
+
+MySQL에서는 여러 Row의 `NULL`을 허용하므로:
+
+```text
+PENDING
+FAILED
+CANCELLED
+```
+
+Payment 이력은 여러 건 유지할 수 있습니다.
+
+반면:
+
+```text
+SUCCESS
+REFUNDED
+```
+
+Payment에서는 `successful_reservation_id`가
+해당 Reservation ID가 되므로
+동일 Reservation에 두 번째 성공 이력이 생성되는 것을 차단합니다.
+
+따라서 Payment 성공 정합성은:
+
+```text
+Application
+→ Reservation PESSIMISTIC_WRITE
+→ SUCCESS / REFUNDED 이력 검증
+
+Database
+→ successful_reservation_id Generated Column
+→ UNIQUE
+```
+
+으로 이중 보호합니다.
+
+`SUCCESS → REFUNDED` 상태 전이 후에도
+`successful_reservation_id`는 같은 Reservation ID를 유지합니다.
+
+따라서 환불 이후에도
+동일 Reservation에 새로운 성공 Payment를 생성할 수 없습니다.
 
 ---
 
@@ -1239,9 +1426,24 @@ reservation_passenger(reservation_id, sequence)
 passenger_flight(reservation_id, passenger_id, flight_id)
     UNIQUE
 
+payment(reservation_id, attempt_no)
+    UNIQUE
+
 payment(reservation_id, idempotency_key)
     UNIQUE
+
+payment(successful_reservation_id)
+    UNIQUE
 ```
+
+`payment(successful_reservation_id)`는
+`SUCCESS` 또는 `REFUNDED` Payment에 대해서만
+Reservation ID를 가지는 Generated Column의
+Unique Constraint입니다.
+
+따라서 하나의 Reservation에서
+성공한 Payment 이력이 둘 이상 생성되는 것을
+Database 수준에서 방지합니다.
 
 추가 Constraint가 필요한 미확정 Domain은
 8장의 항목을 기준으로 추후 반영합니다.
@@ -1256,12 +1458,6 @@ payment(reservation_id, idempotency_key)
 ### Seat
 
 - [ ] `AircraftSeat`의 통로 표현 방식
-
-### Payment
-
-- [ ] 하나의 Reservation당 최대 하나의 `SUCCESS` Payment를 보장하는 Database 구조
-- [ ] `attempt_no` 추가 Unique Constraint 여부
-- [ ] Idempotency 동일 Key + 다른 Request 처리 방식
 
 ### Audit
 

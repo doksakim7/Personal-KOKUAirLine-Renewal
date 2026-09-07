@@ -891,10 +891,325 @@ Entity Persist / Flush 순서 및 Database Column은
 
 ---
 
-### 7.3 Mock Payment 성공 Transaction
+### 7.3 Mock Payment Transaction
 
-Mock Payment 성공 시 다음 상태 변경은
-정합성을 유지하도록 하나의 Business Operation으로 처리합니다.
+Mock Payment는
+Payment Row 생성만을 의미하지 않습니다.
+
+다음 작업 전체를 하나의
+Business Transaction으로 처리합니다.
+
+```text
+Reservation Lock
++
+Idempotency 검증
++
+Payment 시도 횟수 검증
++
+Payment 생성
++
+Mock Payment 결과 처리
++
+Reservation 상태 전이
++
+Seat 상태 전이
+```
+
+Mock Payment는 실제 외부 PG를 호출하지 않으므로
+MVP에서는 Payment 생성과 Mock 결과 처리를
+하나의 Database Transaction Boundary 안에서 처리합니다.
+
+외부 금융 시스템과의 Network Call을
+Transaction 중간에 수행하지 않습니다.
+
+---
+
+#### 7.3.1 Reservation Lock
+
+동일 Reservation에 대해
+둘 이상의 Payment 요청이 동시에 처리되어:
+
+```text
+attempt_no 중복
+
+SUCCESS Payment 중복
+
+Reservation 중복 확정
+```
+
+이 발생하지 않도록
+Mock Payment Transaction 시작 시
+대상 Reservation Row에
+Pessimistic Write Lock을 획득합니다.
+
+Spring Data JPA 기준으로는:
+
+```text
+PESSIMISTIC_WRITE
+```
+
+를 기본 방향으로 사용합니다.
+
+논리적인 흐름은 다음과 같습니다.
+
+```text
+Mock Payment 요청
+        ↓
+Reservation 조회
++ PESSIMISTIC_WRITE
+        ↓
+Idempotency 검증
+        ↓
+Payment 가능 상태 검증
+        ↓
+다음 attempt_no 결정
+        ↓
+Payment 생성 및 처리
+        ↓
+Commit
+```
+
+Payment 동시성의 직렬화 기준은
+Payment Row가 아니라
+하나의 Payment Lifecycle을 소유하는
+Reservation Row로 합니다.
+
+따라서 동일 Reservation에 대한
+동시 Payment 요청은
+Reservation Lock을 기준으로 순차 처리됩니다.
+
+서로 다른 Reservation의 Payment는
+동일 Reservation Lock을 공유하지 않습니다.
+
+구체적인 Repository Query와
+Database Lock Query는
+`05-data-api-design.md`에서 정의합니다.
+
+---
+
+#### 7.3.2 Idempotency 처리 순서
+
+Mock Payment 요청에는
+`Idempotency-Key`를 사용합니다.
+
+Reservation Lock을 획득한 뒤
+동일 Reservation에서
+동일 Idempotency Key를 사용한
+기존 Payment가 존재하는지 먼저 확인합니다.
+
+이 검증은 새로운 Payment 가능 여부를
+판단하기 전에 수행합니다.
+
+이는 최초 Payment 요청이 이미 성공하여
+Reservation이 `CONFIRMED` 상태가 된 이후
+Network Retry가 도착하더라도
+동일 요청에 대해 기존 성공 결과를
+반환할 수 있도록 하기 위함입니다.
+
+기본 흐름:
+
+```text
+Reservation PESSIMISTIC_WRITE
+        ↓
+동일 Idempotency-Key Payment 조회
+        |
+        +-- 존재
+        |      ↓
+        |   Request Hash 비교
+        |      |
+        |      +-- 동일
+        |      |     ↓
+        |      |   기존 Payment 결과 반환
+        |      |
+        |      +-- 다름
+        |            ↓
+        |          Idempotency Conflict
+        |
+        +-- 없음
+               ↓
+        새로운 Payment 검증 / 생성
+```
+
+따라서:
+
+```text
+동일 Key + 동일 Request
+→ 새로운 Payment 생성 없음
+→ attempt_no 증가 없음
+→ 기존 처리 결과 반환
+
+동일 Key + 다른 Request
+→ 새로운 Payment 생성 없음
+→ 요청 충돌 처리
+```
+
+를 보장합니다.
+
+동일 Key 요청의 재처리는
+새로운 Payment 시도로 계산하지 않습니다.
+
+---
+
+#### 7.3.3 Canonical Payment Request와 Request Hash
+
+동일 Idempotency Key가
+동일한 논리적 요청에 사용되었는지 판별하기 위해
+Payment 요청의 Canonical Representation을 생성합니다.
+
+Canonical Payment Request는
+JSON 문자열 자체를 그대로 Hash하지 않습니다.
+
+JSON Field 순서,
+Whitespace 등의 표현 차이가
+논리적으로 동일한 Payment 요청을
+다른 요청으로 판단하게 만들지 않도록 합니다.
+
+Canonical 값에는
+Payment 요청의 의미를 구성하는
+안정적인 값을 사용합니다.
+
+기본 방향:
+
+```text
+Reservation 식별자
++
+Reservation의 확정 Payment Amount
++
+API Contract에서 정의하는
+Mock Payment 요청 의미 Field
+```
+
+위 값을 정해진 순서와 형식으로 Canonicalize한 뒤
+다음 Hash Algorithm을 사용합니다.
+
+```text
+Canonical Payment Request
+        ↓
+SHA-256
+        ↓
+request_hash
+```
+
+`Idempotency-Key` 자체는
+기존 Payment를 찾기 위한 식별 Key이므로
+Request Hash의 의미 데이터로 사용하지 않습니다.
+
+구체적인 Canonical Field,
+직렬화 형식,
+`request_hash` Column Type은
+`05-data-api-design.md`에서 정의합니다.
+
+---
+
+#### 7.3.4 새로운 Payment 생성 조건
+
+동일 Idempotency Key를 가진
+기존 Payment가 없는 경우에만
+새로운 Payment 생성 여부를 검증합니다.
+
+다음 조건을 모두 만족해야 합니다.
+
+```text
+Reservation.status = PENDING
+
+Seat Hold 유효
+
+성공한 Payment 이력 없음
+
+기존 Payment 시도 횟수 < 3
+```
+
+성공한 Payment 이력은
+현재 상태가 다음 중 하나인 경우 모두 존재하는 것으로 판단합니다.
+
+```text
+SUCCESS
+REFUNDED
+```
+
+즉:
+
+```text
+SUCCESS
+→ 새로운 Payment 생성 불가
+
+REFUNDED
+→ 과거 Payment 성공 이력이 있으므로
+  새로운 Payment 생성 불가
+```
+
+입니다.
+
+환불된 Reservation을
+다시 결제 가능한 상태로 되돌리지 않습니다.
+
+---
+
+#### 7.3.5 Payment attempt_no
+
+하나의 Reservation에서
+Payment 시도 번호는 다음 범위만 사용합니다.
+
+```text
+1
+2
+3
+```
+
+다음 `attempt_no` 계산은
+Reservation Pessimistic Lock을 획득한
+동일 Transaction 안에서 수행합니다.
+
+개념적인 방식:
+
+```text
+기존 Payment 시도 이력 조회
+        ↓
+다음 attempt_no 결정
+        ↓
+1 ~ 3 범위 검증
+        ↓
+Payment 생성
+```
+
+동일 Idempotency Key의 재요청은
+새로운 Payment를 생성하지 않으므로
+`attempt_no`를 증가시키지 않습니다.
+
+Application에서는
+Reservation Lock을 통해
+동일 Reservation의 Payment 생성 순서를 직렬화합니다.
+
+Database에서도
+동일 Reservation에서 동일 `attempt_no`가
+중복 저장되지 않도록 보호합니다.
+
+구체적인 Unique Constraint는
+`05-data-api-design.md`에서 정의합니다.
+
+---
+
+#### 7.3.6 Payment 생성 및 Mock 결과 처리
+
+새로운 Payment 요청이 유효하면
+동일 Transaction 안에서
+새로운 `PENDING` Payment를 생성합니다.
+
+```text
+Reservation PESSIMISTIC_WRITE
+        ↓
+Idempotency 검증
+        ↓
+Payment 생성 조건 검증
+        ↓
+attempt_no 확정
+        ↓
+Payment PENDING 생성
+        ↓
+Mock Payment 처리
+```
+
+Mock Payment 성공 시:
 
 ```text
 Payment
@@ -907,7 +1222,163 @@ Seat
 HELD → RESERVED
 ```
 
-일부 상태만 성공적으로 반영되는 결과를 허용하지 않습니다.
+를 동일 Transaction에서 처리합니다.
+
+일부 상태 변경만 Commit되는 것을 허용하지 않습니다.
+
+```text
+Payment SUCCESS
++
+Reservation CONFIRMED
++
+Seat RESERVED
+
+→ 모두 성공
+
+또는
+
+→ 전체 Rollback
+```
+
+Mock Payment 실패가
+정상적으로 표현된 Mock 결과인 경우에는:
+
+```text
+Payment
+PENDING → FAILED
+```
+
+로 변경하여 해당 Payment 시도 이력을 보존합니다.
+
+1회 또는 2회 실패이고
+Seat Hold가 아직 유효한 경우:
+
+```text
+Reservation
+→ PENDING 유지
+
+Seat
+→ HELD 유지
+```
+
+합니다.
+
+세 번째 Payment까지 실패한 경우:
+
+```text
+Payment
+PENDING → FAILED
+
+Reservation
+PENDING → CANCELLED
+
+Seat
+HELD → AVAILABLE
+```
+
+로 처리합니다.
+
+Payment 처리 전에
+Backend `Clock`을 기준으로
+Seat Hold가 여전히 유효한지 다시 검증합니다.
+
+Hold가 이미 만료된 경우에는
+새로운 Payment를 정상 처리하지 않고
+Hold 만료 정책을 적용합니다.
+
+---
+
+#### 7.3.7 성공 Payment 중복 보호
+
+Application에서는
+Reservation Pessimistic Lock과
+기존 성공 Payment 이력 검증을 통해
+중복 성공을 방지합니다.
+
+```text
+Reservation Lock
+        ↓
+SUCCESS / REFUNDED 이력 확인
+        ↓
+없을 때만 새로운 Payment 진행
+```
+
+Database에서도
+하나의 Reservation에 대해
+성공한 Payment 이력이 둘 이상 만들어지지 않도록
+추가적인 Unique 보호 장치를 사용합니다.
+
+따라서 Payment 성공 정합성은:
+
+```text
+Application
+→ Reservation Lock
+→ Business Validation
+
+Database
+→ Unique Constraint
+
+두 계층에서 보호
+```
+
+하는 것을 원칙으로 합니다.
+
+`REFUNDED`는 현재 결제 완료 상태는 아니지만
+과거 `SUCCESS`였던 Payment이므로
+성공 이력 보호 대상에 포함합니다.
+
+구체적인 Generated Column 또는
+Database Constraint 구조는
+`05-data-api-design.md`에서 정의합니다.
+
+---
+
+#### 7.3.8 Payment 동시성 테스트
+
+최소 다음 Scenario를 테스트합니다.
+
+```text
+동일 Reservation
++
+서로 다른 Idempotency-Key
++
+동시 Payment 요청 N개
+
+→ SUCCESS Payment 최대 1개
+```
+
+추가 검증 대상:
+
+- 동일 Reservation에 대한 동시 Payment 생성
+- 동일 Idempotency Key의 동시 중복 요청
+- 동일 Key + 동일 Request
+- 동일 Key + 다른 Request
+- 동시 요청에서 `attempt_no` 중복 여부
+- 3회 제한을 넘는 동시 Payment 생성 여부
+- 이미 `SUCCESS` Payment가 존재하는 Reservation
+- `REFUNDED` Payment 이력이 존재하는 Reservation
+- Seat Hold 만료와 Payment 요청이 경합하는 경우
+
+동시성 테스트 후에도 다음 조건을 만족해야 합니다.
+
+```text
+SUCCESS / REFUNDED 성공 이력
+→ Reservation당 최대 1개
+
+attempt_no
+→ Reservation 내 중복 없음
+
+Payment 최대 생성 수
+→ 3개
+
+Reservation CONFIRMED
+→ 중복 상태 전이 없음
+```
+
+구체적인 Database Constraint,
+API Error Mapping 및
+Test 구현 방식은
+`05-data-api-design.md`와 구현 단계에서 정의합니다.
 
 ---
 
@@ -2775,6 +3246,8 @@ Domain Policy 위반은
 - 이미 다른 사용자가 확보한 Seat
 - Seat Hold 만료
 - Mock Payment 최대 횟수 초과
+- 이미 성공한 Payment 이력이 있는 Reservation의 추가 Payment 요청
+- 동일 `Idempotency-Key`에 서로 다른 Payment Request가 전달된 경우
 - Reservation 취소 제한시간 미충족
 - 다른 Member의 Reservation 접근
 - Child / Infant 정책 위반

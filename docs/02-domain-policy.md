@@ -2374,20 +2374,50 @@ MVP에서는 하나의 `Payment`를 하나의 Mock 결제 시도로 정의합니
 
 실패한 Payment는 `FAILED` 상태로 유지하여 결제 시도 이력을 보존합니다.
 
-하나의 Reservation에서는 최대 하나의 Payment만
-`SUCCESS` 상태가 될 수 있습니다.
+하나의 Reservation에서는
+성공한 Payment 이력이 최대 하나만 존재할 수 있습니다.
 
-하나의 Payment가 `SUCCESS` 상태가 되면
-해당 Reservation에서는 새로운 Payment를 생성할 수 없습니다.
+Payment가 현재 다음 상태인 경우:
 
-성공한 Payment는 Reservation 취소, SuperAdmin 강제 취소 또는 Flight 취소로
-환불 정책이 적용되는 경우 `SUCCESS → REFUNDED` 상태로 전환합니다.
+```text
+SUCCESS
+REFUNDED
+```
 
-동일한 결제 요청이 중복 전달되더라도
-Payment가 중복 생성되거나 결제 시도 횟수가 중복 증가하지 않아야 합니다.
+모두 해당 Reservation에서
+이미 한 번 정상적인 Payment 성공이 발생한 것으로 취급합니다.
 
-구체적인 Database 관계와 중복 요청 방지 방식은
-`05-data-api-design.md`와 API Contract에서 정의합니다.
+즉:
+
+```text
+SUCCESS
+→ 결제 성공 이력 존재
+
+SUCCESS → REFUNDED
+→ 환불되었지만 결제 성공 이력은 존재
+```
+
+입니다.
+
+한 번이라도 Payment가 성공한 Reservation에서는
+새로운 Payment를 생성하거나
+다시 Mock 결제를 수행하지 않습니다.
+
+따라서 환불 이후에도
+새로운 Payment를 생성하여
+동일 Reservation을 다시 결제하는 것은 허용하지 않습니다.
+
+동일한 결제 요청이 중복 전달되더라도:
+
+- 새로운 Payment를 중복 생성하지 않습니다.
+- Payment 시도 횟수를 중복 증가시키지 않습니다.
+- Reservation을 중복 확정하지 않습니다.
+
+Payment 성공의 동시성 보호,
+Payment 시도 번호 생성,
+Database Constraint 및
+구체적인 Idempotency 처리 구조는
+`04-system-design.md`와 `05-data-api-design.md`에서 정의합니다.
 
 ---
 
@@ -2526,6 +2556,56 @@ Seat Hold 만료 이후에는 해당 Reservation에서
 새로운 Payment를 생성할 수 없습니다.
 
 Hold 만료 처리는 Backend 시간을 기준으로 판단합니다.
+
+---
+
+### 12.9 Payment Idempotency
+
+Mock Payment 요청에는
+중복 결제 요청을 식별하기 위한
+`Idempotency-Key`를 사용합니다.
+
+Idempotency는
+동일 Reservation의 Payment 요청을 기준으로 적용합니다.
+
+```text
+Reservation
++
+Idempotency-Key
+```
+
+동일한 `Idempotency-Key`와
+동일한 논리적 Payment 요청이 다시 전달된 경우:
+
+```text
+새로운 Payment 생성 없음
+Payment 시도 횟수 증가 없음
+기존 Payment 처리 결과 반환
+```
+
+을 원칙으로 합니다.
+
+Network Retry 또는 사용자의 중복 Click으로
+동일 요청이 반복되더라도
+새로운 결제 시도로 취급하지 않습니다.
+
+반대로 동일한 `Idempotency-Key`를 사용하면서
+기존 요청과 다른 논리적 Payment 요청이 전달된 경우에는
+정상적인 재시도로 취급하지 않고 요청 충돌로 처리합니다.
+
+```text
+동일 Key + 동일 Request
+→ 기존 결과 반환
+
+동일 Key + 다른 Request
+→ 요청 거부
+```
+
+동일 Request인지 판단하기 위한
+Canonical Payment Request 구성과 Request Hash 생성 방식,
+구체적인 HTTP Status 및 API Error Code,
+Database Unique Constraint는
+`04-system-design.md`와 `05-data-api-design.md`에서 정의합니다.
 
 ---
 
