@@ -18,8 +18,20 @@ CLAUDE.md
 → Claude Code 실행 절차 및 작업 방식
 ```
 
-두 문서가 충돌하는 경우
-Claude Code가 임의로 해석하지 않고 작업을 중지하여 Human에게 보고합니다.
+`AGENTS.md`와 `CLAUDE.md`가 함께 적용되는 경우
+`AGENTS.md`의 공통 정책과 안전 규칙을 기준으로 합니다.
+
+`CLAUDE.md`는 Claude Code의 실행 절차를 구체화할 수 있지만
+`AGENTS.md`의 규칙을 완화하거나 우회할 수 없습니다.
+
+두 문서 사이의 차이가
+`AGENTS.md`를 기준으로 명확하게 해소 가능한 경우에는
+해당 규칙을 적용하여 작업을 계속할 수 있습니다.
+
+두 문서를 동시에 충족할 수 없거나
+충돌을 안전하게 해석할 수 없는 경우에는
+임의로 선택하지 않고 STOP CONDITION으로 처리하여
+Human에게 보고합니다.
 
 ---
 
@@ -29,13 +41,44 @@ Claude Code는 다음 순서로 작업 기준을 확인합니다.
 
 ```text
 1. Human의 현재 명시적 지시
-2. Repository의 AGENTS.md
-3. 현재 작업 경로의 하위 AGENTS.md
-4. CLAUDE.md
-5. GitHub Issue
-6. Source of Truth 문서
-7. 기존 구현 및 Coding Convention
+2. Repository의 AGENTS.md 및 현재 작업 경로의 하위 AGENTS.md
+3. CLAUDE.md
+4. GitHub Issue 및 관련 Source of Truth 문서
+5. 기존 구현 및 Coding Convention
 ```
+
+Repository의 루트 `AGENTS.md`와
+현재 작업 경로의 하위 `AGENTS.md`는 함께 적용합니다.
+
+하위 `AGENTS.md`는 루트 `AGENTS.md`를 대체하지 않습니다.
+
+두 규칙이 모두 적용되는 상황에서 차이가 있는 경우
+더 엄격한 규칙을 적용합니다.
+
+어느 규칙이 더 엄격한지 명확하지 않거나
+두 규칙을 동시에 충족할 수 없는 경우에는
+임의로 선택하지 않고 STOP CONDITION으로 처리합니다.
+
+`AGENTS.md`와 `CLAUDE.md` 사이에 차이가 있는 경우
+`AGENTS.md`의 공통 정책 및 안전 규칙을 우선 기준으로 사용합니다.
+
+`CLAUDE.md`는 `AGENTS.md`를 보완하는 실행 규칙이며,
+`AGENTS.md`보다 느슨한 규칙을 적용하거나
+공통 안전 정책을 우회하는 근거로 사용할 수 없습니다.
+
+두 문서의 규칙을 함께 적용할 수 없거나
+어느 규칙을 적용해야 하는지 안전하게 판단할 수 없는 경우에는
+STOP CONDITION으로 처리합니다.
+
+위 목록은 작업 기준을 확인하기 위한 순서이며,
+GitHub Issue와 Source of Truth 사이의 충돌을
+우선순위로 해결하기 위한 규칙이 아닙니다.
+
+GitHub Issue의 요구사항과 Source of Truth가 충돌하는 경우
+Claude Code는 어느 한쪽을 임의로 우선하지 않습니다.
+
+해당 상황은 STOP CONDITION으로 처리하고
+충돌 내용을 Human에게 보고합니다.
 
 단, Human의 지시가 다음과 충돌하는 경우에는
 단순히 실행하지 않고 충돌 사실을 보고합니다.
@@ -539,7 +582,10 @@ chore
 
 ### Pull Request
 
-Claude Code가 PR을 작성하는 경우 최소 다음 내용을 포함합니다.
+Claude Code가 PR을 작성하는 경우
+루트 `AGENTS.md`의 Pull Request Rules를 기준으로 합니다.
+
+PR에는 최소 다음 내용을 포함합니다.
 
 - Related Issue
 - 작업 내용
@@ -548,9 +594,33 @@ Claude Code가 PR을 작성하는 경우 최소 다음 내용을 포함합니다
 - 영향 범위
 - Known Risks
 - Human Review Required
+- Agent 정보
+
+Claude Code는 실제 실행한 Test만 기록하며,
+실행하지 않은 Test를 수행한 것처럼 표시하지 않습니다.
+
+Issue 전체를 완료하는 PR인 경우
+Repository의 Issue Closing Convention을 따릅니다.
+
+예:
+
+```text
+Closes #9
+```
+
+Issue 전체를 완료하지 않는 중간 PR인 경우
+Issue를 자동 종료시키지 않습니다.
+
+예:
+
+```text
+Refs #9
+```
+
+PR 작성과 Issue 연결 방식에 대한 세부 기준은
+루트 `AGENTS.md`의 Pull Request Rules를 따릅니다.
 
 Claude Code는 PR을 직접 Merge하지 않습니다.
-
 Merge는 Human의 책임입니다.
 
 ---
@@ -664,66 +734,79 @@ Claude Code는 다음 사항을
 - Commit History Rewrite / Rebase
 
 Claude Code는 필요한 경우
-권장안을 제시할 수 있습니다.
+권장안과 예상 영향 범위를 Human에게 제시할 수 있습니다.
 
-Human Approval 전에
-해당 변경을 실제 적용하지 않습니다.
+Human Approval이 필요한 변경은
+승인 전에 실제 적용하지 않습니다.
+
+단, Human Approval은
+`AGENTS.md`의 NEVER Rules를 해제하거나 완화하지 않습니다.
+
+NEVER Rules에 해당하는 행동은
+Human Approval 여부와 관계없이
+Claude Code가 직접 수행하지 않습니다.
+
+따라서 Human Approval을 받았더라도
+승인된 설계 또는 정책 변경과
+Claude Code가 직접 수행할 수 있는 실행 작업의 범위를 구분합니다.
+
+예를 들어 다음과 같은 NEVER 행동은
+Human Approval을 받아도 Claude Code가 직접 수행하지 않습니다.
+
+- `main` 또는 `develop` Branch 직접 Push
+- Pull Request 직접 Merge
+- `git push --force` 또는 `git push --force-with-lease`
+- GitHub Ruleset 또는 Branch Protection 임의 변경
+- GitHub Secrets 직접 생성, 수정 또는 삭제
+- Production Database Data 또는 Schema 직접 변경
+- Production 환경 직접 배포
+- 운영 Resource 직접 생성, 수정, 삭제 또는 중지
+- 실제 Secret 또는 Credential 값에 대한 접근, 출력 또는 노출
+
+Human Approval 이후에도
+실제 수행하려는 행동이 NEVER Rules에 해당하는지 먼저 확인하며,
+해당하는 경우 직접 실행하지 않고 Human에게 필요한 후속 조치를 보고합니다.
 
 ---
 
 ## 16. Completion Report
 
-Implementer 작업 완료 시
-Claude Code는 다음 형식으로 보고합니다.
+Claude Code의 Completion Report 형식은
+루트 `AGENTS.md`의 `## 13. Completion Report`를 최종 기준으로 사용합니다.
+
+Claude Code는 별도의 축약된 Completion Report 형식을 사용하지 않습니다.
+
+작업 종료 시
+현재 상태에 따라 다음 Status 중 하나를 정확하게 사용합니다.
 
 ```text
-## Completion Report
-
-### Status
-
-SUCCESS / PARTIAL / BLOCKED / FAILED
-
-### Changed Files
-
-- 변경 파일
-
-### Implemented
-
-- 구현 내용
-- 충족한 Acceptance Criteria
-
-### Tests
-
-- 실행한 Test
-- Build / Lint / Type Check
-
-### Test Result
-
-- PASS / FAILED
-- 실패한 경우 원인
-
-### Unchanged Scope
-
-- 의도적으로 수정하지 않은 영역
-
-### Risks
-
-- Regression Risk
-- Technical Risk
-- 알려진 제한사항
-
-### Stop Conditions
-
-- 발생 여부
-- 발생했다면 상세 내용
-
-### Human Review Required
-
-- Human이 확인하거나 결정해야 하는 항목
+SUCCESS
+PARTIAL
+BLOCKED
+FAILED
 ```
 
-실패하거나 중단된 작업도
-성공한 것처럼 보고하지 않습니다.
+Test Result는 루트 `AGENTS.md`에 정의된 다음 값을 사용합니다.
+
+```text
+PASS
+FAILED
+NOT_RUN
+NOT_APPLICABLE
+```
+
+Claude Code는 다음 원칙을 지킵니다.
+
+- 실행하지 않은 Test, Build, Lint 또는 Type Check를 실행한 것처럼 보고하지 않음
+- 실패한 Test 또는 Build 결과를 숨기거나 PASS로 보고하지 않음
+- 미충족 Acceptance Criteria가 있다면 명시
+- Issue 범위 밖에서 발견했지만 수정하지 않은 문제를 명시
+- STOP CONDITION 발생 여부와 중단 지점을 명시
+- Human의 판단 또는 Review가 필요한 항목을 명시
+
+Completion Report의 항목, Status 정의 및 Test Result 기준이
+`CLAUDE.md`와 루트 `AGENTS.md` 사이에서 다르게 해석될 가능성이 있는 경우
+루트 `AGENTS.md`의 `## 13. Completion Report`를 따릅니다.
 
 ---
 
