@@ -236,13 +236,19 @@ Issue에 명시된 다음 항목을 작업 경계로 사용합니다.
 - Stop Conditions
 - 완료 조건
 
+Issue의 범위가 명확하지 않은 경우
+AI Agent는 범위를 임의로 확대 해석하지 않습니다.
+
+현재 Issue를 해결하는 데 필요한 최소 범위를 우선하고,
+안전하게 판단할 수 없는 경우 Human에게 확인합니다.
+
 다음 행동은 금지합니다.
 
 - Issue에 없는 기능 추가
 - 관련 없는 기능 수정
 - 관련 없는 코드 정리
 - 관련 없는 파일 Formatting
-- 대규모 Rename
+- 요구되지 않은 대규모 Rename 또는 File Move
 - 불필요한 Dependency 변경
 - 향후 필요할 것이라는 추측에 기반한 선행 구현
 - "김에 같이 수정"하는 변경
@@ -250,62 +256,116 @@ Issue에 명시된 다음 항목을 작업 경계로 사용합니다.
 Issue 범위 밖에서 문제를 발견한 경우:
 
 ```text
-현재 Issue에서 수정하지 않음
+현재 Issue에서 임의 수정하지 않음
         ↓
 Completion Report에 별도 기록
         ↓
 필요 시 Human이 새로운 Issue 생성
 ```
 
-심각한 보안 문제 또는
-현재 작업을 안전하게 진행할 수 없게 하는 문제가 아니라면
-범위 밖 문제를 임의로 수정하지 않습니다.
+범위 밖 문제가 심각한 보안 문제이거나
+현재 작업을 안전하게 진행할 수 없게 하는 문제인 경우에도
+AI Agent가 임의로 수정하지 않습니다.
+
+이 경우 관련 작업을 중지하고
+문제의 위치, 영향 범위 및 필요한 대응을 Human에게 보고합니다.
 
 ---
 
 ## 6. Allowed / Forbidden Changes
 
 AI Agent는 Issue에 정의된
-`수정 허용 범위`를 우선합니다.
+`수정 허용 범위`를 작업 가능한 최대 경계로 사용합니다.
 
-허용된 파일 또는 영역이라도
+수정 허용 범위에 포함된 파일 또는 영역이라도
 Issue 해결에 필요하지 않은 변경은 하지 않습니다.
+
+즉,
+
+```text
+수정 허용 범위
+≠ 자유롭게 수정 가능한 범위
+```
+
+수정 허용 범위 안에서도
+현재 Issue 해결에 필요한 최소 변경만 수행합니다.
 
 Issue의 `수정 금지 범위`는
 명시적인 작업 경계로 취급합니다.
 
+수정 금지 범위에는
+직접적인 코드 변경뿐 아니라
+다음과 같은 간접 변경도 포함됩니다.
+
+- 관련 설정 변경
+- 자동 생성 결과를 통한 우회 변경
+- Refactoring 과정에서의 간접 수정
+- 다른 파일을 통해 실질적으로 동일한 정책을 변경하는 행위
+
 수정 금지 범위의 변경이 필요해진 경우:
 
 ```text
-작업 중지
+관련 작업 중지
 → 변경하지 않음
-→ 필요한 변경 내용과 이유 보고
-→ Human Approval 대기
+→ 필요한 변경 내용과 이유 확인
+→ 예상 영향 범위 정리
+→ Human에게 보고
+→ Approval 또는 추가 지시 대기
 ```
 
 수정 허용 범위와 실제 필요한 변경이 충돌하면
 STOP CONDITION으로 처리합니다.
 
+Issue 해결을 위해
+수정 허용 범위 밖 파일 또는 영역의 변경이 필요해진 경우에도
+임의로 범위를 확장하지 않고 STOP CONDITION으로 처리합니다.
+
+수정 허용 범위와 수정 금지 범위의 해석이 서로 충돌하거나
+어느 규칙을 적용해야 하는지 명확하지 않은 경우
+AI Agent가 임의로 판단하지 않고 Human에게 보고합니다.
+
 ---
 
-## 7. Git / Branch / PR Rules
+## 7. Git / Branch / PR / Merge Rules
 
 AI Agent는 Repository의 기존 Branch 전략과
 GitHub Ruleset을 준수합니다.
 
+Branch 전략이나 보호 정책 자체를 변경해야 하는 경우
+임의로 변경하지 않고 STOP CONDITION으로 처리합니다.
+
+---
+
 ### Protected Branch
 
-다음 Branch에는 직접 Push하지 않습니다.
+다음 Branch는 보호 Branch로 취급합니다.
 
 ```text
 main
 develop
 ```
 
-AI Agent는 보호 Branch에서 직접 작업하거나
-Commit을 생성하지 않습니다.
+AI Agent는 보호 Branch에서 다음 행동을 수행하지 않습니다.
 
-작업은 Issue 전용 Branch에서 수행합니다.
+- 직접 작업
+- 직접 Commit 생성
+- 직접 Push
+- 보호 정책 우회
+- Branch Protection 임의 변경
+- GitHub Ruleset 임의 변경
+
+작업은 반드시 Issue 전용 Branch에서 수행합니다.
+
+보호 Branch에서 작업이 시작된 것을 발견하면
+실제 파일 수정을 계속하지 않고 현재 상태를 확인한 뒤
+Human에게 보고합니다.
+
+---
+
+### Issue Branch
+
+모든 구현, 문서, Test, Refactoring 작업은
+현재 Issue에 대응하는 전용 Branch에서 수행합니다.
 
 예:
 
@@ -323,7 +383,45 @@ chore/*
 Branch 이름은
 Repository의 기존 Convention과 Issue 목적을 따릅니다.
 
-### Commit
+Branch는 다음 원칙을 지킵니다.
+
+- 현재 Issue 또는 작업 목적을 식별할 수 있어야 함
+- 하나의 Branch는 하나의 주요 Issue를 기준으로 사용
+- 서로 관련 없는 여러 Issue를 하나의 Branch에서 동시에 구현하지 않음
+- 기존 Branch Convention을 임의로 변경하지 않음
+
+Branch 전략 변경이 필요한 경우
+STOP CONDITION으로 처리합니다.
+
+---
+
+### Working Tree Protection
+
+작업 시작 전 반드시 다음을 확인합니다.
+
+```bash
+git status
+```
+
+기존 Working Tree 변경사항이 존재하면
+현재 Issue와 관련된 변경인지 먼저 확인합니다.
+
+AI Agent가 생성하지 않은 기존 변경사항에 대해
+다음 행동을 하지 않습니다.
+
+- 삭제
+- 복원
+- 덮어쓰기
+- 강제 Reset
+- 임의 Stash
+- Branch 변경 과정에서 손실시키는 행동
+
+기존 변경사항과 현재 Issue 작업이 충돌하는 경우
+임의로 해결하지 않고 Human에게 보고합니다.
+
+---
+
+### Commit Rules
 
 Commit은 현재 Issue와 관련된 변경만 포함해야 합니다.
 
@@ -340,13 +438,31 @@ ai
 chore
 ```
 
+예:
+
+```text
+feat: 예약 생성 API 구현
+fix: 좌석 중복 예약 방지 로직 수정
+docs: AI 하네스 규칙 작성
+test: 결제 멱등성 테스트 추가
+```
+
 Commit Message는 변경 목적을 명확하게 표현합니다.
 
-관련 없는 변경을 하나의 Commit에 포함하지 않습니다.
+Commit 작성 시 다음을 지킵니다.
 
-### Push
+- 관련 없는 변경을 하나의 Commit에 포함하지 않음
+- 의미가 다른 대규모 변경을 불필요하게 하나의 Commit으로 묶지 않음
+- 단순 Formatting 변경을 기능 변경과 불필요하게 혼합하지 않음
+- 현재 Issue에 포함되지 않은 기존 Working Tree 변경사항을 Commit하지 않음
+- Secret 또는 Credential을 Commit하지 않음
+- 실패한 Test 상태를 숨긴 채 완료된 작업으로 보고하지 않음
 
-AI Agent는 현재 작업 Branch에는
+---
+
+### Push Rules
+
+AI Agent는 현재 Issue 전용 작업 Branch에는
 허용된 범위에서 Push할 수 있습니다.
 
 다음 Branch에는 직접 Push하지 않습니다.
@@ -356,9 +472,32 @@ main
 develop
 ```
 
-### Pull Request
+Push 전 최소 다음을 확인합니다.
 
-구현 완료 후 변경사항은 Pull Request를 통해 반영합니다.
+```text
+1. 현재 Branch
+2. git status
+3. Push 대상 Branch
+4. 현재 Issue와 관련 없는 변경 포함 여부
+5. Secret 또는 Credential 포함 여부
+```
+
+다음과 같은 Force Push는 수행하지 않습니다.
+
+```text
+git push --force
+git push --force-with-lease
+```
+
+Force Push가 필요하다고 판단되더라도
+NEVER Rules에 따라 AI Agent가 직접 수행하지 않습니다.
+
+---
+
+### Pull Request Rules
+
+구현 완료 후 변경사항은
+Pull Request를 통해 보호 Branch에 반영합니다.
 
 PR에는 최소 다음 내용을 포함합니다.
 
@@ -369,21 +508,132 @@ PR에는 최소 다음 내용을 포함합니다.
 - 영향 범위
 - Known Risks
 - Human Review가 필요한 항목
+- Agent 정보
 
-### Merge
+PR 작성 시 다음을 지킵니다.
+
+- 관련 Issue를 정확하게 연결
+- Acceptance Criteria 충족 여부 확인
+- 실제 실행한 Test만 기록
+- 실행하지 않은 Test를 수행한 것처럼 표시하지 않음
+- Architecture 영향 여부 명시
+- API Contract 영향 여부 명시
+- Database Schema 영향 여부 명시
+- Known Risk가 없으면 없다고 명시
+- STOP CONDITION 또는 Human Review 필요 항목을 숨기지 않음
+
+Issue 전체를 완료하는 PR인 경우
+Repository의 Issue Closing Convention을 사용합니다.
+
+예:
+
+```text
+Closes #9
+```
+
+Issue 전체를 완료하지 않는 중간 PR이라면
+Issue를 자동 종료시키지 않습니다.
+
+예:
+
+```text
+Refs #9
+```
+
+---
+
+### Merge Rules
 
 AI Agent는 Pull Request를 직접 Merge하지 않습니다.
+
+최종 Merge는 반드시 Human이 수행합니다.
 
 다음 작업은 Human의 책임입니다.
 
 ```text
+PR 최종 검토
 PR 최종 승인
-Merge 결정
+Merge 여부 결정
 Protected Branch 반영
 ```
 
-AI Reviewer가 PASS를 판단하더라도
-자동 Merge의 근거로 사용하지 않습니다.
+AI Reviewer가 `PASS`를 판단하더라도
+해당 판정은 자동 Merge 또는 Merge 권한의 근거가 되지 않습니다.
+
+AI Agent는 다음 행동을 수행하지 않습니다.
+
+- GitHub UI를 통한 직접 Merge
+- GitHub CLI 또는 기타 Tool을 통한 직접 Merge
+- Merge Requirement 우회
+- Required Review 우회
+- Required Status Check 우회
+- Protected Branch 우회
+- 보호 Branch에 직접 Merge Commit 생성
+
+AI Agent의 작업 범위는 원칙적으로 다음 단계까지입니다.
+
+```text
+Implement
+→ Test
+→ Commit
+→ Push
+→ PR 작성
+→ Review 지원
+→ Human Approval 대기
+```
+
+Reviewer의 역할은 Merge가 아니라
+변경사항의 적합성을 평가하고 Human의 판단을 지원하는 것입니다.
+
+Merge에 추가 권한이나 보호 Branch 우회가 필요한 경우
+STOP CONDITION으로 처리합니다.
+
+NEVER Rules에 해당하는 Merge 행동은
+Human Approval 여부와 관계없이
+AI Agent가 직접 수행하지 않습니다.
+
+---
+
+### Rebase / History Rewrite Rules
+
+다음 작업은 AI Agent가 독자적으로 수행하지 않습니다.
+
+- Rebase
+- Interactive Rebase
+- Commit Squash
+- Commit History Rewrite
+
+이러한 작업이 필요하다고 판단되면
+STOP CONDITION으로 처리하고 Human에게 보고합니다.
+
+다음 행동은 NEVER Rules에 따라 수행하지 않습니다.
+
+```text
+git push --force
+git push --force-with-lease
+```
+
+Human Approval이 있더라도
+NEVER Rules에 포함된 행동은 AI Agent가 직접 수행하지 않습니다.
+
+---
+
+### Final Git Check
+
+작업 완료 전 최소 다음을 확인합니다.
+
+```text
+1. 현재 Branch가 Issue 전용 Branch인지 확인
+2. git status 확인
+3. 현재 Issue 범위 밖 변경 여부 확인
+4. Commit 대상 파일 확인
+5. Test 결과 확인
+6. Push 대상 Branch 확인
+7. PR 대상 Branch 확인
+8. Secret 또는 Credential 포함 여부 확인
+9. Protected Branch 직접 Push 여부 확인
+10. PR Merge를 수행하지 않았는지 확인
+```
 
 ---
 
@@ -392,63 +642,126 @@ AI Reviewer가 PASS를 판단하더라도
 AI Agent는 작업 시
 `Implementer` 또는 `Reviewer` 역할을 명확하게 구분합니다.
 
+가능하면 동일한 AI 작업 세션이
+동일한 변경사항에 대해 Implementer와 최종 Reviewer 역할을 동시에 수행하지 않습니다.
+
+역할을 전환해야 하는 경우
+현재 역할을 명확히 종료한 뒤 다음 역할로 전환합니다.
+
 ---
 
 ### 8.1 Implementer
 
-Implementer의 역할:
+Implementer는
+Issue 요구사항을 실제로 구현하는 역할입니다.
+
+작업 시작 전 최소 다음을 확인합니다.
+
+- 현재 Issue
+- 작업 목적과 요구사항
+- Acceptance Criteria
+- 수정 허용 범위
+- 수정 금지 범위
+- 관련 Source of Truth
+- 기존 구현 및 Convention
+- 현재 Branch
+- Working Tree 상태
+
+Implementer의 주요 역할:
 
 - Issue 요구사항 확인
 - 관련 Source of Truth 확인
 - Issue 범위 내 구현
-- 필요한 Test 작성
-- 기존 Test 실행
-- Build 또는 정적 검증 수행
-- 변경사항 보고
-- 필요한 경우 PR 생성
+- 기존 구현 Pattern 우선 재사용
+- 최소 변경 원칙 준수
+- 필요한 Test 작성 또는 수정
+- 관련 기존 Test 실행
+- Build, Lint, Type Check 등 변경 범위에 필요한 검증 수행
+- 변경사항과 Risk 보고
+- STOP CONDITION 발생 여부 확인
+- Completion Report 작성
+- 필요한 경우 Commit, Push, PR 생성
 
 Implementer는 구현 과정에서
-새로운 Business Rule 또는 Architecture를 임의 결정하지 않습니다.
+새로운 Business Rule, Architecture 또는 정책을 임의 결정하지 않습니다.
 
 Issue 요구사항을 구현하기 위해
-설계 변경이 필요하다고 판단되면
+다음과 같은 변경이 필요하다고 판단되면
 STOP CONDITION으로 처리합니다.
 
+- API Contract 변경
+- Domain Policy 변경
+- DB 핵심 모델 변경
+- 핵심 Architecture 변경
+- 인증 / 인가 정책 변경
+- Transaction 정책 변경
+- Concurrency 전략 변경
+- Issue 범위 확장
+- 새로운 Dependency 또는 외부 Service 도입
+- 기타 Human Approval이 필요한 변경
+
 Implementer는 Test 실패를 숨기거나
-무력화하지 않습니다.
+Test를 무력화하여 작업을 완료하지 않습니다.
+
+코드가 동작한다는 이유만으로
+작업이 완료되었다고 판단하지 않습니다.
+
+Acceptance Criteria, Test 결과, Source of Truth,
+수정 범위 및 Risk까지 확인한 뒤 결과를 보고합니다.
 
 ---
 
 ### 8.2 Reviewer
 
-Reviewer의 역할:
+Reviewer는
+구현된 변경사항이 Issue 요구사항과 Repository 규칙을 충족하는지 검증하는 역할입니다.
+
+Reviewer는 새로운 기능을 구현하거나
+구현 내용을 새로 설계하는 역할이 아닙니다.
+
+Reviewer의 주요 역할:
 
 - Issue 요구사항 충족 여부 검토
 - Acceptance Criteria 검증
 - Source of Truth 준수 여부 검토
+- 수정 허용 범위 준수 여부 확인
+- 수정 금지 범위 침범 여부 확인
 - Issue 범위 밖 변경 여부 확인
+- 관련 없는 변경 존재 여부 확인
 - Architecture 위반 여부 확인
 - API Contract 위반 여부 확인
+- Domain Policy 위반 여부 확인
+- DB 핵심 모델 영향 여부 확인
+- Transaction 영향 여부 확인
+- Concurrency 영향 여부 확인
 - Test 누락 여부 확인
+- Test 약화 또는 무력화 여부 확인
 - 보안 위험 검토
+- Secret / Credential 노출 여부 확인
 - Regression 가능성 검토
+- Git / Branch / PR 규칙 위반 여부 확인
+- STOP CONDITION 누락 여부 확인
 
 Reviewer는
 검토 요청이 없는 구현 변경을 임의 수행하지 않습니다.
 
-문제가 발견되면:
+문제가 발견되더라도
+먼저 Review Result로 보고하고
+직접 구현을 수정하지 않습니다.
+
+Reviewer는 다음 두 가지 중 하나로 판단합니다.
 
 ```text
 PASS
-또는
 NEEDS_FIX
 ```
 
-형태로 명확하게 판단하고
-문제의 위치와 이유를 보고합니다.
+---
 
-Reviewer는 `PASS`를 판단한 경우에도
-검토 근거를 최소한으로 남깁니다.
+### 8.3 PASS
+
+Reviewer가 `PASS`를 판단한 경우에도
+검토 근거를 남깁니다.
 
 PASS Report에는 가능한 범위에서 다음을 포함합니다.
 
@@ -456,18 +769,126 @@ PASS Report에는 가능한 범위에서 다음을 포함합니다.
 - 확인한 주요 변경 파일
 - 실행하거나 확인한 Test
 - Source of Truth 위반 여부
-- 남아 있는 Risk 또는 Human Review 필요 여부
+- Issue 범위 밖 변경 여부
+- 남아 있는 Risk
+- Human Review 필요 여부
 
-단순히 "문제 없음" 또는 "PASS"만 출력하고
-검토 근거를 생략하지 않습니다.
+단순히 다음과 같이 출력하지 않습니다.
 
-Reviewer도 PR을 직접 Merge하지 않습니다.
+```text
+문제 없음
+PASS
+```
+
+`PASS`는 현재 Review 범위에서
+수정이 필요한 문제를 발견하지 못했다는 의미입니다.
+
+Reviewer의 `PASS`는
+PR Merge 승인 또는 Merge 권한을 의미하지 않습니다.
+
+최종 승인과 Merge는 Human의 책임입니다.
+
+---
+
+### 8.4 NEEDS_FIX
+
+다음과 같은 문제가 발견되면
+Reviewer는 `NEEDS_FIX`로 판단합니다.
+
+- Acceptance Criteria 미충족
+- Source of Truth 위반
+- Issue 범위 밖 변경
+- 수정 금지 범위 침범
+- Architecture 위반
+- API Contract 위반
+- Test 누락
+- Test 약화 또는 무력화
+- Security Risk
+- Secret 노출
+- Regression 가능성이 높은 오류
+- STOP CONDITION을 무시한 구현
 
 `NEEDS_FIX`인 경우에는
-문서 또는 파일 위치, 문제 원인, 수정이 필요한 이유를 명확하게 기록합니다.
+최소 다음 내용을 명확하게 기록합니다.
 
-가능하면 동일한 AI 작업 세션이
-Implementer와 최종 Reviewer 역할을 동시에 수행하지 않도록 합니다.
+```text
+- File:
+- Location:
+- Problem:
+- Reason:
+- Related Requirement / Acceptance Criteria:
+- Related Source of Truth:
+- Required Fix:
+```
+
+문제 위치는 가능한 경우
+다음 수준으로 구체화합니다.
+
+```text
+파일 경로
+Class / Function / Component
+Section
+Line 또는 관련 코드 범위
+```
+
+Reviewer는 단순한 취향이나 선호를
+필수 수정사항처럼 표현하지 않습니다.
+
+필수 수정과 선택적 개선 제안을 구분합니다.
+
+```text
+Required Fix
+→ Issue, Source of Truth 또는 Repository Rule 위반
+
+Suggestion
+→ 현재 요구사항은 충족하지만 개선 가능한 사항
+```
+
+Suggestion은 현재 Issue 범위를 확장하지 않습니다.
+
+---
+
+### 8.5 Implementer / Reviewer Separation
+
+Implementer와 Reviewer는
+서로 다른 책임을 가집니다.
+
+```text
+Implementer
+→ 요구사항 구현 및 검증 결과 제출
+
+Reviewer
+→ 구현 결과가 요구사항과 규칙을 준수하는지 검증
+```
+
+Reviewer는 Implementer의 설명만 신뢰하지 않고
+실제 Diff, Test 결과 및 관련 Source of Truth를 확인합니다.
+
+Implementer는 Reviewer의 `PASS`를
+자동 승인이나 Merge 허가로 해석하지 않습니다.
+
+가능하면 동일한 변경사항에 대해
+다른 AI Session 또는 별도 Review Context를 사용합니다.
+
+동일 Session에서 Reviewer 역할을 수행해야 하는 경우에도
+구현 의도가 아니라 실제 변경 결과를 기준으로 검토합니다.
+
+---
+
+### 8.6 Role Boundary
+
+Implementer와 Reviewer 모두 다음 권한을 가지지 않습니다.
+
+- Human의 최종 설계 권한 대체
+- Human의 최종 승인 권한 대체
+- PR 직접 Merge
+- STOP CONDITION 무시
+- NEVER Rules 우회
+- Issue 범위 임의 확장
+
+역할이 불분명하거나
+Implementer / Reviewer 책임이 충돌하는 경우
+임의로 해석하지 않고 Human에게 보고합니다.
 
 ---
 
@@ -484,7 +905,8 @@ AI Agent가 수행해서는 안 됩니다.
 - 보호 Branch 우회 금지
 - GitHub Ruleset 임의 변경 금지
 - Branch Protection 임의 변경 금지
-- 다른 작업자의 변경사항 임의 삭제 금지
+- 다른 작업자의 변경사항 임의 삭제, 복원 또는 덮어쓰기 금지
+- 현재 작업과 관련 없는 기존 Commit History 임의 변경 금지
 - 파괴적 Git 명령 사용 금지
 - 다음 명령 또는 동등한 효과를 가지는 작업을 임의 수행하지 않음:
   - `git reset --hard`
@@ -499,7 +921,12 @@ AI Agent가 수행해서는 안 됩니다.
 - Issue 범위 밖 기능 추가 금지
 - 관련 없는 Refactoring 금지
 - 관련 없는 파일 수정 금지
-- 요구되지 않은 대규모 Rename 금지
+- 요구되지 않은 대규모 Rename 또는 File Move 금지
+- 향후 필요할 것이라는 추측에 기반한 선행 구현 금지
+- "김에 같이 수정"하는 변경 금지
+
+Issue 범위 밖 문제를 발견하더라도
+현재 작업에서 임의 수정하지 않고 Completion Report에 기록합니다.
 
 ### Test
 
@@ -508,7 +935,13 @@ AI Agent가 수행해서는 안 됩니다.
 - Test를 무력화하여 CI를 통과시키는 행동 금지
 - `@Disabled`, `skip`, `xit` 등의 임의 추가 금지
 - Assertion 약화로 Test를 억지로 통과시키는 행동 금지
+- 실패 조건을 임의로 제거하는 행동 금지
+- Test 결과를 조작하거나 은폐하는 행동 금지
 - 실패한 Test 결과를 성공으로 보고하는 행동 금지
+
+기존 Test 자체에 문제가 있다고 판단되더라도
+현재 Issue 범위 또는 승인 절차 없이
+임의로 Test를 삭제하거나 약화하지 않습니다.
 
 ### Security
 
@@ -516,43 +949,103 @@ AI Agent가 수행해서는 안 됩니다.
 - Secret 값 커밋 금지
 - Credential 노출 금지
 - 운영 Credential 사용 금지
-- 보안 정책 우회 금지
+- 실제 Credential을 Source Code, Test Code, README 또는 문서에 작성하는 행동 금지
+- Secret 값을 Log, Exception Message 또는 Debug Output에 노출하는 행동 금지
+- `.env` 등 Secret이 포함될 가능성이 높은 파일의 실제 값을 확인하기 위한 접근 금지
+- 인증 / 인가 또는 기타 보안 정책 우회 금지
+
+Secret이 이미 노출되었을 가능성이 있는 경우에도
+해당 값을 다시 출력하거나 복사하지 않고
+노출 가능성만 Human에게 보고합니다.
 
 ### Infrastructure
 
 - AWS 운영 환경 임의 변경 금지
-- GitHub Secrets 임의 변경 금지
-- Production Database 임의 변경 금지
-- 운영 Resource 삭제 금지
+- GitHub Secrets 임의 생성, 수정 또는 삭제 금지
+- Production Database Data 또는 Schema 임의 변경 금지
+- Production 환경 직접 배포 금지
+- 운영 Resource 임의 생성, 수정, 삭제 또는 중지 금지
+- 운영 장애를 유발할 가능성이 있는 작업을 임의 수행하는 행동 금지
+
+Production 또는 Infrastructure 변경이 필요하면
+STOP CONDITION으로 처리하고 Human에게 보고합니다.
+
+### AI Authority
+
+- Human의 최종 설계 권한을 AI가 대체하는 행동 금지
+- Human의 최종 승인 권한을 AI가 대체하는 행동 금지
+- Human의 PR Merge 권한을 AI가 대체하는 행동 금지
+- Repository 정책을 임의로 완화하거나 우회하는 행동 금지
+- NEVER Rules를 임의로 완화하거나 우회하는 행동 금지
+- STOP CONDITION을 임의로 무시하고 작업을 계속하는 행동 금지
+
+AI Agent는 규칙이 불편하거나 작업을 방해한다는 이유로
+Repository의 안전 정책을 축소하거나 우회하지 않습니다.
 
 ---
 
 ## 10. STOP CONDITIONS
 
 다음 상황이 발생하면
-AI Agent는 작업을 즉시 중단하고 Human에게 보고합니다.
+AI Agent는 관련 변경을 즉시 중단하고 Human에게 보고합니다.
+
+### Contract / Design
 
 - API Contract 변경이 필요한 경우
-- DB 핵심 모델 변경이 필요한 경우
+- DB 핵심 Entity / Relation / Constraint 변경이 필요한 경우
 - 핵심 Architecture 변경이 필요한 경우
+- Domain Policy 변경이 필요한 경우
+- MVP Scope 변경이 필요한 경우
+- 인증 / 인가 정책 변경이 필요한 경우
+- Transaction Boundary 또는 Transaction 정책 변경이 필요한 경우
+- 기존 Concurrency / Lock 전략 변경이 필요한 경우
+- 기존 Architecture와 요구사항이 충돌하는 경우
+- Acceptance Criteria와 Source of Truth를 동시에 충족할 수 없는 경우
+
+### Dependency / Build / External Service
+
 - 새로운 외부 Dependency가 필요한 경우
 - 기존 Dependency의 Major Version Upgrade가 필요한 경우
-- Package Manager 또는 Build Tool 변경이 필요한 경우
-- 기존 Architecture와 요구사항이 충돌하는 경우
-- Domain Policy 변경이 필요한 경우
-- 인증 / 인가 정책 변경이 필요한 경우
-- Transaction Boundary 변경이 필요한 경우
-- 기존 동시성 전략 변경이 필요한 경우
+- 새로운 Plugin 또는 외부 Service 도입이 필요한 경우
+- Package Manager 변경이 필요한 경우
+- Build Tool 변경이 필요한 경우
+
+### Issue Scope
+
 - 수정 금지 범위의 변경이 필요한 경우
 - Issue 범위를 벗어난 변경 없이는 구현할 수 없는 경우
-- Secret 또는 Credential 접근이 필요한 경우
+- 예상한 작업 범위보다 변경 범위가 유의미하게 확장되어 Human 판단이 필요한 경우
+- 요구사항이 불충분하거나 모호하여 안전하게 구현할 수 없는 경우
+
+### Security / Infrastructure
+
+- Secret 또는 Credential의 실제 값에 접근해야 하는 경우
+- Secret / Credential 환경 변수 구조 또는 연동 방식 변경이 필요한 경우
 - GitHub Secrets 변경이 필요한 경우
-- 운영 Infrastructure 접근이 필요한 경우
-- 보호 Branch 권한이 필요한 경우
+- 운영 Infrastructure 접근 또는 변경이 필요한 경우
+- Production Database Schema 또는 운영 정책 변경이 필요한 경우
+- Tool 권한이 Repository의 Security Policy와 충돌하는 경우
+
+### Git / Repository
+
+- 보호 Branch에 대한 직접 작업 권한이 필요한 경우
 - Merge 권한이 필요한 경우
+- Branch 전략 변경이 필요한 경우
+- Rebase 또는 Commit History Rewrite가 필요한 경우
+- GitHub Ruleset 또는 Branch Protection 변경이 필요한 경우
+
+단, `NEVER Rules`에 해당하는 행동은
+Human Approval을 요청하여 수행할 수 있는 STOP CONDITION이 아닙니다.
+
+해당 행동은 승인 여부와 관계없이 AI Agent가 직접 수행하지 않습니다.
+
+### Rule / Source of Truth Conflict
+
 - Agent 규칙 사이에 충돌이 발생한 경우
+- `AGENTS.md`, 하위 `AGENTS.md`, `CLAUDE.md` 사이에 해석할 수 없는 충돌이 발생한 경우
 - Source of Truth 문서들이 서로 충돌하는 경우
-- 요구사항이 불충분하여 안전하게 구현할 수 없는 경우
+- Issue 요구사항과 Source of Truth가 충돌하는 경우
+- Human의 지시와 Repository의 안전 정책 또는 NEVER Rules가 충돌하는 경우
 
 STOP CONDITION 발생 시 다음 순서를 따릅니다.
 
@@ -560,16 +1053,21 @@ STOP CONDITION 발생 시 다음 순서를 따릅니다.
 1. 관련 변경 중지
 2. 임의 해결 금지
 3. 현재까지 안전하게 수행된 작업 보존
-4. 문제 위치 확인
-5. 필요한 변경과 영향 범위 정리
-6. Human에게 보고
-7. 승인 또는 추가 지시 대기
+4. 문제 위치 및 충돌 지점 확인
+5. 필요한 변경 내용 정리
+6. 예상 영향 범위 정리
+7. 가능한 선택지가 있다면 각각의 영향과 Risk 정리
+8. Human에게 보고
+9. 승인 또는 추가 지시 대기
 ```
+
+STOP CONDITION이 발생했다고 해서
+현재까지 안전하게 수행된 모든 작업을 임의로 되돌리지 않습니다.
 
 STOP CONDITION은
 "작업 실패"를 의미하지 않습니다.
 
-사람의 설계 또는 권한 판단이 필요한 상황에서
+Human의 설계, 권한 또는 범위 판단이 필요한 상황에서
 안전하게 작업을 중단하는 정상적인 절차입니다.
 
 ---
@@ -693,11 +1191,15 @@ Human에게 보안 문제를 보고합니다.
 
 ## 13. Completion Report
 
-AI Implementer는 작업 완료 시
+AI Implementer는 작업 종료 시
 다음 형식으로 결과를 보고합니다.
 
 ```text
 ## Completion Report
+
+### Status
+
+- SUCCESS / PARTIAL / BLOCKED / FAILED
 
 ### Changed Files
 
@@ -707,50 +1209,84 @@ AI Implementer는 작업 완료 시
 
 - 구현 또는 수정한 내용
 - 충족한 Acceptance Criteria
+- 미충족 Acceptance Criteria가 있다면 해당 내용
 
 ### Tests
 
 - 실행한 Test
 - 실행한 Build / Lint / Type Check
+- 실행하지 못한 검증이 있다면 해당 항목과 이유
 
 ### Test Result
 
-- PASS / FAILED
-- 실패한 경우 원인
+- PASS / FAILED / NOT_RUN / NOT_APPLICABLE
+- 실패한 경우 실패한 Test 또는 검증 항목
+- 실패 원인
+- 실행하지 않은 경우 해당 이유
+- 현재 Issue 변경과의 관련 여부
 
 ### Unchanged Scope
 
 - 의도적으로 수정하지 않은 관련 영역
+- Issue 범위 밖에서 발견했지만 수정하지 않은 문제
 
 ### Risks
 
 - Regression 가능성
 - Technical Risk
 - 알려진 제한사항
+- 후속 Issue가 필요할 수 있는 사항
 
 ### Stop Conditions
 
 - 발생 여부
-- 발생했다면 내용
+- 발생했다면 발생 지점
+- 중단한 이유
+- 필요한 Human 판단 또는 승인
 
 ### Human Review Required
 
-- 사람이 확인하거나 결정해야 할 항목
+- 사람이 확인해야 할 항목
+- 사람이 결정해야 할 항목
+- Reviewer가 우선 확인해야 할 주요 Risk가 있다면 해당 내용
 ```
 
-작업이 완료되지 않은 경우에도
-현재 상태를 숨기지 않습니다.
-
-예:
+Status는 다음 기준으로 사용합니다.
 
 ```text
 SUCCESS
+→ Issue 요구사항과 Acceptance Criteria를 충족하고
+  필요한 검증까지 정상적으로 완료한 상태
+
 PARTIAL
+→ 일부 작업은 완료되었지만
+  일부 요구사항, Test 또는 검증이 남아 있는 상태
+
 BLOCKED
+→ STOP CONDITION, 권한, 요구사항 충돌 등으로 인해
+  Human의 판단 또는 추가 지시 없이는 진행할 수 없는 상태
+
 FAILED
+→ 구현 또는 검증 과정에서 실패하여
+  현재 상태로는 요구사항을 충족하지 못한 상태
 ```
 
-중 적절한 상태를 명확하게 보고합니다.
+작업이 완료되지 않은 경우에도
+현재 상태를 숨기거나 성공으로 보고하지 않습니다.
+
+실행하지 않은 Test, Build, Lint, Type Check를
+실행한 것처럼 보고하지 않습니다.
+
+Test 또는 Build가 실패한 경우에도
+실패 결과를 생략하거나 PASS로 보고하지 않습니다.
+
+Issue 범위 밖에서 발견한 문제는
+현재 작업에서 임의 수정하지 않고
+`Unchanged Scope` 또는 `Risks`에 기록합니다.
+
+STOP CONDITION이 발생한 경우
+해당 사실을 숨기지 않고
+`PARTIAL` 또는 `BLOCKED` 상태로 명확하게 보고합니다.
 
 ---
 
